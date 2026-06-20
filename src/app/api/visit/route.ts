@@ -64,6 +64,25 @@ export async function POST(req: Request) {
     .filter(Boolean)
     .join("\n");
 
+  // 0) Telegram bot (preferred) — fires independently of email/webhook.
+  const tgToken = process.env.TELEGRAM_BOT_TOKEN;
+  const tgChat = process.env.TELEGRAM_CHAT_ID;
+  if (tgToken && tgChat) {
+    try {
+      await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: tgChat,
+          text,
+          disable_web_page_preview: true,
+        }),
+      });
+    } catch (err) {
+      console.error("telegram failed", err);
+    }
+  }
+
   // 1) Resend (email)
   const resendKey = process.env.RESEND_API_KEY;
   if (resendKey) {
