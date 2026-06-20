@@ -409,10 +409,51 @@ const tgBots: FileNode = {
   name: "telegram-bots.md",
   language: "Markdown",
   blocks: [
-    { t: "h1", text: "Telegram-боты — ООО «YourTar»" },
-    { t: "p", text: "~6 месяцев, PHP/Python. Боты для системы отчётности офлайн-магазина, онлайн-школы психологии и учёта абонементов спортзала." },
-    { t: "ul", items: ["Пользовательские сценарии, админ-панели и команды", "Уведомления и интеграция с хранилищами (клиенты, заказы, абонементы)", "Система автоматизированной отчётности с ИИ — снизила ручные операции и ускорила подготовку отчётов"] },
-    { t: "tech", items: ["PHP", "Python", "Telegram Bot API", "AI-автоматизация"] },
+    { t: "h1", text: "Серия продакшн Telegram-ботов" },
+    { t: "p", text: "Роль: Backend-разработчик / разработчик Telegram-ботов. Серия прод-ботов на единой архитектуре Symfony + Doctrine + Docker. ~120 коммитов в 5 проектах." },
+    { t: "callout", text: "Единый каркас на все боты: Symfony 7.3–8.0, Doctrine ORM 3 + Migrations, MySQL, Docker Compose, Telegram Bot API. Поверх него — разная доменная логика под каждый продукт." },
+
+    { t: "h2", text: "🤖 AI-бот генерации контента (ii-bot) — ключевой проект" },
+    { t: "p", text: "PHP 8.4, Symfony 8.0, Doctrine ORM 3, Docker, Telegram Bot API, VK API, OpenAI и внешние AI-провайдеры." },
+    { t: "ul", items: [
+      "Генерация изображений и видео: text-to-video, image-to-video, reference-изображения, выбор длительности и качества вплоть до 4K.",
+      "Интеграция множества AI-моделей и провайдеров (Kling 2.1 Pro, Seedream, OpenAI и др.) с выбором модели/качества прямо из интерфейса бота.",
+      "Режим AI deep-research (/research) и web-search инструменты для чат-бота.",
+      "Двусторонняя интеграция Telegram ↔ VK, структурное логирование (Monolog), стабилизация генерации.",
+    ] },
+
+    { t: "h2", text: "📊 Бот автоматической email-отчётности (theact-report-bot)" },
+    { t: "p", text: "PHP 8.2, Symfony 7.3, Doctrine ORM 3, MySQL, IMAP, PhpSpreadsheet, OpenAI, Cron." },
+    { t: "ul", items: [
+      "Пайплайн: IMAP-парсинг писем → извлечение Excel (PhpSpreadsheet) → анализ через OpenAI → формирование отчётов.",
+      "Планировщик (Cron) с автосканом почты по расписанию и авто-отправкой отчётов.",
+      "Админ-панель управления промптами (CRUD) и система авторизации пользователей.",
+      "Аналитика: сравнение периодов (день/месяц/год), расчёт плановых показателей.",
+    ] },
+
+    { t: "h2", text: "🏋️ Бот фитнес-зала (gym-bot)" },
+    { t: "p", text: "PHP 8.2, Symfony 7.3, Doctrine ORM 3, MySQL, Docker, Symfony Security." },
+    { t: "ul", items: [
+      "Ролевая модель доступа (admin / trainer / user) с разграничением функционала.",
+      "CRUD-сущности (адреса, типы тренировок), управление абонементами и тренировками.",
+      "Опросы (polls), поиск по телефону, навигационное меню.",
+    ] },
+
+    { t: "h2", text: "🛍️ Бот маркетплейса косметики (kosmetik-bot)" },
+    { t: "p", text: "PHP, Symfony, Doctrine, Docker, REST-синхронизация, Cron." },
+    { t: "ul", items: [
+      "Команды полной и инкрементальной синхронизации каталога и изображений по Cron.",
+      "Система авторизации, админ-UI управления магазинами (CRUD).",
+    ] },
+
+    { t: "h2", text: "🧠 Бот психологических тестов/сценариев (manipulate-bot)" },
+    { t: "p", text: "PHP, Symfony, Doctrine ORM, MySQL." },
+    { t: "ul", items: [
+      "Движок сценариев и тестов с сохранением ответов в БД (схема + миграции).",
+      "Админ-панель управления сценариями/вопросами (CRUD), команда статистики /usage.",
+    ] },
+
+    { t: "tech", items: ["PHP 8.2–8.4", "Symfony 7.3 / 8.0", "Doctrine ORM 3 + Migrations", "MySQL", "Docker Compose", "Telegram Bot API", "VK API", "OpenAI API", "IMAP", "PhpSpreadsheet", "Monolog", "Cron"] },
   ],
 };
 

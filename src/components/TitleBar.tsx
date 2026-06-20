@@ -7,9 +7,11 @@ const MENUS = ["File", "Edit", "Selection", "View", "Go", "Run", "Terminal", "He
 export function TitleBar() {
   const setPalette = useEditor((s) => s.setPalette);
   const toggleTerminal = useEditor((s) => s.toggleTerminal);
+  const setTour = useEditor((s) => s.setTour);
 
   const onMenu = (m: string) => {
     if (m === "Terminal") toggleTerminal();
+    else if (m === "Help") setTour(true);
     else if (m === "View" || m === "Go") setPalette(true);
   };
 
