@@ -10,7 +10,7 @@ const TAGS: Record<string, string> = {
   "about/skills.json": "Tech stack: React · TS · Go · Node · AI",
   "projects/wifi-analyzer.go": "Privacy-first Wi-Fi & network analyzer · Go",
   "projects/pc-health-monitor.go": "Realtime PC health monitor · Go agent",
-  "projects/repo-anti-rot.ts": "Git repo health scanner · 17 scanners",
+  "projects/repo-anti-rot.ts": "Git repo health scanner · 16 scanners",
   "projects/multi-agent-arena.ts": "An arena for AI agents · RAG + chains",
   "projects/vortan-crypto.tsx": "Crypto trading tools · Binance realtime",
   "projects/repo-visualizer.tsx": "Repo structure graphs + AI code analysis",

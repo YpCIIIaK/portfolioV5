@@ -214,17 +214,23 @@ const repoAntiRot: FileNode = {
   language: "TypeScript",
   blocks: [
     { t: "h1", text: "Repo Anti-Rot" },
-    { t: "p", text: "Платформа, которая автоматически оценивает «здоровье» git-репозитория и отслеживает его деградацию во времени. Один движок — три обёртки: CLI, GitHub Action и веб-дашборд на Next.js." },
+    { t: "p", text: "Монитор «здоровья» и деградации репозитория. Сканирует кодовую базу на тихо накапливающийся «rot» — утёкшие секреты, заброшенные и уязвимые зависимости, стейл-ветки, стареющие TODO, мёртвый и закомментированный код, отключённые тесты, бинарный bloat — ставит балл и грейд A–F и показывает всё в дашборде. Опциональный AI-проход добавляет короткий вердикт к каждой находке через OpenRouter." },
     {
       t: "metrics",
       items: [
-        { label: "Сканеры", value: "17 полиглот-сканеров" },
-        { label: "Тесты", value: "~237 unit-тестов (Vitest)" },
+        { label: "Сканеры", value: "16 независимых сканеров" },
+        { label: "Тесты", value: "46 тестовых файлов (Vitest)" },
         { label: "Оценка", value: "0–100 балл + грейд A–F" },
       ],
     },
-    { t: "h2", text: "Что проверяет" },
-    { t: "ul", items: ["Утёкшие секреты (с редактированием улик до отправки)", "Уязвимые/заброшенные зависимости через OSV / npm / PyPI", "Мёртвый код для JS/TS/Python/Go, TODO-долг, env-переменные", "Стейл-ветки, bus-factor, hygiene Dockerfile/README/CI"] },
+    { t: "callout", text: "pnpm-монорепо из 4 частей: общий движок (@repo-anti-rot/core), CLI, обёртка GitHub Action и Next.js-дашборд. Работает одинаково на macOS / Linux / Windows (все пути через path/os.tmpdir, shell-агностично)." },
+    { t: "h2", text: "Что проверяют 16 сканеров" },
+    { t: "ul", items: [
+      "Безопасность: committed secrets, leftover-debug, уязвимые зависимости (vulnerable-deps).",
+      "Зависимости: outdated-deps, dependency-funeral (заброшенные), lockfile-drift.",
+      "Мёртвый груз: dead-code, commented-code, todo-debt, repo-bloat (бинарный раздув).",
+      "Процесс и сообщество: stale-branch, bus-factor, project-hygiene, dockerfile, broken-doc-links, env-lifecycle.",
+    ] },
     { t: "h2", text: "Архитектура: один движок, три обёртки" },
     {
       t: "code",
@@ -254,9 +260,9 @@ export async function scan(ctx: RepoContext): Promise<Report> {
   return { score: clamp(score, 0, 100), grade: toGrade(score), results };
 }`,
     },
-    { t: "p", text: "В дашборде: портфель репозиториев с трендами, AI-обогащение находок через same-origin прокси к OpenRouter (ключ только в localStorage), command palette (⌘K), расписание автосканов, score-drop webhook, экспорт в Markdown/CSV/JSON." },
-    { t: "tech", items: ["TypeScript", "Next.js", "Node.js CLI", "GitHub Action", "SARIF", "Vitest", "OpenRouter"] },
-    { t: "links", items: [{ label: "Открыть на GitHub", href: GITHUB + "/Hephaestus" }] },
+    { t: "p", text: "В дашборде: портфель репозиториев с трендами, AI-обогащение находок через same-origin прокси к OpenRouter (ключ только в localStorage), command palette (⌘K), расписание автосканов, score-drop webhook, экспорт в Markdown/CSV/JSON. Роут /api/scan дёргает собранный CLI, чтобы клонировать и просканировать любой репозиторий." },
+    { t: "tech", items: ["TypeScript", "Next.js", "pnpm monorepo", "Node.js CLI", "GitHub Action", "OSV / npm / PyPI", "Vitest", "OpenRouter"] },
+    { t: "links", items: [{ label: "Открыть на GitHub", href: GITHUB + "/repo-janitor" }] },
   ],
 };
 
@@ -265,12 +271,23 @@ const multiAgent: FileNode = {
   name: "multi-agent-arena.ts",
   language: "TypeScript",
   blocks: [
-    { t: "h1", text: "Multi-Agent Arena" },
-    { t: "callout", text: "Текущий основной проект — в активной разработке." },
-    { t: "p", text: "«Арена» для взаимодействия разных ИИ-агентов: гибкая архитектура цепочек, визуальный конструктор сценариев без правок кода и глубокая аналитика использования ИИ." },
+    { t: "h1", text: "Hephaestus — Multi-Agent LLM Arena" },
+    { t: "callout", text: "Текущий основной проект — в активной разработке. Web-приложение: мульти-модельный чат, конфигурируемые DAG-пайплайны («Арена») и симуляция событий поверх OpenRouter + локальных моделей Ollama." },
     { t: "h2", text: "Что внутри" },
-    { t: "ul", items: ["Базовые агентские функции: RAG, контекст, thinking-подходы", "Многоуровневые агенты, собираемые в цепочки под тип задачи", "Визуальный конструктор цепочек (комбинируешь ИИ и скрипты в сложные сценарии)", "Аналитика: лог запросов, стоимость, ошибки, метрики эффективности агентов", "Режимы взаимодействия: дебаты, совместная работа, ответы по очереди", "Модуль симуляции политических/экономических событий с агентами в ролях"] },
-    { t: "tech", items: ["TypeScript", "Next.js", "OpenRouter API", "RAG", "react-xflow"] },
+    { t: "ul", items: [
+      "Мульти-модельный чат: один промпт уходит сразу в несколько моделей — сравниваешь ответы.",
+      "Arena-пайплайны: строишь направленный граф (DAG) из узлов-агентов и исполняешь его движком executor.",
+      "Спец-агенты с пресетами: classifier, analyst, researcher, synthesizer, summarizer (19 облачных + 5 Ollama-пресетов).",
+      "Симуляция событий: политика/экономика/военное/технологии с кросс-доменным анализом.",
+      "Ollama local: бесплатные локальные модели (Llama, Phi, Qwen) — 100% приватно, без затрат на API.",
+      "Оптимизация токенов: сжатие контекста, RAG, умное чтение файлов — до 80% экономии.",
+      "RAG-база знаний на BM25-поиске по индексированным файлам проекта (с включением соседних чанков).",
+      "AI-редактирование файлов прямо из чата/пайплайна, smart-fallback на резервные модели при таймауте.",
+      "Аналитика расхода: токены, оценка стоимости, графики Waterfall/Gantt.",
+      "Telegram-бот (текст, фото, документы, голос) и система переиспользуемых скиллов (SKILL.md).",
+    ] },
+    { t: "tech", items: ["TypeScript", "Next.js", "Zustand", "OpenRouter API", "Ollama", "BM25 RAG", "js-tiktoken", "Telegram Bot API"] },
+    { t: "links", items: [{ label: "Открыть на GitHub", href: GITHUB + "/Hephaestus" }] },
   ],
 };
 
@@ -309,8 +326,13 @@ const repoVis: FileNode = {
   language: "TypeScript React",
   blocks: [
     { t: "h1", text: "Repository Visualizer" },
-    { t: "p", text: "Приложение на Next.js для визуализации структуры репозитория в виде интерактивных графов и AI-анализа кода. Интеграция с GitHub API и OpenRouter." },
-    { t: "ul", items: ["Разные глубины анализа: overview / structure / deep", "Выбор моделей ИИ", "Генерация отчётов по архитектуре, стеку и качеству кода", "Интерактивный граф структуры (react-xflow)"] },
+    { t: "p", text: "Приложение на Next.js: берёт любой GitHub-репозиторий, рисует его структуру интерактивным графом и прогоняет AI-анализ кода. На вход — URL репо, на выход — наглядная карта + отчёт." },
+    { t: "ul", items: [
+      "Три глубины анализа: overview / structure / deep — от беглого обзора до разбора по файлам.",
+      "Любая модель OpenRouter настраивается через OPENROUTER_MODEL_ID (по умолчанию mistral-small).",
+      "GitHub API с опциональным токеном для повышенного лимита запросов.",
+      "Отчёты по архитектуре, стеку и качеству кода + интерактивный граф структуры (react-xflow).",
+    ] },
     { t: "tech", items: ["Next.js", "TypeScript", "GitHub API", "OpenRouter", "react-xflow"] },
     { t: "links", items: [{ label: "Открыть на GitHub", href: GITHUB + "/repo-in-tree-visual" }] },
   ],
