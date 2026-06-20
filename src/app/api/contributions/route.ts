@@ -1,0 +1,216 @@
+import { NextResponse } from "next/server";
+
+const GH_USER = "YpCIIIaK";
+const GITFLIC_API = "https://api.gitflic.ru";
+
+export const revalidate = 1800; // 30 min
+
+type DayMap = Record<string, number>;
+
+/** GitHub daily contributions via a public, token-less proxy. */
+async function githubDays(): Promise<{ days: DayMap; total: number } | null> {
+  try {
+    const res = await fetch(
+      `https://github-contributions-api.jogruber.de/v4/${GH_USER}?y=last`,
+      { next: { revalidate: 1800 } }
+    );
+    if (!res.ok) return null;
+    const data: { contributions: { date: string; count: number }[] } = await res.json();
+    const days: DayMap = {};
+    let total = 0;
+    for (const c of data.contributions ?? []) {
+      days[c.date] = c.count;
+      total += c.count;
+    }
+    return { days, total };
+  } catch {
+    return null;
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Any = any;
+
+const pickDate = (c: Any): string | undefined =>
+  c?.timestamp ?? c?.date ?? c?.createdDate ?? c?.committedDate ?? c?.commitDate ?? c?.authorDate ?? c?.created;
+
+const pickList = (res: Any, ...keys: string[]): Any[] => {
+  if (Array.isArray(res)) return res;
+  for (const k of keys) {
+    if (Array.isArray(res?._embedded?.[k])) return res._embedded[k];
+    if (Array.isArray(res?.[k])) return res[k];
+  }
+  // last resort: first array found in _embedded
+  const emb = res?._embedded;
+  if (emb) for (const v of Object.values(emb)) if (Array.isArray(v)) return v as Any[];
+  return [];
+};
+
+/** GitFlic daily commits — requires a personal token in GITFLIC_TOKEN. */
+async function gitflicDays(): Promise<{
+  days: DayMap;
+  total: number;
+  configured: boolean;
+  error?: string;
+  debug: Any;
+}> {
+  const token = process.env.GITFLIC_TOKEN;
+  const debug: Any = { steps: [] };
+  if (!token) return { days: {}, total: 0, configured: false, debug };
+
+  const headers = { Authorization: `token ${token}`, Accept: "application/json" };
+  const get = async (path: string) => {
+    const r = await fetch(`${GITFLIC_API}${path}`, { headers, next: { revalidate: 1800 } });
+    const status = r.status;
+    let json: Any = null;
+    try {
+      json = await r.json();
+    } catch {
+      /* non-json */
+    }
+    debug.steps.push({ path, status });
+    if (!r.ok) throw new Error(`GitFlic ${status} on ${path}`);
+    return json;
+  };
+
+  const truncate = (v: Any) => JSON.stringify(v ?? null).slice(0, 700);
+
+  try {
+    // owner alias (token owner) — GitFlic uses `username`
+    let me = process.env.GITFLIC_USER ?? "";
+    try {
+      const meRes = await get(`/user/me`);
+      me = (meRes?.username ?? meRes?.alias ?? meRes?.login ?? me).replace(/^@/, "");
+      debug.meKeys = meRes ? Object.keys(meRes) : null;
+      debug.me = me;
+    } catch (e) {
+      debug.meError = String(e);
+    }
+
+    // Gather candidate {owner, alias} projects from several sources.
+    const candidates: { owner: string; alias: string }[] = [];
+
+    const addFrom = (list: Any[], label: string) => {
+      debug[label] = {
+        count: list.length,
+        sampleKeys: list[0] ? Object.keys(list[0]) : null,
+        aliases: list.slice(0, 20).map((p: Any) => p?.alias ?? p?.name),
+      };
+      for (const p of list) {
+        const owner =
+          p?.owner?.username ?? p?.owner?.alias ?? p?.ownerAlias ?? p?.owner ?? me;
+        const alias = p?.alias ?? p?.name;
+        if (typeof owner === "string" && alias) candidates.push({ owner: owner.replace(/^@/, ""), alias });
+      }
+    };
+
+    // 1) projects I own
+    try {
+      const projRes = await get(`/project/my?size=50`);
+      debug.rawProjectMy = truncate(projRes);
+      addFrom(pickList(projRes, "projectList", "projects"), "projectMy");
+    } catch (e) {
+      debug.projectMyError = String(e);
+    }
+
+    // 2) public projects of my user
+    if (me) {
+      try {
+        const uRes = await get(`/user/${me}/project?size=50`);
+        debug.rawUserProject = truncate(uRes);
+        addFrom(pickList(uRes, "projectList", "projects"), "userProject");
+      } catch (e) {
+        debug.userProjectError = String(e);
+      }
+    }
+
+    // 3) explicit work/org projects from env: "owner1/repo1,owner2/repo2"
+    const explicit = (process.env.GITFLIC_PROJECTS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => {
+        const [owner, alias] = s.split("/");
+        return { owner: (owner ?? "").replace(/^@/, ""), alias: alias ?? "" };
+      })
+      .filter((p) => p.owner && p.alias);
+    candidates.push(...explicit);
+    debug.explicitProjects = explicit;
+
+    // de-dup
+    const seen = new Set<string>();
+    const uniq = candidates.filter((c) => {
+      const k = `${c.owner}/${c.alias}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    debug.totalCandidates = uniq.length;
+
+    const yearAgo = Date.now() - 371 * 86400000;
+    const days: DayMap = {};
+    let total = 0;
+    let scannedCommits = 0;
+
+    for (const { owner, alias } of uniq.slice(0, 15)) {
+      try {
+        const cRes = await get(`/commit/${owner}/${alias}?size=100`);
+        const commits = pickList(cRes, "commitList", "commits", "commitDtoList");
+        if (!debug.commitSample && commits[0]) {
+          debug.commitSampleKeys = Object.keys(commits[0]);
+          debug.commitSample = commits[0];
+          debug.commitFor = `${owner}/${alias}`;
+        }
+        for (const c of commits) {
+          scannedCommits += 1;
+          const iso = pickDate(c);
+          if (!iso) continue;
+          const t = +new Date(iso);
+          if (isNaN(t) || t < yearAgo) continue;
+          const key = new Date(iso).toISOString().slice(0, 10);
+          days[key] = (days[key] ?? 0) + 1;
+          total += 1;
+        }
+      } catch (e) {
+        debug.steps.push({ commitError: String(e) });
+      }
+    }
+    debug.scannedCommits = scannedCommits;
+    debug.countedTotal = total;
+    return { days, total, configured: true, debug };
+  } catch (err) {
+    return {
+      days: {},
+      total: 0,
+      configured: true,
+      error: err instanceof Error ? err.message : "GitFlic error",
+      debug,
+    };
+  }
+}
+
+export async function GET(req: Request) {
+  const debugMode = new URL(req.url).searchParams.get("debug") === "1";
+  const [gh, gf] = await Promise.all([githubDays(), gitflicDays()]);
+
+  // build a continuous day list for the last 371 days
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days: { date: string; gh: number; gf: number; total: number }[] = [];
+  for (let i = 370; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const ghc = gh?.days[key] ?? 0;
+    const gfc = gf.days[key] ?? 0;
+    days.push({ date: key, gh: ghc, gf: gfc, total: ghc + gfc });
+  }
+
+  return NextResponse.json({
+    days,
+    github: { total: gh?.total ?? 0, available: !!gh },
+    gitflic: { total: gf.total, configured: gf.configured, error: gf.error ?? null },
+    combinedTotal: (gh?.total ?? 0) + gf.total,
+    ...(debugMode ? { gitflicDebug: gf.debug } : {}),
+  });
+}

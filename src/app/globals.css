@@ -1,26 +1,202 @@
 @import "tailwindcss";
 
+/* ----------  VSCode Dark+ theme tokens  ---------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --vsc-bg: #1e1e1e;            /* editor background */
+  --vsc-sidebar: #252526;       /* explorer / panels */
+  --vsc-activitybar: #333333;   /* far-left icon rail */
+  --vsc-titlebar: #3c3c3c;      /* top window bar */
+  --vsc-statusbar: #007acc;     /* iconic blue bottom bar */
+  --vsc-tab-active: #1e1e1e;
+  --vsc-tab-inactive: #2d2d2d;
+  --vsc-tabbar: #252526;
+  --vsc-border: #2b2b2b;
+  --vsc-line: #333333;
+  --vsc-text: #cccccc;
+  --vsc-text-muted: #858585;
+  --vsc-text-bright: #ffffff;
+  --vsc-accent: #007acc;
+  --vsc-accent-soft: #0e639c;
+  --vsc-hover: #2a2d2e;
+  --vsc-active-row: #094771;
+  --vsc-selection: #264f78;
+  --vsc-green: #4ec9b0;
+  --vsc-yellow: #dcdcaa;
+  --vsc-blue: #569cd6;
+  --vsc-light-blue: #9cdcfe;
+  --vsc-orange: #ce9178;
+  --vsc-purple: #c586c0;
+  --vsc-comment: #6a9955;
+  --vsc-number: #b5cea8;
+
+  --background: var(--vsc-bg);
+  --foreground: var(--vsc-text);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-vsc-bg: var(--vsc-bg);
+  --color-vsc-sidebar: var(--vsc-sidebar);
+  --color-vsc-activitybar: var(--vsc-activitybar);
+  --color-vsc-titlebar: var(--vsc-titlebar);
+  --color-vsc-statusbar: var(--vsc-statusbar);
+  --color-vsc-tab-active: var(--vsc-tab-active);
+  --color-vsc-tab-inactive: var(--vsc-tab-inactive);
+  --color-vsc-tabbar: var(--vsc-tabbar);
+  --color-vsc-border: var(--vsc-border);
+  --color-vsc-line: var(--vsc-line);
+  --color-vsc-text: var(--vsc-text);
+  --color-vsc-muted: var(--vsc-text-muted);
+  --color-vsc-bright: var(--vsc-text-bright);
+  --color-vsc-accent: var(--vsc-accent);
+  --color-vsc-accent-soft: var(--vsc-accent-soft);
+  --color-vsc-hover: var(--vsc-hover);
+  --color-vsc-active-row: var(--vsc-active-row);
+  --color-vsc-selection: var(--vsc-selection);
+  --color-vsc-green: var(--vsc-green);
+  --color-vsc-yellow: var(--vsc-yellow);
+  --color-vsc-blue: var(--vsc-blue);
+  --color-vsc-light-blue: var(--vsc-light-blue);
+  --color-vsc-orange: var(--vsc-orange);
+  --color-vsc-purple: var(--vsc-purple);
+  --color-vsc-comment: var(--vsc-comment);
+  --color-vsc-number: var(--vsc-number);
+  --font-mono: var(--font-geist-mono), "Cascadia Code", Consolas, monospace;
+  --font-sans: var(--font-geist-sans), "Segoe UI", system-ui, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ----------  Light+  ---------- */
+:root[data-theme="light"] {
+  --vsc-bg: #ffffff;
+  --vsc-sidebar: #f3f3f3;
+  --vsc-activitybar: #2c2c2c;
+  --vsc-titlebar: #dddddd;
+  --vsc-statusbar: #007acc;
+  --vsc-tab-active: #ffffff;
+  --vsc-tab-inactive: #ececec;
+  --vsc-tabbar: #f3f3f3;
+  --vsc-border: #e2e2e2;
+  --vsc-line: #e5e5e5;
+  --vsc-text: #1f1f1f;
+  --vsc-text-muted: #6a6a6a;
+  --vsc-text-bright: #000000;
+  --vsc-accent: #007acc;
+  --vsc-hover: #e8e8e8;
+  --vsc-active-row: #cfe3fb;
+  --vsc-green: #0a7d54;
+  --vsc-yellow: #b58900;
+  --vsc-blue: #0000ff;
+  --vsc-light-blue: #0451a5;
+  --vsc-orange: #a31515;
+  --vsc-comment: #008000;
+}
+:root[data-theme="light"] body {
+  --foreground: var(--vsc-text);
+}
+
+/* ----------  Monokai  ---------- */
+:root[data-theme="monokai"] {
+  --vsc-bg: #272822;
+  --vsc-sidebar: #1e1f1c;
+  --vsc-activitybar: #1e1f1c;
+  --vsc-titlebar: #1e1f1c;
+  --vsc-statusbar: #414339;
+  --vsc-tab-active: #272822;
+  --vsc-tab-inactive: #1e1f1c;
+  --vsc-tabbar: #1e1f1c;
+  --vsc-border: #1e1f1c;
+  --vsc-line: #3e3d32;
+  --vsc-text: #f8f8f2;
+  --vsc-text-muted: #75715e;
+  --vsc-text-bright: #ffffff;
+  --vsc-accent: #66d9ef;
+  --vsc-hover: #3e3d32;
+  --vsc-active-row: #49483e;
+  --vsc-green: #a6e22e;
+  --vsc-yellow: #e6db74;
+  --vsc-blue: #66d9ef;
+  --vsc-light-blue: #66d9ef;
+  --vsc-orange: #fd971f;
+  --vsc-comment: #75715e;
+}
+
+/* ----------  Dracula  ---------- */
+:root[data-theme="dracula"] {
+  --vsc-bg: #282a36;
+  --vsc-sidebar: #21222c;
+  --vsc-activitybar: #21222c;
+  --vsc-titlebar: #191a21;
+  --vsc-statusbar: #bd93f9;
+  --vsc-tab-active: #282a36;
+  --vsc-tab-inactive: #21222c;
+  --vsc-tabbar: #21222c;
+  --vsc-border: #191a21;
+  --vsc-line: #44475a;
+  --vsc-text: #f8f8f2;
+  --vsc-text-muted: #6272a4;
+  --vsc-text-bright: #ffffff;
+  --vsc-accent: #bd93f9;
+  --vsc-hover: #343746;
+  --vsc-active-row: #44475a;
+  --vsc-green: #50fa7b;
+  --vsc-yellow: #f1fa8c;
+  --vsc-blue: #8be9fd;
+  --vsc-light-blue: #8be9fd;
+  --vsc-orange: #ffb86c;
+  --vsc-comment: #6272a4;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--vsc-bg);
+  color: var(--vsc-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* VSCode-style thin scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #424242;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* blinking terminal cursor */
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+}
+
+.no-select {
+  user-select: none;
 }
