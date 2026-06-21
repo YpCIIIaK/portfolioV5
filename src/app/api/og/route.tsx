@@ -16,7 +16,7 @@ const TAGS: Record<string, string> = {
   "projects/repo-visualizer.tsx": "Repo structure graphs + AI code analysis",
   "experience/hr-search-platform.md": "HR search platform · React + NestJS + OpenSearch",
   "experience/telegram-bots.md": "Telegram bots · PHP / Python automation",
-  "experience/browser-extensions.md": "Browser extensions for traders · MV3",
+  "experience/browser-extensions.md": "MV3 trader extensions · local Binance analytics, no keys",
   "live/github.stats.tsx": "Live GitHub stats — fetched in real time",
   "live/contributions.tsx": "Live contributions heatmap",
   "live/market.live.tsx": "Live crypto market · Binance WebSocket",

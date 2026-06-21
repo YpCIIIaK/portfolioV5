@@ -485,9 +485,68 @@ const extensions: FileNode = {
   language: "Markdown",
   blocks: [
     { t: "h1", text: "Браузерные расширения для торговых платформ" },
-    { t: "p", text: "Chrome-расширения (Manifest V3) для TraderNet (Freedom Bank) и Binance: улучшение интерфейса и продуктивности трейдеров." },
+    { t: "p", text: "Chrome-расширения (Manifest V3) для TraderNet (Freedom Bank) и Binance: улучшение интерфейса, продуктивности и аналитики прямо поверх сайта биржи." },
     { t: "ul", items: ["Улучшения UI, дополнительные панели и метрики", "Автоматизация действий, мониторинг рынка, уведомления", "Интеграция с API торговых платформ", "Набор утилит: парсер данных, детектор CSS, «копировалка» интерфейсных блоков"] },
-    { t: "tech", items: ["Chrome Extension API (MV3)", "Service Workers", "Content Scripts", "TypeScript"] },
+
+    { t: "h2", text: "Кейс: Vortan Crypto Analytics (Binance overlay)" },
+    { t: "callout", text: "MV3-расширение, которое считает Master Trend, полосы Боллинджера и риск-профиль портфеля 100% локально в браузере — без API-ключей биржи и без вынесения торговых данных наружу." },
+    { t: "p", text: "Расширение рисует поверх binance.com свой overlay с аналитикой, а лёгкий backend (Next.js + Supabase) нужен только для аккаунтов и опциональной синхронизации портфеля между устройствами." },
+
+    { t: "h3", text: "Passive-first сбор данных (без ключей биржи)" },
+    { t: "p", text: "Вместо API-ключей расширение пассивно наблюдает то, что страница Binance уже грузит сама: page-hook патчит fetch/XHR/WebSocket в контексте страницы и через postMessage отдаёт нужные ответы (klines, баланс, активы, PnL, открытые ордера) в content-script. Ключи и пароли биржи не нужны и не собираются." },
+    {
+      t: "code",
+      lang: "typescript",
+      collapsible: true,
+      caption: "page-hook: перехватываем ответы Binance, которые страница и так запрашивает, и пробрасываем их в расширение.",
+      code: `const origFetch = window.fetch;
+window.fetch = async function (...args) {
+  const res = await origFetch.apply(this, args);
+  const url = String(args[0]);
+  if (/\\/api\\/v3\\/klines/.test(url)) {
+    // не блокируем страницу: читаем клон ответа
+    res.clone().json()
+      .then((data) => window.postMessage({ type: "BINANCE_NET_PAYLOAD", url, data }, "*"))
+      .catch(() => {});
+  }
+  return res; // оригинальный ответ уходит на сайт без изменений
+};`,
+    },
+
+    { t: "h3", text: "Аналитика считается локально" },
+    { t: "ul", items: [
+      "Master Trend: STL-декомпозиция дневного VWAP (тренд / сезонность / шум) с фолбэком на центрированное скользящее среднее; направление, сила тренда и «рыночный шум» — линейной регрессией по тренд-компоненте.",
+      "Полосы Боллинджера (20, 2σ) и band-width как мера волатильности.",
+      "Риск-профиль портфеля: волатильность 30д, макс. просадка, коэффициент Шарпа, VaR 95% — по историческим ценам (CoinGecko как фолбэк-источник).",
+      "Тяжёлые расчёты вынесены в Web Worker, прогресс — колбэками, чтобы UI не лагал на длинных историях.",
+    ] },
+    {
+      t: "code",
+      lang: "typescript",
+      collapsible: true,
+      caption: "Полосы Боллинджера локально — никакого бэкенда, только массив цен.",
+      code: `for (let i = period - 1; i < series.length; i++) {
+  const w = series.slice(i - period + 1, i + 1);
+  const m = mean(w);
+  const s = stddev(w);
+  out[i] = {
+    upper: m + mult * s,
+    lower: m - mult * s,
+    rolling_mean: m,
+    band_width_pct: ((2 * mult * s) / (m || 1)) * 100,
+  };
+}`,
+    },
+
+    { t: "h3", text: "Backend и хранение" },
+    { t: "ul", items: [
+      "Next.js API + Supabase (PostgreSQL): аккаунты и активы пользователей под Row Level Security — каждый видит только свои данные.",
+      "Синхронизация портфеля не чаще раза в час, идемпотентный upsert по уникальному индексу (user_id + symbol + exchange + asset_type) — без дублей.",
+      "В браузере: chrome.storage.local для сессии и флагов, IndexedDB как кэш портфеля на 24 часа.",
+      "Auth-bridge: отдельный content-script на лендинге логина прокидывает результат входа в расширение через postMessage → chrome.runtime.",
+    ] },
+
+    { t: "tech", items: ["Chrome Extension API (MV3)", "Service Workers", "Content Scripts", "TypeScript", "Vite", "Web Workers", "IndexedDB", "Next.js", "Supabase / PostgreSQL", "Lightweight Charts"] },
   ],
 };
 

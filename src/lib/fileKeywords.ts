@@ -38,7 +38,9 @@ const KEYWORDS: Record<string, string[]> = {
   ],
   "experience/browser-extensions.md": [
     "расширен", "extension", "chrome", "хром", "браузер", "browser", "tradernet",
-    "manifest", "mv3",
+    "manifest", "mv3", "vortan", "вортан", "binance", "бинанс", "overlay", "оверлей",
+    "боллиндж", "bollinger", "тренд", "trend", "риск", "risk", "supabase", "supabase",
+    "контент-скрипт", "content script", "pagehook", "перехват",
   ],
   "live/github.stats.tsx": [
     "github", "гитхаб", "звезд", "star", "статист", "репозитор", "профил",
