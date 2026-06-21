@@ -243,16 +243,24 @@ function botsSeedDays(): { days: DayMap; total: number } {
     total += count;
   }
 
-  // January 2026: exactly 18 active days, scattered across the month — some
-  // heavy, some a single commit. Rank all 31 days by a stable score and take
-  // the top 18 so the spread looks organic rather than evenly spaced.
-  const janDays = Array.from({ length: 31 }, (_, i) => {
-    const key = `2026-01-${String(i + 1).padStart(2, "0")}`;
-    return { key, score: rand("jan" + key) };
-  })
+  // January 2026: ~18 active days. Front-load the start of the month with an
+  // every-other-day rhythm alternating 1 and 2 commits (Jan 1,3,5,9,11…), then
+  // scatter the rest across the remainder so the whole month looks organic.
+  const jan = (day: number) => `2026-01-${String(day).padStart(2, "0")}`;
+  const earlyDays = [1, 3, 5, 7, 9, 11, 13];
+  earlyDays.forEach((day, i) => {
+    const count = i % 2 === 0 ? 1 : 2; // 1, 2, 1, 2…
+    days[jan(day)] = count;
+    total += count;
+  });
+
+  const earlySet = new Set(earlyDays);
+  const rest = Array.from({ length: 31 }, (_, i) => i + 1)
+    .filter((day) => day > 14 && !earlySet.has(day))
+    .map((day) => ({ key: jan(day), score: rand("jan" + jan(day)) }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, 18);
-  for (const { key } of janDays) {
+    .slice(0, 11);
+  for (const { key } of rest) {
     const count = countFor(key);
     days[key] = count;
     total += count;
