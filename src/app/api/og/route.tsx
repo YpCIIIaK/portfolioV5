@@ -13,6 +13,7 @@ const TAGS: Record<string, string> = {
   "projects/repo-anti-rot.ts": "Git repo health scanner · 16 scanners",
   "projects/multi-agent-arena.ts": "An arena for AI agents · RAG + chains",
   "projects/vortan-crypto.tsx": "Crypto trading tools · Binance realtime",
+  "projects/chrome-extensions-suite.tsx": "Chrome MV3 suite · privacy, RAM, UI skins",
   "projects/repo-visualizer.tsx": "Repo structure graphs + AI code analysis",
   "experience/hr-search-platform.md": "HR search platform · React + NestJS + OpenSearch",
   "experience/telegram-bots.md": "Telegram bots · PHP / Python automation",

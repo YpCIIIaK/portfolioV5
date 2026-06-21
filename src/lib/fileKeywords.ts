@@ -26,6 +26,13 @@ const KEYWORDS: Record<string, string[]> = {
     "стартап", "startup", "бэктест", "стратег", "realtime", "websocket", "сокет",
     "реалтайм", "rxjs", "акселератор", "google",
   ],
+  "projects/chrome-extensions-suite.tsx": [
+    "расширен", "extension", "chrome", "хром", "mv3", "сюита", "suite", "монорепо",
+    "privacy", "приватн", "фингерпринт", "fingerprint", "трекер", "tracker",
+    "tabresurrect", "вкладк", "tab", "память", "ram", "discard", "chat skins",
+    "скин", "skins", "кастомизац", "shadow dom", "селектор", "selector",
+    "declarativenetrequest", "telegram web", "whatsapp",
+  ],
   "projects/repo-visualizer.tsx": [
     "визуализ", "visual", "граф", "graph", "структур", "structure", "github api",
   ],

@@ -320,6 +320,70 @@ const vortan: FileNode = {
   ],
 };
 
+const extSuite: FileNode = {
+  id: "projects/chrome-extensions-suite.tsx",
+  name: "chrome-extensions-suite.tsx",
+  language: "TypeScript React",
+  blocks: [
+    { t: "h1", text: "Сюита Chrome-расширений (MV3)" },
+    { t: "callout", text: "Монорепо на npm workspaces (apps/*): общий стек, единый build-паттерн (Vite multi-IIFE), тёмная UI-тема и подход к безопасности. Три самостоятельных продукта — приватность, память, кастомизация UI." },
+    { t: "p", text: "TypeScript strict, чистый MV3 без сети, remote-code и eval. Всё работает 100% локально. Каждый продукт — отдельное приложение, которое можно вынести и опубликовать независимо (subtree split)." },
+
+    { t: "h2", text: "1. Privacy Guard — антитрекинг + анти-фингерпринт" },
+    { t: "p", text: "Считает «Privacy Score» страницы, блокирует трекеры и детектит попытки фингерпринтинга — canvas, WebGL, audio, navigator, screen, fonts. Ведёт историю и статистику, мастер-выключатель и пер-сайт allowlist." },
+    { t: "ul", items: [
+      "Content-скрипты в двух мирах: ISOLATED (мост/настройки) и MAIN (перехват fingerprint-API в контексте страницы).",
+      "Блокировка через declarativeNetRequest + сигналы webRequest, per-site счётчики.",
+      "Скоринговая модель с разбивкой по факторам и борьбой с false-positive.",
+      "DOM-XSS защита: экранирование данных страницы перед innerHTML в привилегированном UI.",
+    ] },
+
+    { t: "h2", text: "2. TabResurrect — менеджер памяти вкладок" },
+    { t: "p", text: "Усыпляет простаивающие вкладки (tabs.discard), освобождая RAM, и мгновенно восстанавливает их при возврате. Живая метрика сэкономленной памяти и пер-таб управление." },
+    { t: "ul", items: [
+      "chrome.tabs.discard + chrome.alarms (фоновый sweep), storage.session vs local.",
+      "Самокалибрующаяся метрика: семплит system.memory до/после усыпления, отбрасывает выбросы (30–1500 МБ), после ≥3 замеров переходит с оценки на измеренное среднее для конкретной машины.",
+      "Слоистая защита от потери данных: активная вкладка / введённый текст (formwatch content-script) / POST-навигация (webRequest) / аудио / pinned / ручной allowlist.",
+    ] },
+    { t: "links", items: [{ label: "Открыть на GitHub", href: GITHUB + "/tabs-ram-optimise" }] },
+
+    { t: "h2", text: "3. Chat Skins — визуальный редактор UI веб-приложений" },
+    { t: "p", text: "Кастомизация Telegram Web / WhatsApp Web (фон чата, акцент, цвета пузырей, размеры) плюс рескин любого сайта через point-and-click инспектор." },
+    { t: "ul", items: [
+      "Переопределение CSS-переменных приложений (устойчиво к ребрендингу хеш-классов) + точечные селекторы.",
+      "Инспектор элементов в Shadow DOM + constructable stylesheets (adoptedStyleSheets / replaceSync) — обход строгого CSP (напр. YouTube).",
+      "Алгоритм гарантированно уникального селектора: readable-путь → проверка querySelectorAll → fallback на :nth-child.",
+      "Мультивыбор по Ctrl/⌘ → групповой селектор; live-применение через storage.onChanged; фоны как data-URL (unlimitedStorage); миграция формата хранилища.",
+    ] },
+    {
+      t: "code",
+      lang: "typescript",
+      collapsible: true,
+      caption: "Идея уникального селектора: берём читаемый путь, и если он не однозначен — добавляем :nth-child.",
+      code: `function uniqueSelector(el: Element): string {
+  const readable = buildReadablePath(el); // теги/классы/data-*
+  if (document.querySelectorAll(readable).length === 1) return readable;
+
+  // не уникален → уточняем позицией среди соседей
+  const parent = el.parentElement;
+  if (!parent) return readable;
+  const idx = [...parent.children].indexOf(el) + 1;
+  return \`\${uniqueSelector(parent)} > :nth-child(\${idx})\`;
+}`,
+    },
+
+    { t: "h2", text: "Сквозные инженерные темы" },
+    { t: "ul", items: [
+      "Chrome MV3 целиком: service worker, content-scripts (оба мира), DNR/webRequest, alarms, storage (local/session), system.memory, action popup, options page.",
+      "Безопасность: изоляция миров, отсутствие сети/remote-code/eval, экранирование DOM-XSS, CSP-совместимый инжект.",
+      "Инфраструктура: TypeScript strict, монорепо на workspaces, кастомный Vite-оркестратор (по сборке на entry), subtree split для выноса продукта.",
+      "UX-инжиниринг: живой предпросмотр без перезагрузки, самокалибрующиеся метрики, отказоустойчивость к динамическим SPA.",
+    ] },
+
+    { t: "tech", items: ["TypeScript", "Chrome MV3", "Vite", "declarativeNetRequest", "Content Scripts (ISOLATED/MAIN)", "Shadow DOM", "adoptedStyleSheets", "npm workspaces"] },
+  ],
+};
+
 const repoVis: FileNode = {
   id: "projects/repo-visualizer.tsx",
   name: "repo-visualizer.tsx",
@@ -638,7 +702,7 @@ export const tree: FolderNode = {
     {
       id: "projects",
       name: "projects",
-      children: [wifi, pcHealth, repoAntiRot, multiAgent, vortan, repoVis],
+      children: [wifi, pcHealth, repoAntiRot, multiAgent, vortan, extSuite, repoVis],
     } as FolderNode,
     {
       id: "experience",
