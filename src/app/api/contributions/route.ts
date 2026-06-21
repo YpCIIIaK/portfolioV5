@@ -210,9 +210,22 @@ function botsSeedDays(): { days: DayMap; total: number } {
     return (h >>> 0) / 4294967296;
   };
 
+  // Commit count biased low — mostly 1-2, occasionally a spike. Avoids the
+  // even top-to-bottom palette that makes seeded data look hand-painted.
+  const countFor = (key: string): number => {
+    const q = rand("c" + key);
+    if (q > 0.95) return 4 + Math.floor(rand("x" + key) * 3); // rare 4-6
+    if (q > 0.82) return 3;
+    if (q > 0.55) return 2;
+    return 1;
+  };
+
   const end = new Date("2026-03-31");
   for (let d = new Date("2025-12-01"); d <= end; d.setDate(d.getDate() + 1)) {
     const key = d.toISOString().slice(0, 10);
+    // January gets its own scatter below — keep the other months as they are.
+    if (key.startsWith("2026-01")) continue;
+
     const dow = d.getDay();
     const isWeekend = dow === 0 || dow === 6;
 
@@ -225,17 +238,26 @@ function botsSeedDays(): { days: DayMap; total: number } {
     const pActive = (isWeekend ? 0.1 : 0.42) * (0.55 + weekIntensity);
     if (rand(key) > pActive) continue;
 
-    // Commit count biased low — mostly 1-2, occasionally a spike. Avoids the
-    // even top-to-bottom palette that makes seeded data look hand-painted.
-    const q = rand("c" + key);
-    let count = 1;
-    if (q > 0.55) count = 2;
-    if (q > 0.82) count = 3;
-    if (q > 0.95) count = 4 + Math.floor(rand("x" + key) * 3); // rare 4-6
-
+    const count = countFor(key);
     days[key] = count;
     total += count;
   }
+
+  // January 2026: exactly 18 active days, scattered across the month — some
+  // heavy, some a single commit. Rank all 31 days by a stable score and take
+  // the top 18 so the spread looks organic rather than evenly spaced.
+  const janDays = Array.from({ length: 31 }, (_, i) => {
+    const key = `2026-01-${String(i + 1).padStart(2, "0")}`;
+    return { key, score: rand("jan" + key) };
+  })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 18);
+  for (const { key } of janDays) {
+    const count = countFor(key);
+    days[key] = count;
+    total += count;
+  }
+
   return { days, total };
 }
 
