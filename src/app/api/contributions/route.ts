@@ -199,16 +199,40 @@ async function gitflicDays(): Promise<{
 function botsSeedDays(): { days: DayMap; total: number } {
   const days: DayMap = {};
   let total = 0;
+
+  // Stable 0..1 hash so the heatmap doesn't flicker between requests.
+  const rand = (s: string): number => {
+    let h = 2166136261;
+    for (const ch of s) {
+      h ^= ch.charCodeAt(0);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0) / 4294967296;
+  };
+
   const end = new Date("2026-03-31");
   for (let d = new Date("2025-12-01"); d <= end; d.setDate(d.getDate() + 1)) {
     const key = d.toISOString().slice(0, 10);
     const dow = d.getDay();
-    let h = 0;
-    for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    const r = h % 100;
-    const active = dow === 0 || dow === 6 ? r < 18 : r < 65; // quiet weekends
-    if (!active) continue;
-    const count = 1 + (h % 4); // 1..4 commits
+    const isWeekend = dow === 0 || dow === 6;
+
+    // Per-week rhythm: real work comes in bursts — some weeks busy, some idle.
+    const weekKey = "wk" + Math.floor(+d / (7 * 86400000));
+    const weekIntensity = rand(weekKey); // 0..1
+    if (weekIntensity < 0.32) continue; // ~a third of weeks are quiet
+
+    // Daily chance, scaled by how busy that week is; weekends much rarer.
+    const pActive = (isWeekend ? 0.1 : 0.42) * (0.55 + weekIntensity);
+    if (rand(key) > pActive) continue;
+
+    // Commit count biased low — mostly 1-2, occasionally a spike. Avoids the
+    // even top-to-bottom palette that makes seeded data look hand-painted.
+    const q = rand("c" + key);
+    let count = 1;
+    if (q > 0.55) count = 2;
+    if (q > 0.82) count = 3;
+    if (q > 0.95) count = 4 + Math.floor(rand("x" + key) * 3); // rare 4-6
+
     days[key] = count;
     total += count;
   }

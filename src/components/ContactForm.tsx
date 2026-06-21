@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Send, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Send, Loader2, CheckCircle2, AlertCircle, Mail, MessageCircle } from "lucide-react";
 
 type Status = "idle" | "sending" | "ok" | "error";
+type Channel = "email" | "telegram";
 
 export function ContactForm() {
-  const [form, setForm] = useState({ name: "", email: "", message: "" });
+  const [form, setForm] = useState({ name: "", channel: "email" as Channel, contact: "", message: "" });
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
 
@@ -23,12 +24,14 @@ export function ContactForm() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Ошибка отправки");
       setStatus("ok");
-      setForm({ name: "", email: "", message: "" });
+      setForm({ name: "", channel: form.channel, contact: "", message: "" });
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Ошибка");
     }
   };
+
+  const isTg = form.channel === "telegram";
 
   return (
     <form onSubmit={submit} className="mt-4 space-y-3">
@@ -39,13 +42,39 @@ export function ContactForm() {
           onChange={(v) => setForm({ ...form, name: v })}
           placeholder="Ваше имя"
         />
-        <Field
-          label="email"
-          type="email"
-          value={form.email}
-          onChange={(v) => setForm({ ...form, email: v })}
-          placeholder="you@example.com"
-        />
+        <div>
+          <label className="mb-1 block font-mono text-[11px] text-vsc-muted">
+            {isTg ? "telegram" : "email"}
+          </label>
+          <input
+            type={isTg ? "text" : "email"}
+            value={form.contact}
+            onChange={(e) => setForm({ ...form, contact: e.target.value })}
+            placeholder={isTg ? "@username" : "you@example.com"}
+            className="w-full rounded border border-vsc-line bg-[#1e1e1e] px-3 py-2 text-[13px] text-vsc-text outline-none focus:border-vsc-accent"
+          />
+        </div>
+      </div>
+
+      {/* предпочтительный способ связи */}
+      <div>
+        <label className="mb-1 block font-mono text-[11px] text-vsc-muted">
+          как удобнее связаться
+        </label>
+        <div className="inline-flex overflow-hidden rounded border border-vsc-line">
+          <ChannelTab
+            active={!isTg}
+            onClick={() => setForm({ ...form, channel: "email", contact: "" })}
+            icon={<Mail size={13} />}
+            label="Email"
+          />
+          <ChannelTab
+            active={isTg}
+            onClick={() => setForm({ ...form, channel: "telegram", contact: "" })}
+            icon={<MessageCircle size={13} />}
+            label="Telegram"
+          />
+        </div>
       </div>
       <div>
         <label className="mb-1 block font-mono text-[11px] text-vsc-muted">
@@ -86,6 +115,31 @@ export function ContactForm() {
         )}
       </div>
     </form>
+  );
+}
+
+function ChannelTab({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] transition ${
+        active ? "bg-vsc-accent text-white" : "text-vsc-muted hover:bg-white/5"
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 
