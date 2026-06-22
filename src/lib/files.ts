@@ -25,9 +25,10 @@ const readme: FileNode = {
         "Backend: Go (агенты сбора метрик), Node.js, PHP/Symfony, Python",
         "Realtime: WebSocket с авто-реконнектом, мультиплексирование потоков",
         "AI: интеграция LLM через OpenRouter / Claude API, RAG, мультиагентные системы",
+        "Auth & данные: GitHub OAuth, сессии на подписанных cookie, Supabase/Postgres",
       ],
     },
-    { t: "tech", items: ["TypeScript", "React", "Next.js", "Go", "Node.js", "Angular", "PHP/Symfony", "Python", "Docker"] },
+    { t: "tech", items: ["TypeScript", "React", "Next.js", "Go", "Node.js", "Angular", "PHP/Symfony", "Python", "Supabase", "OAuth", "Docker"] },
     {
       t: "links",
       items: [
@@ -402,6 +403,57 @@ const repoVis: FileNode = {
   ],
 };
 
+const personalWorkspace: FileNode = {
+  id: "projects/personal-workspace.tsx",
+  name: "personal-workspace.tsx",
+  language: "TypeScript React",
+  blocks: [
+    { t: "h1", text: "Личный кабинет с GitHub-аутентификацией" },
+    { t: "callout", text: "Этот самый сайт. Открой панель Extensions слева (иконка с кубиками) — там вход через GitHub, заметки, календарь и задачи. Гостям всё доступно в демо-режиме (read-only), владельцу — полный CRUD." },
+    { t: "p", text: "Приватный дашборд, встроенный прямо в IDE-метафору портфолио. Своя реализация OAuth-входа через GitHub (без NextAuth), разграничение прав owner/guest и хранение данных в Supabase. Цель — показать auth, работу с сессиями/токенами и аккуратное разделение доступа на реальной фиче, а не на туториале." },
+
+    { t: "h2", text: "Аутентификация без библиотек" },
+    { t: "ul", items: [
+      "GitHub OAuth вручную: authorize → callback → обмен code на access token → запрос профиля.",
+      "Защита от CSRF: одноразовый state в HttpOnly-cookie, сверка на колбэке.",
+      "Сессия — подписанный HMAC-SHA256 токен (Web Crypto) в HttpOnly+Secure+SameSite cookie. Тело cookie не доверяем без проверки подписи.",
+      "Владелец определяется сравнением GitHub id с OWNER_GITHUB_ID — любой другой валидный вход остаётся гостем.",
+    ] },
+    {
+      t: "code",
+      lang: "typescript",
+      collapsible: true,
+      caption: "Подпись и проверка сессии на Web Crypto — формат <payload>.<signature>, без внешних зависимостей.",
+      code: `export async function signSession(s: Session): Promise<string> {
+  const payload = b64url(new TextEncoder().encode(JSON.stringify(s)));
+  const key = await hmacKey(); // importKey(AUTH_SECRET, HMAC-SHA256)
+  const sig = await crypto.subtle.sign("HMAC", key, enc(payload));
+  return \`\${payload}.\${b64url(new Uint8Array(sig))}\`;
+}
+
+export async function verifySession(token?: string): Promise<Session | null> {
+  const [payload, sig] = (token ?? "").split(".");
+  const ok = await crypto.subtle.verify("HMAC", await hmacKey(), dec(sig), enc(payload));
+  if (!ok) return null;                       // подделанная/битая cookie
+  const s = JSON.parse(decode(payload)) as Session;
+  return s.exp * 1000 < Date.now() ? null : s; // протухшая сессия
+}`,
+    },
+
+    { t: "h2", text: "Данные и разграничение доступа" },
+    { t: "ul", items: [
+      "Supabase (PostgREST) как бэкенд: notes / tasks / events, доступ тонким fetch-клиентом на service-role — только на сервере, в браузер ключ не попадает.",
+      "Единый CRUD-роут /api/workspace/[kind]: каждый метод за requireOwner(), тела валидируются zod (whitelist полей).",
+      "RLS в Postgres включён без публичных политик: anon-ключ не читает и не пишет ничего, весь доступ — через серверную сессию.",
+      "Graceful degradation: без переменных окружения сайт работает как обычно, а кабинет показывает демо-данные.",
+    ] },
+    { t: "h2", text: "UI" },
+    { t: "p", text: "Фичи живут как вкладки внутри редактора (виртуальные «файлы»), запускаются из панели Extensions. Состояние сессии — отдельный zustand-стор, который тянет /api/auth/me и переключает интерфейс между демо и владельцем." },
+    { t: "tech", items: ["Next.js 16", "TypeScript", "GitHub OAuth", "Web Crypto (HMAC)", "Supabase / PostgREST", "zod", "zustand", "HttpOnly cookies"] },
+    { t: "links", items: [{ label: "Открыть на GitHub", href: GITHUB + "/portfolioV5" }] },
+  ],
+};
+
 const hrSearch: FileNode = {
   id: "experience/hr-search-platform.md",
   name: "hr-search-platform.md",
@@ -702,7 +754,7 @@ export const tree: FolderNode = {
     {
       id: "projects",
       name: "projects",
-      children: [wifi, pcHealth, repoAntiRot, multiAgent, vortan, extSuite, repoVis],
+      children: [wifi, pcHealth, repoAntiRot, multiAgent, vortan, extSuite, repoVis, personalWorkspace],
     } as FolderNode,
     {
       id: "experience",
