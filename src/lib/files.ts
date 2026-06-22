@@ -754,3 +754,35 @@ export function fileSummary(id: string): string {
 }
 
 export const DEFAULT_OPEN = readme.id;
+
+/* ------------------------------------------------------------------ */
+/*  WORKSPACE  (личный кабинет — открывается из панели Extensions)     */
+/* ------------------------------------------------------------------ */
+
+/** Virtual "files" backing the workspace tabs. Not shown in the Explorer tree —
+ *  they are launched from the Extensions panel and rendered by custom panels. */
+export const WORKSPACE_FILES: FileNode[] = [
+  {
+    id: "workspace/notes.md",
+    name: "notes.md",
+    language: "Markdown",
+    blocks: [{ t: "h1", text: "📝 Заметки" }],
+  },
+  {
+    id: "workspace/calendar.tsx",
+    name: "calendar.tsx",
+    language: "TypeScript",
+    blocks: [{ t: "h1", text: "📅 Календарь" }],
+  },
+  {
+    id: "workspace/tasks.todo",
+    name: "tasks.todo",
+    language: "TODO",
+    blocks: [{ t: "h1", text: "✅ Задачи" }],
+  },
+];
+
+export const WORKSPACE_IDS = WORKSPACE_FILES.map((f) => f.id);
+
+// Make workspace files resolvable by fileById / tabs without listing them in the tree.
+allFiles.push(...WORKSPACE_FILES);

@@ -13,6 +13,9 @@ import { Minimap } from "./Minimap";
 import { ContributionGrid } from "./ContributionGrid";
 import { AiUsagePanel } from "./AiUsagePanel";
 import { SettingsPanel } from "./SettingsPanel";
+import { NotesPanel } from "./workspace/NotesPanel";
+import { CalendarPanel } from "./workspace/CalendarPanel";
+import { TasksPanel } from "./workspace/TasksPanel";
 
 export function Editor() {
   const openTabs = useEditor((s) => s.openTabs);
@@ -62,6 +65,9 @@ export function Editor() {
               <SettingsPanel />
             </div>
           )}
+          {file.id === "workspace/notes.md" && <NotesPanel />}
+          {file.id === "workspace/calendar.tsx" && <CalendarPanel />}
+          {file.id === "workspace/tasks.todo" && <TasksPanel />}
           </div>
           <Minimap blocks={file.blocks} />
         </div>

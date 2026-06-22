@@ -15,6 +15,7 @@ import { CopilotPanel } from "./CopilotPanel";
 import { Splash } from "./Splash";
 import { AchievementToast } from "./AchievementToast";
 import { VisitTracker } from "./VisitTracker";
+import { useSession } from "@/lib/session";
 import { HelpCircle } from "lucide-react";
 
 export function IDE({ initialFile }: { initialFile?: string }) {
@@ -31,6 +32,15 @@ export function IDE({ initialFile }: { initialFile?: string }) {
   useEffect(() => {
     hydrateAchievements();
     hydrateSettings();
+    // Load the workspace session and, if we just came back from GitHub OAuth,
+    // open the Workspace panel and clean the ?auth= flag from the URL.
+    useSession.getState().refresh();
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("auth")) {
+      useEditor.getState().setActivityView("extensions");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("auth");
+      window.history.replaceState(null, "", url.pathname + url.search);
+    }
   }, [hydrateAchievements, hydrateSettings]);
 
   // Deep link: open the file from ?file=<id> on first load.

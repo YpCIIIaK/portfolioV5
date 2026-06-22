@@ -6,6 +6,7 @@ import { tree, allFiles, GITHUB } from "@/lib/files";
 import { isFolder, type TreeNode } from "@/lib/types";
 import { useEditor } from "@/lib/store";
 import { FileIcon } from "./FileIcon";
+import { WorkspacePanel } from "./workspace/WorkspacePanel";
 
 export function Sidebar() {
   const view = useEditor((s) => s.activityView);
@@ -14,7 +15,7 @@ export function Sidebar() {
       {view === "explorer" && <ExplorerView />}
       {view === "search" && <SearchView />}
       {view === "git" && <GitView />}
-      {view === "extensions" && <PanelStub title="Extensions" text="React · TypeScript · Go · Tailwind · zustand — расширения, на которых собрано это портфолио." />}
+      {view === "extensions" && <WorkspacePanel />}
       {view === "run" && <PanelStub title="Run and Debug" text="▶ Запусти терминал внизу (Ctrl+`) и набери `help`." />}
     </div>
   );
