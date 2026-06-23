@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { StickyNote, CalendarDays, Clock, Cloud } from "lucide-react";
+import { StickyNote, CalendarDays, Clock, Cloud, Mail } from "lucide-react";
 import { DEMO_NOTES, DEMO_EVENTS, type Note, type WsEvent } from "@/lib/workspace";
 import { useCollection } from "./useCollection";
+import { useMailbox } from "./useMailbox";
 import { useEditor } from "@/lib/store";
 import { GuestBanner } from "./GuestBanner";
 
@@ -204,6 +205,40 @@ function AgendaWidget() {
   );
 }
 
+function MailWidget() {
+  const { items, loading, live } = useMailbox(5);
+  const openFile = useEditor((s) => s.openFile);
+
+  return (
+    <Card title="Почта" Icon={Mail} onTitle={() => openFile("workspace/mail.tsx")}>
+      {loading ? (
+        <p className="text-[12px] text-vsc-muted">Загрузка…</p>
+      ) : items.length === 0 ? (
+        <p className="text-[12px] text-vsc-muted">Входящих нет.</p>
+      ) : (
+        <div className="flex flex-col">
+          {items.map((m) => (
+            <button
+              key={m.uid}
+              onClick={() => openFile("workspace/mail.tsx")}
+              className="flex items-center gap-2 rounded px-1 py-1.5 text-left hover:bg-vsc-hover"
+            >
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${m.unread ? "bg-vsc-accent" : "bg-transparent"}`} />
+              <span className={`w-24 shrink-0 truncate text-[12px] ${m.unread ? "font-medium text-vsc-bright" : "text-vsc-muted"}`}>
+                {m.from || "—"}
+              </span>
+              <span className={`flex-1 truncate text-[12px] ${m.unread ? "text-vsc-text" : "text-vsc-muted"}`}>
+                {m.subject}
+              </span>
+            </button>
+          ))}
+          {!live && <p className="mt-1 px-1 text-[11px] text-vsc-muted/70">демо · подключи IMAP в env</p>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /* ---- shell ----------------------------------------------------------- */
 
 function Card({
@@ -244,8 +279,9 @@ export function DashboardPanel() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Clocks />
         <Weather />
-        <NotesWidget />
+        <MailWidget />
         <AgendaWidget />
+        <NotesWidget />
       </div>
     </div>
   );

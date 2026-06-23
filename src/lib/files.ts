@@ -838,6 +838,12 @@ export const WORKSPACE_FILES: FileNode[] = [
     language: "TODO",
     blocks: [{ t: "h1", text: "✅ Задачи" }],
   },
+  {
+    id: "workspace/mail.tsx",
+    name: "mail.tsx",
+    language: "TypeScript",
+    blocks: [{ t: "h1", text: "📬 Почта" }],
+  },
 ];
 
 export const WORKSPACE_IDS = WORKSPACE_FILES.map((f) => f.id);
