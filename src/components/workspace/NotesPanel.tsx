@@ -1,143 +1,169 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Trash2, Save } from "lucide-react";
+import { Plus, Trash2, FileText } from "lucide-react";
 import { DEMO_NOTES, wsCreate, wsUpdate, wsDelete, type Note } from "@/lib/workspace";
 import { useCollection } from "./useCollection";
 import { GuestBanner } from "./GuestBanner";
 
+type SaveStatus = "idle" | "saving" | "saved";
+
 export function NotesPanel() {
-  const { items, setItems, loading, error, readonly, reload } = useCollection<Note>("notes", DEMO_NOTES);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [draft, setDraft] = useState({ title: "", body: "" });
-  const [saving, setSaving] = useState(false);
-  const dirty = useRef(false);
+  const { items, setItems, loading, error, readonly } = useCollection<Note>("notes", DEMO_NOTES);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [status, setStatus] = useState<SaveStatus>("idle");
 
-  const active = items.find((n) => n.id === activeId) ?? items[0] ?? null;
+  // Always-fresh snapshot for the debounced saver + per-note debounce timers.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
 
-  // Sync the editor draft whenever the selected note changes.
+  const selected = items.find((n) => n.id === selectedId) ?? null;
+
+  // Auto-select the first note once data lands.
   useEffect(() => {
-    if (active && active.id !== activeId) setActiveId(active.id);
-    if (active) {
-      setDraft({ title: active.title, body: active.body });
-      dirty.current = false;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active?.id]);
+    if (!selectedId && items.length) setSelectedId(items[0].id);
+  }, [items, selectedId]);
 
-  async function addNote() {
-    const created = await wsCreate<Note>("notes", { title: "Новая заметка", body: "" });
-    setItems([created, ...items]);
-    setActiveId(created.id);
+  // Grow the body textarea to fit its content (Notion-style, no inner scrollbar).
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [selected?.id, selected?.body]);
+
+  function scheduleSave(id: string) {
+    if (readonly) return;
+    setStatus("saving");
+    clearTimeout(timers.current[id]);
+    timers.current[id] = setTimeout(async () => {
+      const n = itemsRef.current.find((x) => x.id === id);
+      if (!n) return;
+      try {
+        await wsUpdate<Note>("notes", id, { title: n.title, body: n.body });
+        setStatus("saved");
+      } catch {
+        setStatus("idle");
+      }
+    }, 600);
   }
 
-  async function save() {
-    if (!active || readonly) return;
-    setSaving(true);
-    try {
-      const updated = await wsUpdate<Note>("notes", active.id, draft);
-      setItems(items.map((n) => (n.id === active.id ? updated : n)));
-      dirty.current = false;
-    } finally {
-      setSaving(false);
-    }
+  function edit(field: "title" | "body", value: string) {
+    if (!selected) return;
+    setItems(items.map((n) => (n.id === selected.id ? { ...n, [field]: value } : n)));
+    scheduleSave(selected.id);
+  }
+
+  async function addNote() {
+    const created = await wsCreate<Note>("notes", { title: "", body: "" });
+    setItems([created, ...items]);
+    setSelectedId(created.id);
+    setStatus("idle");
   }
 
   async function remove(id: string) {
+    clearTimeout(timers.current[id]);
+    const rest = items.filter((n) => n.id !== id);
+    setItems(rest);
+    setSelectedId(rest[0]?.id ?? null);
     await wsDelete("notes", id);
-    setItems(items.filter((n) => n.id !== id));
-    setActiveId(null);
   }
 
-  if (loading) return <PanelMsg>Загрузка заметок…</PanelMsg>;
+  if (loading) return <p className="px-8 py-6 text-[13px] text-vsc-muted">Загрузка заметок…</p>;
 
   return (
-    <div className="mx-auto max-w-4xl px-8 py-4">
-      {readonly && <GuestBanner what="заметки" />}
-      {error && <PanelMsg>{error}</PanelMsg>}
-
-      <div className="flex gap-4">
-        {/* list */}
-        <div className="w-56 shrink-0">
+    <div className="mx-auto flex h-full max-w-5xl gap-0 px-4">
+      {/* page list */}
+      <aside className="flex w-56 shrink-0 flex-col border-r border-vsc-line py-4 pr-2">
+        <div className="mb-1 flex items-center justify-between px-2">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-vsc-muted">Заметки</span>
+          {!readonly && (
+            <button onClick={addNote} title="Новая страница" className="rounded p-1 text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text">
+              <Plus size={15} />
+            </button>
+          )}
+        </div>
+        <div className="flex flex-col gap-0.5 overflow-y-auto">
+          {items.map((n) => (
+            <button
+              key={n.id}
+              onClick={() => setSelectedId(n.id)}
+              className={`group flex items-center gap-1.5 rounded px-2 py-1.5 text-left text-[13px] ${
+                selectedId === n.id ? "bg-vsc-active-row text-vsc-bright" : "text-vsc-text hover:bg-vsc-hover"
+              }`}
+            >
+              <FileText size={13} className="shrink-0 text-vsc-muted" />
+              <span className="flex-1 truncate">{n.title?.trim() || "Без названия"}</span>
+              {!readonly && (
+                <Trash2
+                  size={13}
+                  className="shrink-0 text-vsc-muted opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    remove(n.id);
+                  }}
+                />
+              )}
+            </button>
+          ))}
           {!readonly && (
             <button
               onClick={addNote}
-              className="mb-2 flex w-full items-center justify-center gap-1.5 rounded bg-vsc-accent px-3 py-1.5 text-[13px] text-white hover:opacity-90"
+              className="mt-1 flex items-center gap-1.5 rounded px-2 py-1.5 text-left text-[13px] text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"
             >
-              <Plus size={14} /> Новая
+              <Plus size={13} /> Новая страница
             </button>
           )}
-          <div className="flex flex-col gap-1">
-            {items.map((n) => (
-              <button
-                key={n.id}
-                onClick={() => setActiveId(n.id)}
-                className={`truncate rounded px-2 py-1.5 text-left text-[13px] ${
-                  active?.id === n.id ? "bg-vsc-active-row text-vsc-bright" : "text-vsc-text hover:bg-vsc-hover"
-                }`}
-              >
-                {n.title || "Без названия"}
-              </button>
-            ))}
-            {items.length === 0 && <p className="px-2 text-[12px] text-vsc-muted">Пока пусто.</p>}
-          </div>
         </div>
+      </aside>
 
-        {/* editor */}
-        <div className="min-w-0 flex-1">
-          {active ? (
-            <div className="flex flex-col gap-2">
-              <input
-                value={draft.title}
+      {/* document */}
+      <section className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-2xl px-8 py-6">
+          {readonly && <GuestBanner what="заметки" />}
+          {error && <p className="mb-3 text-[13px] text-vsc-muted">{error}</p>}
+
+          {selected ? (
+            <>
+              <div className="mb-2 flex h-4 items-center justify-end">
+                {!readonly && (
+                  <span className="text-[11px] text-vsc-muted">
+                    {status === "saving" ? "Сохранение…" : status === "saved" ? "Сохранено" : ""}
+                  </span>
+                )}
+              </div>
+              <textarea
+                value={selected.title}
                 disabled={readonly}
-                onChange={(e) => {
-                  dirty.current = true;
-                  setDraft({ ...draft, title: e.target.value });
-                }}
-                placeholder="Заголовок"
-                className="w-full rounded border border-vsc-line bg-vsc-sidebar px-3 py-2 text-[15px] font-medium text-vsc-bright outline-none focus:border-vsc-accent disabled:opacity-70"
+                onChange={(e) => edit("title", e.target.value.replace(/\n/g, ""))}
+                rows={1}
+                placeholder="Без названия"
+                className="w-full resize-none bg-transparent text-[28px] font-bold leading-tight text-vsc-bright outline-none placeholder:text-vsc-muted/50 disabled:opacity-80"
               />
               <textarea
-                value={draft.body}
+                ref={bodyRef}
+                value={selected.body}
                 disabled={readonly}
-                onChange={(e) => {
-                  dirty.current = true;
-                  setDraft({ ...draft, body: e.target.value });
-                }}
-                placeholder="Текст заметки…"
-                rows={16}
-                className="w-full resize-y rounded border border-vsc-line bg-vsc-sidebar px-3 py-2 text-[13.5px] leading-relaxed text-vsc-text outline-none focus:border-vsc-accent disabled:opacity-70"
+                onChange={(e) => edit("body", e.target.value)}
+                placeholder="Начни писать…"
+                className="mt-3 min-h-[60vh] w-full resize-none bg-transparent text-[15px] leading-relaxed text-vsc-text outline-none placeholder:text-vsc-muted/50 disabled:opacity-80"
               />
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-24 text-center text-vsc-muted">
+              <FileText size={32} className="mb-3 opacity-40" />
+              <p className="text-[13px]">{readonly ? "Нет заметок." : "Создай первую страницу."}</p>
               {!readonly && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={save}
-                    disabled={saving}
-                    className="flex items-center gap-1.5 rounded bg-vsc-accent px-3 py-1.5 text-[13px] text-white hover:opacity-90 disabled:opacity-50"
-                  >
-                    <Save size={14} /> {saving ? "Сохранение…" : "Сохранить"}
-                  </button>
-                  <button
-                    onClick={() => remove(active.id)}
-                    className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[13px] text-vsc-muted hover:bg-vsc-hover hover:text-red-400"
-                  >
-                    <Trash2 size={14} /> Удалить
-                  </button>
-                  <button onClick={reload} className="ml-auto text-[12px] text-vsc-muted hover:text-vsc-text">
-                    Обновить
-                  </button>
-                </div>
+                <button onClick={addNote} className="mt-3 flex items-center gap-1.5 rounded bg-vsc-accent px-3 py-1.5 text-[13px] text-white hover:opacity-90">
+                  <Plus size={14} /> Новая страница
+                </button>
               )}
             </div>
-          ) : (
-            <PanelMsg>Выбери заметку слева{!readonly && " или создай новую"}.</PanelMsg>
           )}
         </div>
-      </div>
+      </section>
     </div>
   );
-}
-
-function PanelMsg({ children }: { children: React.ReactNode }) {
-  return <p className="px-1 py-4 text-[13px] text-vsc-muted">{children}</p>;
 }
