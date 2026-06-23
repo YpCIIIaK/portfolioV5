@@ -815,6 +815,12 @@ export const DEFAULT_OPEN = readme.id;
  *  they are launched from the Extensions panel and rendered by custom panels. */
 export const WORKSPACE_FILES: FileNode[] = [
   {
+    id: "workspace/dashboard.tsx",
+    name: "dashboard.tsx",
+    language: "TypeScript",
+    blocks: [{ t: "h1", text: "🏠 Главная" }],
+  },
+  {
     id: "workspace/notes.md",
     name: "notes.md",
     language: "Markdown",
