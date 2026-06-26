@@ -433,6 +433,31 @@ export const EN: Record<string, string> = {
     "Open to full-time, freelance — any format. Astana / remote.",
   "Форма ниже — рабочая: жмёшь «Отправить», и сообщение реально уходит через серверный API-роут Next.js с валидацией на Zod. Это и есть мини-доказательство бэкенда.":
     "The form below is real: hit \"Send\" and the message actually goes through a Next.js server API route with Zod validation. That's a little backend proof in itself.",
+
+  // ---- Contact form (UI) ----
+  "Ваше имя": "Your name",
+  "как удобнее связаться": "preferred way to reach you",
+  "Расскажите о вакансии или проекте…": "Tell me about the role or project…",
+  "Отправить": "Send",
+  "Отправлено — спасибо!": "Sent — thank you!",
+  "Ошибка отправки": "Failed to send",
+  "Ошибка": "Error",
+
+  // ---- GitHub live panel ----
+  "лимит запросов? попробуй позже": "rate limit? try again later",
+  "Тянем живые данные из GitHub API…": "Fetching live data from the GitHub API…",
+  "Языки (по репозиториям)": "Languages (by repository)",
+  "Топ репозиториев": "Top repositories",
+
+  // ---- Market live panel ----
+  "Подключаемся к Binance WebSocket…": "Connecting to the Binance WebSocket…",
+  "Binance недоступен из этой сети/региона — переподключаюсь автоматически.":
+    "Binance isn't reachable from this network/region — reconnecting automatically.",
+
+  // ---- AI usage panel ----
+  "Claude Code — агент, которым собран сайт": "Claude Code — the agent this site was built with",
+  "OpenRouter — ассистент сайта и эксперименты с моделями":
+    "OpenRouter — the site assistant and model experiments",
 };
 
 /** Translate a single string for the given language (falls back to the original). */

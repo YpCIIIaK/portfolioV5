@@ -10,6 +10,7 @@ import {
   Loader2,
   AlertCircle,
 } from "lucide-react";
+import { useTr } from "@/lib/i18n";
 
 interface RepoDTO {
   name: string;
@@ -60,6 +61,7 @@ function ago(iso: string) {
 }
 
 export function GitHubPanel() {
+  const tr = useTr();
   const [data, setData] = useState<GitHubDTO | null>(null);
   const [error, setError] = useState("");
 
@@ -81,14 +83,14 @@ export function GitHubPanel() {
   if (error)
     return (
       <div className="mt-4 flex items-center gap-2 rounded border border-vsc-line bg-[#252526] px-3 py-2 text-[13px] text-[#f48771]">
-        <AlertCircle size={15} /> GitHub API: {error} (лимит запросов? попробуй позже)
+        <AlertCircle size={15} /> GitHub API: {error} ({tr("лимит запросов? попробуй позже")})
       </div>
     );
 
   if (!data)
     return (
       <div className="mt-4 flex items-center gap-2 text-[13px] text-vsc-muted">
-        <Loader2 size={15} className="animate-spin" /> Тянем живые данные из GitHub API…
+        <Loader2 size={15} className="animate-spin" /> {tr("Тянем живые данные из GitHub API…")}
       </div>
     );
 
@@ -105,7 +107,7 @@ export function GitHubPanel() {
 
       <div>
         <h3 className="mb-2 text-[13px] font-semibold text-vsc-light-blue">
-          Языки (по репозиториям)
+          {tr("Языки (по репозиториям)")}
         </h3>
         <div className="space-y-1.5">
           {data.languages.map((l) => (
@@ -125,7 +127,7 @@ export function GitHubPanel() {
 
       <div>
         <h3 className="mb-2 text-[13px] font-semibold text-vsc-light-blue">
-          Топ репозиториев <span className="text-vsc-muted">(live)</span>
+          {tr("Топ репозиториев")} <span className="text-vsc-muted">(live)</span>
         </h3>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {data.topRepos.map((r) => (

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Loader2, Radio, WifiOff } from "lucide-react";
+import { useTr } from "@/lib/i18n";
 
 const SYMBOLS = ["btcusdt", "ethusdt", "solusdt", "bnbusdt", "xrpusdt", "dogeusdt"];
 const LABEL: Record<string, string> = {
@@ -24,6 +25,7 @@ const fmt = (n: number) =>
   : n.toFixed(5);
 
 export function MarketPanel() {
+  const tr = useTr();
   const [tickers, setTickers] = useState<Record<string, Ticker>>({});
   const [status, setStatus] = useState<Status>("connecting");
   const wsRef = useRef<WebSocket | null>(null);
@@ -93,12 +95,12 @@ export function MarketPanel() {
       <StatusLine status={status} />
       {!hasData && status !== "error" && (
         <div className="mt-3 flex items-center gap-2 text-[13px] text-vsc-muted">
-          <Loader2 size={15} className="animate-spin" /> Подключаемся к Binance WebSocket…
+          <Loader2 size={15} className="animate-spin" /> {tr("Подключаемся к Binance WebSocket…")}
         </div>
       )}
       {status === "error" && !hasData && (
         <div className="mt-3 flex items-center gap-2 rounded border border-vsc-line bg-[#252526] px-3 py-2 text-[13px] text-[#f48771]">
-          <WifiOff size={15} /> Binance недоступен из этой сети/региона — переподключаюсь автоматически.
+          <WifiOff size={15} /> {tr("Binance недоступен из этой сети/региона — переподключаюсь автоматически.")}
         </div>
       )}
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">

@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { Send, Loader2, CheckCircle2, AlertCircle, Mail, MessageCircle } from "lucide-react";
+import { useTr } from "@/lib/i18n";
 
 type Status = "idle" | "sending" | "ok" | "error";
 type Channel = "email" | "telegram";
 
 export function ContactForm() {
+  const tr = useTr();
   const [form, setForm] = useState({ name: "", channel: "email" as Channel, contact: "", message: "" });
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
@@ -22,12 +24,12 @@ export function ContactForm() {
         body: JSON.stringify(form),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Ошибка отправки");
+      if (!res.ok) throw new Error(data.error ?? tr("Ошибка отправки"));
       setStatus("ok");
       setForm({ name: "", channel: form.channel, contact: "", message: "" });
     } catch (err) {
       setStatus("error");
-      setError(err instanceof Error ? err.message : "Ошибка");
+      setError(err instanceof Error ? err.message : tr("Ошибка"));
     }
   };
 
@@ -40,7 +42,7 @@ export function ContactForm() {
           label="name"
           value={form.name}
           onChange={(v) => setForm({ ...form, name: v })}
-          placeholder="Ваше имя"
+          placeholder={tr("Ваше имя")}
         />
         <div>
           <label className="mb-1 block font-mono text-[11px] text-vsc-muted">
@@ -59,7 +61,7 @@ export function ContactForm() {
       {/* предпочтительный способ связи */}
       <div>
         <label className="mb-1 block font-mono text-[11px] text-vsc-muted">
-          как удобнее связаться
+          {tr("как удобнее связаться")}
         </label>
         <div className="inline-flex overflow-hidden rounded border border-vsc-line">
           <ChannelTab
@@ -83,7 +85,7 @@ export function ContactForm() {
         <textarea
           value={form.message}
           onChange={(e) => setForm({ ...form, message: e.target.value })}
-          placeholder="Расскажите о вакансии или проекте…"
+          placeholder={tr("Расскажите о вакансии или проекте…")}
           rows={5}
           className="w-full resize-none rounded border border-vsc-line bg-[#1e1e1e] px-3 py-2 text-[13px] text-vsc-text outline-none focus:border-vsc-accent"
         />
@@ -100,12 +102,12 @@ export function ContactForm() {
           ) : (
             <Send size={15} />
           )}
-          Отправить
+          {tr("Отправить")}
         </button>
 
         {status === "ok" && (
           <span className="flex items-center gap-1.5 text-[13px] text-vsc-green">
-            <CheckCircle2 size={15} /> Отправлено — спасибо!
+            <CheckCircle2 size={15} /> {tr("Отправлено — спасибо!")}
           </span>
         )}
         {status === "error" && (

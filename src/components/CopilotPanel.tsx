@@ -13,12 +13,31 @@ interface Msg {
   files?: string[];
 }
 
-const SUGGESTIONS = [
-  "Знает ли он Go?",
-  "Покажи realtime-опыт",
-  "Какой опыт с AI?",
-  "Почему стоит его нанять?",
-];
+const SUGGESTIONS = {
+  ru: ["Знает ли он Go?", "Покажи realtime-опыт", "Какой опыт с AI?", "Почему стоит его нанять?"],
+  en: ["Does he know Go?", "Show realtime experience", "What's his AI experience?", "Why hire him?"],
+};
+
+const UI = {
+  ru: {
+    greeting: "👋 Привет! Я ИИ-ассистент Владимира. Спроси что угодно о его навыках, опыте и проектах — отвечу по реальным данным.",
+    web: "Web + интернет",
+    model: "Модель:",
+    phWeb: "Спроси что угодно (с интернетом)…",
+    phPortfolio: "Спроси о Владимире…",
+    disclaimer: "AI может ошибаться · модель через OpenRouter",
+    connErr: "⚠️ Ошибка соединения. Напишите напрямую: bigboyvova01@gmail.com",
+  },
+  en: {
+    greeting: "👋 Hi! I'm Vladimir's AI assistant. Ask anything about his skills, experience and projects — I answer from real data.",
+    web: "Web + internet",
+    model: "Model:",
+    phWeb: "Ask anything (with internet)…",
+    phPortfolio: "Ask about Vladimir…",
+    disclaimer: "AI can make mistakes · model via OpenRouter",
+    connErr: "⚠️ Connection error. Email directly: bigboyvova01@gmail.com",
+  },
+};
 
 const MODELS = [
   { id: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", label: "Fast", hint: "~1с" },
@@ -31,6 +50,8 @@ export function CopilotPanel() {
   const toggleChat = useEditor((s) => s.toggleChat);
   const unlock = useEditor((s) => s.unlock);
   const openFile = useEditor((s) => s.openFile);
+  const lang = useEditor((s) => s.lang);
+  const t = UI[lang];
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<"portfolio" | "web">("portfolio");
@@ -56,7 +77,7 @@ export function CopilotPanel() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next, mode, model }),
+        body: JSON.stringify({ messages: next, mode, model, lang }),
       });
       if (!res.body) throw new Error("no body");
       const reader = res.body.getReader();
@@ -88,7 +109,7 @@ export function CopilotPanel() {
         const copy = [...m];
         copy[copy.length - 1] = {
           role: "assistant",
-          content: "⚠️ Ошибка соединения. Напишите напрямую: bigboyvova01@gmail.com",
+          content: t.connErr,
         };
         return copy;
       });
@@ -112,11 +133,11 @@ export function CopilotPanel() {
       {/* mode toggle */}
       <div className="flex shrink-0 gap-1 border-b border-vsc-line px-2 pt-2">
         <ModeBtn active={mode === "portfolio"} onClick={() => setMode("portfolio")} icon={<Sparkles size={12} />} label="Portfolio" />
-        <ModeBtn active={mode === "web"} onClick={() => setMode("web")} icon={<Globe size={12} />} label="Web + интернет" />
+        <ModeBtn active={mode === "web"} onClick={() => setMode("web")} icon={<Globe size={12} />} label={t.web} />
       </div>
       {/* model selector */}
       <div className="flex shrink-0 items-center gap-1.5 border-b border-vsc-line px-2 py-1.5 text-[11px] text-vsc-muted">
-        <span>Модель:</span>
+        <span>{t.model}</span>
         {MODELS.map((m) => (
           <button
             key={m.id}
@@ -137,10 +158,10 @@ export function CopilotPanel() {
         {messages.length === 0 && (
           <div className="space-y-3">
             <p className="text-[13px] leading-relaxed text-vsc-muted">
-              👋 Привет! Я ИИ-ассистент Владимира. Спроси что угодно о его навыках, опыте и проектах — отвечу по реальным данным.
+              {t.greeting}
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {SUGGESTIONS.map((s) => (
+              {SUGGESTIONS[lang].map((s) => (
                 <button
                   key={s}
                   onClick={() => send(s)}
@@ -171,7 +192,7 @@ export function CopilotPanel() {
               }
             }}
             rows={1}
-            placeholder={mode === "web" ? "Спроси что угодно (с интернетом)…" : "Спроси о Владимире…"}
+            placeholder={mode === "web" ? t.phWeb : t.phPortfolio}
             className="max-h-24 flex-1 resize-none bg-transparent text-[13px] text-vsc-text outline-none placeholder:text-vsc-muted"
           />
           <button
@@ -183,7 +204,7 @@ export function CopilotPanel() {
           </button>
         </div>
         <p className="mt-1 px-1 text-[10px] text-vsc-muted">
-          AI может ошибаться · модель через OpenRouter
+          {t.disclaimer}
         </p>
       </div>
     </div>
@@ -204,6 +225,7 @@ function ModeBtn({ active, onClick, icon, label }: { active: boolean; onClick: (
 }
 
 function Bubble({ msg, streaming, onOpenFile }: { msg: Msg; streaming: boolean; onOpenFile: (id: string) => void }) {
+  const lang = useEditor((s) => s.lang);
   const isUser = msg.role === "user";
   const files = (msg.files ?? []).map((id) => fileById(id)).filter((f): f is NonNullable<typeof f> => !!f);
   return (
@@ -228,7 +250,7 @@ function Bubble({ msg, streaming, onOpenFile }: { msg: Msg; streaming: boolean; 
         {!isUser && files.length > 0 && (
           <div className="flex flex-col gap-1">
             <span className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-vsc-muted">
-              <FolderOpen size={11} /> по теме
+              <FolderOpen size={11} /> {lang === "en" ? "related" : "по теме"}
             </span>
             <div className="flex flex-wrap gap-1.5">
               {files.map((f) => (
