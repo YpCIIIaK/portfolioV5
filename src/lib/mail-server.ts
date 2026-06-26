@@ -30,6 +30,10 @@ function client(): ImapFlow {
     secure: PORT === 993,
     auth: { user: USER!, pass: PASS! },
     logger: false,
+    // Fail fast instead of hanging the UI if IMAP is unreachable/blocked.
+    connectionTimeout: 10000,
+    greetingTimeout: 8000,
+    socketTimeout: 20000,
   });
 }
 
