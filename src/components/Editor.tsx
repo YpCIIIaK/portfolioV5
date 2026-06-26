@@ -10,6 +10,7 @@ import { ContactForm } from "./ContactForm";
 import { GitHubPanel } from "./GitHubPanel";
 import { MarketPanel } from "./MarketPanel";
 import { JournalPanel } from "./JournalPanel";
+import { RepoAntiRotSandbox } from "./sandbox/RepoAntiRotSandbox";
 import { Minimap } from "./Minimap";
 import { ContributionGrid } from "./ContributionGrid";
 import { AiUsagePanel } from "./AiUsagePanel";
@@ -41,6 +42,11 @@ export function Editor() {
           {file.id === "contact/contact.tsx" && (
             <div className="mx-auto max-w-3xl px-8 pb-12">
               <ContactForm />
+            </div>
+          )}
+          {file.id === "projects/repo-anti-rot.ts" && (
+            <div className="mx-auto max-w-3xl px-8 pb-12">
+              <RepoAntiRotSandbox />
             </div>
           )}
           {file.id === "live/contributions.tsx" && (
