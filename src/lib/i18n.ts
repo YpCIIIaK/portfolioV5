@@ -506,6 +506,57 @@ export const EN: Record<string, string> = {
   "9 битых ссылок в доках": "9 broken links in the docs",
   "README ведёт на удалённые страницы.": "The README points to deleted pages.",
 
+  // ---- Multi-Agent Arena sandbox ----
+  "Сценарий:": "Scenario:",
+  "Выполняю…": "Running…",
+  "Запустить пайплайн": "Run pipeline",
+  "Финальный ответ": "Final answer",
+  "Принятие решения": "Decision",
+  "Анализ": "Analysis",
+  "Ресёрч": "Research",
+  "Классифицирует запрос и выбирает маршрут": "Classifies the request and picks a route",
+  "Собирает факты и контекст": "Gathers facts and context",
+  "Взвешивает за/против": "Weighs pros and cons",
+  "Формирует финальный ответ": "Produces the final answer",
+  "Стоит ли нам мигрировать сервис сбора метрик с Node.js на Go?":
+    "Should we migrate the metrics-collection service from Node.js to Go?",
+  "Тип: технологическое решение": "Type: technology decision",
+  "Маршрут: research → analyst → synthesizer": "Route: research → analyst → synthesizer",
+  "Домен: backend / производительность": "Domain: backend / performance",
+  "Текущий сервис: Node.js, ~120 МБ RSS, GC-паузы под нагрузкой": "Current service: Node.js, ~120 MB RSS, GC pauses under load",
+  "Go: статический бинарь, горутины, низкий футпринт": "Go: static binary, goroutines, low footprint",
+  "Команда: 2 человека уже писали агенты на Go": "Team: 2 people have already written Go agents",
+  "За: latency и память, один бинарь на win/linux, конкурентность": "Pros: latency and memory, one binary for win/linux, concurrency",
+  "Против: переписывание ~6 нед, экосистема npm-утилит": "Cons: ~6 weeks of rewriting, the npm utility ecosystem",
+  "Риск: отвлечение от продуктовых задач": "Risk: distraction from product work",
+  "Рекомендация: мигрировать поэтапно. Сначала вынести «горячий» poll-loop на Go-агент (где выигрыш по памяти и latency максимален), оставив остальной сервис на Node. Полная миграция оправдана, только если нагрузка продолжит расти — иначе ROI ниже стоимости переписывания.":
+    "Recommendation: migrate incrementally. First move the hot poll loop to a Go agent (where the memory and latency gains are largest), keeping the rest of the service on Node. A full migration is justified only if load keeps growing — otherwise the ROI is below the cost of rewriting.",
+  "Проанализируй запуск нового AI-продукта конкурента и его влияние на нас.":
+    "Analyze a competitor's new AI product launch and its impact on us.",
+  "Тип: конкурентный анализ": "Type: competitive analysis",
+  "Домен: продукт / рынок": "Domain: product / market",
+  "Конкурент выпустил агентный no-code пайплайн": "The competitor shipped an agentic no-code pipeline",
+  "Цена ниже на 30%, но без локальных моделей": "Priced 30% lower, but without local models",
+  "Активный маркетинг, +12k звёзд за месяц": "Aggressive marketing, +12k stars in a month",
+  "Угроза: ценовое давление в нижнем сегменте": "Threat: price pressure in the low-end segment",
+  "Наше преимущество: Ollama-локальные модели, приватность": "Our edge: local Ollama models, privacy",
+  "Окно: 2-3 месяца до их фичепаритета": "Window: 2–3 months before their feature parity",
+  "Вывод: не конкурировать ценой. Усилить дифференциацию на приватности и локальных моделях (то, чего у конкурента нет), ускорить релиз RAG-базы и подчеркнуть «100% офлайн» в позиционировании. Среднесрочный риск управляем при фокусе на нишу.":
+    "Conclusion: don't compete on price. Strengthen differentiation on privacy and local models (which the competitor lacks), speed up the RAG knowledge-base release, and emphasize \"100% offline\" in positioning. The mid-term risk is manageable with a niche focus.",
+  "Сделай краткий ресёрч по архитектурам RAG для проектного поиска.":
+    "Do a brief research on RAG architectures for project search.",
+  "Тип: исследовательский запрос": "Type: research request",
+  "Маршрут: research → synthesizer (analyst опционально)": "Route: research → synthesizer (analyst optional)",
+  "Домен: AI / поиск": "Domain: AI / search",
+  "Naive RAG: эмбеддинги + top-k, прост, но теряет контекст": "Naive RAG: embeddings + top-k, simple but loses context",
+  "BM25-гибрид: лексика + вектора, лучше на коде/идентификаторах": "BM25 hybrid: lexical + vectors, better on code/identifiers",
+  "Re-ranking и соседние чанки повышают точность": "Re-ranking and neighboring chunks improve precision",
+  "Для кодовой базы BM25-гибрид выигрывает у чистых эмбеддингов": "For a codebase, BM25 hybrid beats pure embeddings",
+  "Включение соседних чанков ↑ полноту ответа": "Including neighboring chunks ↑ answer completeness",
+  "Стоимость: индексация + хранение индекса": "Cost: indexing + index storage",
+  "Итог: для проектного поиска по файлам оптимален BM25-гибрид с включением соседних чанков и лёгким re-ranking — это даёт точность на идентификаторах кода без дорогих векторных БД. Именно такой подход используется в RAG-базе этого проекта.":
+    "Bottom line: for file-based project search, a BM25 hybrid with neighboring chunks and light re-ranking is optimal — it delivers precision on code identifiers without expensive vector DBs. That's exactly the approach used in this project's RAG base.",
+
   // ---- AI usage panel ----
   "Claude Code — агент, которым собран сайт": "Claude Code — the agent this site was built with",
   "OpenRouter — ассистент сайта и эксперименты с моделями":
