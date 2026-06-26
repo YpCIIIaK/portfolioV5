@@ -84,6 +84,7 @@ export async function fetchMessage(uid: number): Promise<MailFull | null> {
       const msg = await c.fetchOne(String(uid), { uid: true, source: true }, { uid: true });
       if (!msg || !msg.source) return null;
       const parsed = await simpleParser(msg.source);
+      const html = typeof parsed.html === "string" ? parsed.html : null;
       return {
         uid,
         from: addr(parsed.from) || parsed.from?.text || "",
@@ -91,7 +92,8 @@ export async function fetchMessage(uid: number): Promise<MailFull | null> {
         date: parsed.date ? parsed.date.toISOString() : "",
         snippet: "",
         unread: false,
-        body: parsed.text || (parsed.html ? parsed.html.replace(/<[^>]+>/g, " ") : "") || "",
+        body: parsed.text || (html ? html.replace(/<[^>]+>/g, " ") : "") || "",
+        html,
       };
     } finally {
       lock.release();

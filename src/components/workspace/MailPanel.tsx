@@ -1,9 +1,38 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Mail, RefreshCw, ArrowLeft, Dot } from "lucide-react";
 import { mailRead, demoRead, type MailFull } from "@/lib/mail";
 import { useMailbox } from "./useMailbox";
+
+/**
+ * Renders an HTML email in a sandboxed iframe. No `allow-scripts`, so embedded
+ * JS can't run; `allow-same-origin` only so we can measure the content height.
+ * Links open in a new tab via an injected <base>.
+ */
+function HtmlMail({ html }: { html: string }) {
+  const ref = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(400);
+
+  const srcDoc = `<base target="_blank">${html}`;
+
+  function resize() {
+    const doc = ref.current?.contentDocument;
+    if (doc?.body) setHeight(doc.documentElement.scrollHeight || doc.body.scrollHeight || 400);
+  }
+
+  return (
+    <iframe
+      ref={ref}
+      title="email"
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      srcDoc={srcDoc}
+      onLoad={resize}
+      className="w-full rounded border border-vsc-line bg-white"
+      style={{ height }}
+    />
+  );
+}
 
 function when(iso: string): string {
   if (!iso) return "";
@@ -52,9 +81,15 @@ export function MailPanel() {
               <Dot size={14} />
               <span>{when(open.date)}</span>
             </div>
-            <pre className="mt-4 whitespace-pre-wrap break-words font-sans text-[14px] leading-relaxed text-vsc-text">
-              {open.body}
-            </pre>
+            {open.html ? (
+              <div className="mt-4">
+                <HtmlMail html={open.html} />
+              </div>
+            ) : (
+              <pre className="mt-4 whitespace-pre-wrap break-words font-sans text-[14px] leading-relaxed text-vsc-text">
+                {open.body}
+              </pre>
+            )}
           </article>
         ) : null}
       </div>
