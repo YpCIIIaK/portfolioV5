@@ -688,6 +688,17 @@ const contributionsLive: FileNode = {
   ],
 };
 
+const journalLive: FileNode = {
+  id: "live/journal.tsx",
+  name: "journal.tsx",
+  language: "TypeScript React",
+  blocks: [
+    { t: "h1", text: "Инженерный журнал" },
+    { t: "p", text: "Живая лента того, что я делаю в коде: коммиты, PR, релизы и закрытые задачи — собирается автоматически из GitHub-активности (а для меня — ещё и из задач личного кабинета). Не статичный список проектов, а доказательство, что я стабильно пишу и поддерживаю прод." },
+    { t: "callout", text: "Фильтр «Только production-grade» прячет мелкий шум (chore/docs/wip/merge) и оставляет фичи, фиксы, релизы и смерженные PR. Данные тянутся вживую по GitHub API." },
+  ],
+};
+
 const marketLive: FileNode = {
   id: "live/market.live.tsx",
   name: "market.live.tsx",
@@ -764,7 +775,7 @@ export const tree: FolderNode = {
     {
       id: "live",
       name: "live",
-      children: [contributionsLive, githubLive, marketLive],
+      children: [journalLive, contributionsLive, githubLive, marketLive],
     } as FolderNode,
     {
       id: "meta",

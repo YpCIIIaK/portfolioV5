@@ -454,6 +454,20 @@ export const EN: Record<string, string> = {
   "Binance недоступен из этой сети/региона — переподключаюсь автоматически.":
     "Binance isn't reachable from this network/region — reconnecting automatically.",
 
+  // ---- Engineering journal ----
+  "Инженерный журнал": "Engineering journal",
+  "Живая лента того, что я делаю в коде: коммиты, PR, релизы и закрытые задачи — собирается автоматически из GitHub-активности (а для меня — ещё и из задач личного кабинета). Не статичный список проектов, а доказательство, что я стабильно пишу и поддерживаю прод.":
+    "A live feed of what I'm doing in code: commits, PRs, releases and closed tasks — assembled automatically from GitHub activity (and, for me, from personal-workspace tasks too). Not a static project list, but proof that I consistently write and maintain production code.",
+  "Фильтр «Только production-grade» прячет мелкий шум (chore/docs/wip/merge) и оставляет фичи, фиксы, релизы и смерженные PR. Данные тянутся вживую по GitHub API.":
+    "The \"Production-grade only\" filter hides low-signal noise (chore/docs/wip/merge) and keeps features, fixes, releases and merged PRs. Data is fetched live via the GitHub API.",
+  "Только production-grade": "Production-grade only",
+  "событий": "events",
+  "Собираю журнал из GitHub…": "Building the journal from GitHub…",
+  "Не удалось загрузить ленту активности.": "Couldn't load the activity feed.",
+  "Пока нет событий для показа.": "No events to show yet.",
+  "Сегодня": "Today",
+  "Вчера": "Yesterday",
+
   // ---- AI usage panel ----
   "Claude Code — агент, которым собран сайт": "Claude Code — the agent this site was built with",
   "OpenRouter — ассистент сайта и эксперименты с моделями":

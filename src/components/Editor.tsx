@@ -9,6 +9,7 @@ import { BlockRenderer } from "./BlockRenderer";
 import { ContactForm } from "./ContactForm";
 import { GitHubPanel } from "./GitHubPanel";
 import { MarketPanel } from "./MarketPanel";
+import { JournalPanel } from "./JournalPanel";
 import { Minimap } from "./Minimap";
 import { ContributionGrid } from "./ContributionGrid";
 import { AiUsagePanel } from "./AiUsagePanel";
@@ -55,6 +56,11 @@ export function Editor() {
           {file.id === "live/market.live.tsx" && (
             <div className="mx-auto max-w-3xl px-8 pb-12">
               <MarketPanel />
+            </div>
+          )}
+          {file.id === "live/journal.tsx" && (
+            <div className="pb-12">
+              <JournalPanel />
             </div>
           )}
           {file.id === "meta/ai-usage.json" && (
