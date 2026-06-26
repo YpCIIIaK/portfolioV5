@@ -557,6 +557,31 @@ export const EN: Record<string, string> = {
   "Итог: для проектного поиска по файлам оптимален BM25-гибрид с включением соседних чанков и лёгким re-ranking — это даёт точность на идентификаторах кода без дорогих векторных БД. Именно такой подход используется в RAG-базе этого проекта.":
     "Bottom line: for file-based project search, a BM25 hybrid with neighboring chunks and light re-ranking is optimal — it delivers precision on code identifiers without expensive vector DBs. That's exactly the approach used in this project's RAG base.",
 
+  // ---- Chrome extensions sandbox ----
+  "Сканировать страницу": "Scan page",
+  "Блокировка: вкл": "Blocking: on",
+  "Блокировка: выкл": "Blocking: off",
+  "Нажми «Сканировать», чтобы проверить страницу на трекеры и фингерпринтинг.":
+    "Hit \"Scan\" to check the page for trackers and fingerprinting.",
+  "заблокировано": "blocked",
+  "трекеров": "trackers",
+  "проб фингерпринта": "fingerprint probes",
+  "Трекеры": "Trackers",
+  "заблокирован": "blocked",
+  "пропущен": "allowed",
+  "Попытки фингерпринтинга": "Fingerprinting attempts",
+  "Усыпить простаивающие": "Suspend idle tabs",
+  "Освобождено:": "Freed:",
+  "активно": "active",
+  "вернуть": "restore",
+  "усыпить": "suspend",
+  "Усыплённые вкладки освобождают RAM (tabs.discard) и мгновенно восстанавливаются при возврате.":
+    "Suspended tabs free RAM (tabs.discard) and restore instantly on return.",
+  "docs.google.com — ТЗ": "docs.google.com — spec",
+  "youtube.com — фоновое видео": "youtube.com — background video",
+  "figma.com — макет": "figma.com — mockup",
+  "mail.google.com (активная)": "mail.google.com (active)",
+
   // ---- AI usage panel ----
   "Claude Code — агент, которым собран сайт": "Claude Code — the agent this site was built with",
   "OpenRouter — ассистент сайта и эксперименты с моделями":
