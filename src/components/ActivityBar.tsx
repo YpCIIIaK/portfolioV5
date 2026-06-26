@@ -27,6 +27,8 @@ export function ActivityBar() {
   const setActivityView = useEditor((s) => s.setActivityView);
   const chatOpen = useEditor((s) => s.chatOpen);
   const toggleChat = useEditor((s) => s.toggleChat);
+  const openFile = useEditor((s) => s.openFile);
+  const setSidebar = useEditor((s) => s.setSidebar);
 
   return (
     <div
@@ -67,12 +69,17 @@ export function ActivityBar() {
         </button>
         <button
           title="Account"
+          onClick={() => {
+            setSidebar(true);
+            setActivityView("extensions");
+          }}
           className="flex h-12 w-12 items-center justify-center text-vsc-muted hover:text-vsc-text"
         >
           <User size={24} strokeWidth={1.4} />
         </button>
         <button
           title="Settings"
+          onClick={() => openFile(".vscode/settings.json")}
           className="flex h-12 w-12 items-center justify-center text-vsc-muted hover:text-vsc-text"
         >
           <Settings size={24} strokeWidth={1.4} />

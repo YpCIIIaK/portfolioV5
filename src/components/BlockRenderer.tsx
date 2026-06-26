@@ -2,6 +2,7 @@
 
 import { ExternalLink, Info } from "lucide-react";
 import type { Block } from "@/lib/types";
+import { useTr } from "@/lib/i18n";
 import { CodeBlock } from "./CodeBlock";
 
 export function BlockRenderer({ blocks }: { blocks: Block[] }) {
@@ -15,34 +16,35 @@ export function BlockRenderer({ blocks }: { blocks: Block[] }) {
 }
 
 function BlockView({ block: b }: { block: Block }) {
+  const tr = useTr();
   switch (b.t) {
     case "h1":
       return (
         <h1 className="mb-4 mt-2 text-2xl font-semibold text-vsc-bright">
-          {b.text}
+          {tr(b.text)}
         </h1>
       );
     case "h2":
       return (
         <h2 className="mb-3 mt-7 border-b border-vsc-line pb-1.5 text-lg font-semibold text-vsc-bright">
-          {b.text}
+          {tr(b.text)}
         </h2>
       );
     case "h3":
       return (
         <h3 className="mb-2 mt-5 text-[15px] font-semibold text-vsc-light-blue">
-          {b.text}
+          {tr(b.text)}
         </h3>
       );
     case "p":
-      return <p className="my-3 text-[13.5px] text-vsc-text">{b.text}</p>;
+      return <p className="my-3 text-[13.5px] text-vsc-text">{tr(b.text)}</p>;
     case "ul":
       return (
         <ul className="my-3 space-y-1.5">
           {b.items.map((it, i) => (
             <li key={i} className="flex gap-2 text-[13.5px] text-vsc-text">
               <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-vsc-accent" />
-              <span>{it}</span>
+              <span>{tr(it)}</span>
             </li>
           ))}
         </ul>
@@ -56,10 +58,10 @@ function BlockView({ block: b }: { block: Block }) {
               className="rounded border border-vsc-line bg-[#252526] px-3 py-2.5"
             >
               <div className="text-[11px] uppercase tracking-wide text-vsc-muted">
-                {m.label}
+                {tr(m.label)}
               </div>
               <div className="mt-1 text-[13px] font-medium text-vsc-green">
-                {m.value}
+                {tr(m.value)}
               </div>
             </div>
           ))}
@@ -83,7 +85,7 @@ function BlockView({ block: b }: { block: Block }) {
         <CodeBlock
           lang={b.lang}
           code={b.code}
-          caption={b.caption}
+          caption={b.caption ? tr(b.caption) : b.caption}
           collapsible={b.collapsible}
         />
       );
@@ -91,7 +93,7 @@ function BlockView({ block: b }: { block: Block }) {
       return (
         <div className="my-4 flex gap-2.5 rounded border-l-2 border-vsc-accent bg-[#252526] px-3.5 py-2.5">
           <Info size={16} className="mt-0.5 shrink-0 text-vsc-accent" />
-          <p className="text-[13px] text-vsc-text">{b.text}</p>
+          <p className="text-[13px] text-vsc-text">{tr(b.text)}</p>
         </div>
       );
     case "links":
@@ -106,7 +108,7 @@ function BlockView({ block: b }: { block: Block }) {
               className="flex items-center gap-1.5 rounded border border-vsc-line bg-[#2d2d2d] px-3 py-1.5 text-[12.5px] text-vsc-light-blue transition-colors hover:border-vsc-accent hover:text-vsc-bright"
             >
               <ExternalLink size={13} />
-              {l.label}
+              {tr(l.label)}
             </a>
           ))}
         </div>

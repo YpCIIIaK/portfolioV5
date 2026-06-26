@@ -30,6 +30,7 @@ interface EditorState {
   // live, user-editable settings (driven by .vscode/settings.json)
   theme: string;
   fontSize: number;
+  lang: "ru" | "en";
 
   visitedFiles: string[];
   achievements: Record<string, boolean>;
@@ -44,6 +45,8 @@ interface EditorState {
   setFontSize: (n: number) => void;
   setMinimap: (open: boolean) => void;
   setSidebar: (open: boolean) => void;
+  setLang: (l: "ru" | "en") => void;
+  toggleLang: () => void;
 
   openFile: (id: string) => void;
   closeTab: (id: string) => void;
@@ -73,6 +76,7 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   theme: "dark-plus",
   fontSize: 14,
+  lang: "ru",
 
   visitedFiles: [],
   achievements: {},
@@ -103,15 +107,17 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (typeof window === "undefined") return;
     let theme = "dark-plus";
     let fontSize = 14;
+    let lang: "ru" | "en" = "ru";
     try {
       theme = localStorage.getItem("portfolio-theme") ?? theme;
       const fs = parseInt(localStorage.getItem("portfolio-fontsize") ?? "", 10);
       if (!isNaN(fs)) fontSize = Math.min(20, Math.max(12, fs));
+      if (localStorage.getItem("portfolio-lang") === "en") lang = "en";
     } catch {
       /* ignore */
     }
     document.documentElement.dataset.theme = theme;
-    set({ theme, fontSize });
+    set({ theme, fontSize, lang });
   },
 
   dismissToast: () => set((s) => ({ toasts: s.toasts.slice(1) })),
@@ -141,6 +147,17 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
   setMinimap: (open) => set({ minimapOpen: open }),
   setSidebar: (open) => set({ sidebarOpen: open }),
+  setLang: (l) => {
+    set({ lang: l });
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("portfolio-lang", l);
+      } catch {
+        /* ignore */
+      }
+    }
+  },
+  toggleLang: () => get().setLang(get().lang === "ru" ? "en" : "ru"),
 
   openFile: (id) => {
     set((s) => ({

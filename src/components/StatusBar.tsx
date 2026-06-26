@@ -1,6 +1,6 @@
 "use client";
 
-import { GitBranch, Check, X, Bell, Code2, RefreshCw } from "lucide-react";
+import { GitBranch, Check, X, Bell, Code2, RefreshCw, Languages } from "lucide-react";
 import { useEditor } from "@/lib/store";
 import { fileById, GITHUB } from "@/lib/files";
 import { LiveTicker } from "./LiveTicker";
@@ -10,6 +10,8 @@ import { AchievementsButton } from "./AchievementsButton";
 export function StatusBar() {
   const activeFile = useEditor((s) => s.activeFile);
   const toggleTerminal = useEditor((s) => s.toggleTerminal);
+  const lang = useEditor((s) => s.lang);
+  const toggleLang = useEditor((s) => s.toggleLang);
   const file = activeFile ? fileById(activeFile) : null;
 
   return (
@@ -45,6 +47,13 @@ export function StatusBar() {
         <span className="px-2">Spaces: 2</span>
         <span className="px-2">UTF-8</span>
         <span className="px-2">{file?.language ?? "Plain Text"}</span>
+        <button
+          onClick={toggleLang}
+          title={lang === "ru" ? "Switch to English" : "Переключить на русский"}
+          className="flex items-center gap-1 px-2 hover:bg-white/15"
+        >
+          <Languages size={13} /> {lang === "ru" ? "RU" : "EN"}
+        </button>
         <AchievementsButton />
         <ThemeSwitcher />
         <a
