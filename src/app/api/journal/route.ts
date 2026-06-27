@@ -11,6 +11,10 @@ import { NextResponse } from "next/server";
 const USER = "YpCIIIaK";
 const GH = "https://api.github.com";
 
+// Key repos whose recent commits we always surface (the public events feed is
+// dominated by branch-creation noise and rarely carries real commits).
+const FEATURED = ["repo-janitor", "Hephaestus"];
+
 export type JournalKind = "ship" | "fix" | "commit" | "pr" | "release" | "branch" | "issue";
 
 export interface JournalEntry {
@@ -53,10 +57,46 @@ async function gh<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+interface GhCommit {
+  sha: string;
+  html_url: string;
+  commit: { message: string; author: { date: string } };
+}
+
+function commitEntry(repo: string, c: GhCommit, idPrefix: string): JournalEntry {
+  const msg = c.commit.message.split("\n")[0].trim();
+  return {
+    id: `${idPrefix}-${c.sha}`,
+    kind: FEATURE.test(msg) ? "ship" : FIX.test(msg) ? "fix" : "commit",
+    verb: FEATURE.test(msg) ? "Shipped" : FIX.test(msg) ? "Fixed" : "Committed",
+    title: msg.replace(/^(feat|fix|perf|refactor|chore|docs|style)(\([^)]*\))?:\s*/i, ""),
+    repo,
+    url: c.html_url,
+    date: c.commit.author.date,
+    prod: isProdCommit(msg),
+  };
+}
+
 export async function GET() {
   try {
-    const events = await gh<GhEvent[]>(`/users/${USER}/events/public?per_page=100`);
+    const [events, ...featured] = await Promise.all([
+      gh<GhEvent[]>(`/users/${USER}/events/public?per_page=100`),
+      ...FEATURED.map((r) =>
+        gh<GhCommit[]>(`/repos/${USER}/${r}/commits?per_page=8`).catch(() => [] as GhCommit[]),
+      ),
+    ]);
+
     const items: JournalEntry[] = [];
+    const seenSha = new Set<string>();
+
+    // Featured-repo commits first (always surfaced, marked production).
+    FEATURED.forEach((repo, i) => {
+      for (const c of featured[i]) {
+        if (seenSha.has(c.sha)) continue;
+        seenSha.add(c.sha);
+        items.push({ ...commitEntry(repo, c, "feat"), prod: true });
+      }
+    });
 
     for (const e of events) {
       const repo = e.repo.name.split("/").pop() ?? e.repo.name;
@@ -67,7 +107,8 @@ export async function GET() {
           const commits = (p.commits as { message: string; sha: string }[] | undefined) ?? [];
           for (const c of commits) {
             const msg = c.message.split("\n")[0].trim();
-            if (!msg) continue;
+            if (!msg || seenSha.has(c.sha)) continue;
+            seenSha.add(c.sha);
             const prod = isProdCommit(c.message);
             items.push({
               id: `${e.id}-${c.sha}`,
@@ -147,6 +188,7 @@ export async function GET() {
       }
     }
 
+    items.sort((a, b) => +new Date(b.date) - +new Date(a.date));
     return NextResponse.json({ items: items.slice(0, 80) });
   } catch (err) {
     return NextResponse.json(
