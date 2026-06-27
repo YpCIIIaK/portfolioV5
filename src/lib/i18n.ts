@@ -582,6 +582,29 @@ export const EN: Record<string, string> = {
   "figma.com — макет": "figma.com — mockup",
   "mail.google.com (активная)": "mail.google.com (active)",
 
+  // ---- Workspace: Projects ----
+  "Загрузка проектов…": "Loading projects…",
+  "проекты": "projects",
+  "Проекты": "Projects",
+  "Добавить": "Add",
+  "Редактировать проект": "Edit project",
+  "Новый проект": "New project",
+  "Название": "Title",
+  "Описание": "Description",
+  "Ссылка на репозиторий (опционально)": "Repository link (optional)",
+  "Теги через запятую: React, Go, Docker": "Comma-separated tags: React, Go, Docker",
+  "Публичный — виден всем": "Public — visible to everyone",
+  "Приватный — только я": "Private — only me",
+  "Сохранить": "Save",
+  "Пока нет проектов. Добавь первый.": "No projects yet. Add the first one.",
+  "Публичных проектов пока нет.": "No public projects yet.",
+  "публичный": "public",
+  "приватный": "private",
+  "Репозиторий": "Repository",
+  "Сменить видимость": "Toggle visibility",
+  "Редактировать": "Edit",
+  "Удалить": "Delete",
+
   // ---- AI usage panel ----
   "Claude Code — агент, которым собран сайт": "Claude Code — the agent this site was built with",
   "OpenRouter — ассистент сайта и эксперименты с моделями":

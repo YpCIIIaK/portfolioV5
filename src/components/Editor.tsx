@@ -22,6 +22,7 @@ import { NotesPanel } from "./workspace/NotesPanel";
 import { CalendarPanel } from "./workspace/CalendarPanel";
 import { TasksPanel } from "./workspace/TasksPanel";
 import { MailPanel } from "./workspace/MailPanel";
+import { ProjectsPanel } from "./workspace/ProjectsPanel";
 
 export function Editor() {
   const openTabs = useEditor((s) => s.openTabs);
@@ -96,6 +97,7 @@ export function Editor() {
           {file.id === "workspace/calendar.tsx" && <CalendarPanel />}
           {file.id === "workspace/tasks.todo" && <TasksPanel />}
           {file.id === "workspace/mail.tsx" && <MailPanel />}
+          {file.id === "workspace/projects.tsx" && <ProjectsPanel />}
           </div>
           <Minimap blocks={file.blocks} />
         </div>

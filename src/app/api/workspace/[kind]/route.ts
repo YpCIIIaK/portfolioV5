@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireOwner } from "@/lib/auth";
+import { requireOwner, getSession } from "@/lib/auth";
 import { supabaseConfigured, sbSelect, sbInsert, sbUpdate, sbDelete } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -11,18 +11,20 @@ export const runtime = "nodejs";
  * is gated behind requireOwner().
  */
 
-type Kind = "notes" | "tasks" | "events";
+type Kind = "notes" | "tasks" | "events" | "projects";
 
 const TABLE: Record<Kind, string> = {
   notes: "ws_notes",
   tasks: "ws_tasks",
   events: "ws_events",
+  projects: "ws_projects",
 };
 
 const ORDER: Record<Kind, string> = {
   notes: "order=updated_at.desc",
   tasks: "order=created_at.desc",
   events: "order=date.asc",
+  projects: "order=created_at.desc",
 };
 
 // Field whitelists — anything else in the body is dropped before hitting the DB.
@@ -30,16 +32,18 @@ const CREATE: Record<Kind, z.ZodTypeAny> = {
   notes: z.object({ title: z.string().max(200).default("Без названия"), body: z.string().max(20000).default("") }),
   tasks: z.object({ title: z.string().min(1).max(500), done: z.boolean().default(false), due: z.string().nullable().default(null) }),
   events: z.object({ title: z.string().min(1).max(300), date: z.string(), time: z.string().nullable().default(null), note: z.string().max(2000).nullable().default(null) }),
+  projects: z.object({ title: z.string().min(1).max(200), description: z.string().max(4000).default(""), repo_url: z.string().max(500).nullable().default(null), tags: z.string().max(500).default(""), is_public: z.boolean().default(true) }),
 };
 
 const UPDATE: Record<Kind, z.ZodTypeAny> = {
   notes: z.object({ title: z.string().max(200).optional(), body: z.string().max(20000).optional() }),
   tasks: z.object({ title: z.string().min(1).max(500).optional(), done: z.boolean().optional(), due: z.string().nullable().optional() }),
   events: z.object({ title: z.string().min(1).max(300).optional(), date: z.string().optional(), time: z.string().nullable().optional(), note: z.string().max(2000).nullable().optional() }),
+  projects: z.object({ title: z.string().min(1).max(200).optional(), description: z.string().max(4000).optional(), repo_url: z.string().max(500).nullable().optional(), tags: z.string().max(500).optional(), is_public: z.boolean().optional() }),
 };
 
 function parseKind(raw: string): Kind | null {
-  return raw === "notes" || raw === "tasks" || raw === "events" ? raw : null;
+  return raw === "notes" || raw === "tasks" || raw === "events" || raw === "projects" ? raw : null;
 }
 
 async function guard(kindRaw: string): Promise<{ kind: Kind } | NextResponse> {
@@ -57,7 +61,20 @@ async function guard(kindRaw: string): Promise<{ kind: Kind } | NextResponse> {
 type Ctx = { params: Promise<{ kind: string }> };
 
 export async function GET(_req: Request, { params }: Ctx) {
-  const g = await guard((await params).kind);
+  const kindRaw = (await params).kind;
+
+  // Projects have public visibility: guests may read, but only is_public rows.
+  if (kindRaw === "projects") {
+    if (!supabaseConfigured()) {
+      return NextResponse.json({ error: "Supabase не настроен" }, { status: 503 });
+    }
+    const owner = !!(await getSession())?.owner;
+    const filter = owner ? "" : "&is_public=eq.true";
+    const rows = await sbSelect(TABLE.projects, `select=*${filter}&${ORDER.projects}`);
+    return NextResponse.json({ items: rows });
+  }
+
+  const g = await guard(kindRaw);
   if (g instanceof NextResponse) return g;
   const rows = await sbSelect(TABLE[g.kind], `select=*&${ORDER[g.kind]}`);
   return NextResponse.json({ items: rows });

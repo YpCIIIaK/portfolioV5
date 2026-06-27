@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Image from "next/image";
-import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, Blocks } from "lucide-react";
+import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, FolderGit2, Blocks } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
 
@@ -12,6 +12,7 @@ const FEATURES = [
   { id: "workspace/calendar.tsx", label: "Календарь", Icon: CalendarDays },
   { id: "workspace/tasks.todo", label: "Задачи", Icon: ListTodo },
   { id: "workspace/mail.tsx", label: "Почта", Icon: Mail },
+  { id: "workspace/projects.tsx", label: "Проекты", Icon: FolderGit2 },
 ];
 
 export function WorkspacePanel() {

@@ -36,8 +36,22 @@ create table if not exists public.ws_events (
   created_at timestamptz not null default now()
 );
 
+-- Showcase projects -------------------------------------------------
+-- Public ones are served to everyone (guests included); private ones
+-- only to the owner. Access is still gated in the API, not via RLS.
+create table if not exists public.ws_projects (
+  id          uuid primary key default gen_random_uuid(),
+  title       text not null,
+  description text not null default '',
+  repo_url    text,
+  tags        text not null default '',
+  is_public   boolean not null default true,
+  created_at  timestamptz not null default now()
+);
+
 -- Lock everything down to the service role (server-side) only.
-alter table public.ws_notes  enable row level security;
-alter table public.ws_tasks  enable row level security;
-alter table public.ws_events enable row level security;
+alter table public.ws_notes    enable row level security;
+alter table public.ws_tasks    enable row level security;
+alter table public.ws_events   enable row level security;
+alter table public.ws_projects enable row level security;
 -- (No policies created on purpose: anon/public key gets zero access.)

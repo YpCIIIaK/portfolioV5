@@ -25,7 +25,17 @@ export interface WsEvent {
   note: string | null;
 }
 
-export type Kind = "notes" | "tasks" | "events";
+export interface Project {
+  id: string;
+  title: string;
+  description: string;
+  repo_url: string | null;
+  tags: string; // comma-separated
+  is_public: boolean;
+  created_at: string;
+}
+
+export type Kind = "notes" | "tasks" | "events" | "projects";
 
 /** Read-only sample data shown to guests so the feature is explorable. */
 export const DEMO_NOTES: Note[] = [
@@ -59,6 +69,27 @@ export const DEMO_EVENTS: WsEvent[] = [
   { id: "demo-1", title: "Созвон по проекту", date: isoDay(0), time: "15:00", note: null },
   { id: "demo-2", title: "Дедлайн: тестовое", date: isoDay(2), time: null, note: "Отправить ссылку на репозиторий" },
   { id: "demo-3", title: "Спортзал", date: isoDay(1), time: "19:30", note: null },
+];
+
+export const DEMO_PROJECTS: Project[] = [
+  {
+    id: "demo-1",
+    title: "Repo Anti-Rot",
+    description: "Монитор «гниения» репозитория: 16 сканеров, score и грейд A–F, опциональный AI-проход. CLI + GitHub Action + дашборд.",
+    repo_url: "https://github.com/YpCIIIaK/repo-janitor",
+    tags: "TypeScript, Next.js, pnpm, Vitest",
+    is_public: true,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "demo-2",
+    title: "Hephaestus — Multi-Agent Arena",
+    description: "Мульти-модельный чат и DAG-пайплайны агентов поверх OpenRouter + Ollama, RAG, оптимизация токенов.",
+    repo_url: "https://github.com/YpCIIIaK/Hephaestus",
+    tags: "TypeScript, Next.js, OpenRouter, Ollama, RAG",
+    is_public: true,
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+  },
 ];
 
 interface ApiList<T> { items: T[] }
