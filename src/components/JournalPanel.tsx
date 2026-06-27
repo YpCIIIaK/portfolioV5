@@ -44,14 +44,14 @@ export function JournalPanel() {
   const owner = useSession((s) => !!s.user?.owner);
   const [items, setItems] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   const [prodOnly, setProdOnly] = useState(true);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true);
-      setError(null);
+      setFailed(false);
       try {
         const res = await fetch("/api/journal", { cache: "no-store" });
         if (!res.ok) throw new Error(String(res.status));
@@ -80,8 +80,8 @@ export function JournalPanel() {
           }
         }
         if (alive) setItems(all);
-      } catch (e) {
-        if (alive) setError(tr("Не удалось загрузить ленту активности."));
+      } catch {
+        if (alive) setFailed(true);
       } finally {
         if (alive) setLoading(false);
       }
@@ -89,7 +89,7 @@ export function JournalPanel() {
     return () => {
       alive = false;
     };
-  }, [owner, tr]);
+  }, [owner]);
 
   const groups = useMemo(() => {
     const visible = prodOnly ? items.filter((i) => i.prod) : items;
@@ -123,9 +123,9 @@ export function JournalPanel() {
         <div className="flex items-center gap-2 text-[13px] text-vsc-muted">
           <Loader2 size={15} className="animate-spin" /> {tr("Собираю журнал из GitHub…")}
         </div>
-      ) : error ? (
+      ) : failed ? (
         <div className="flex items-center gap-2 rounded border border-vsc-line bg-[#252526] px-3 py-2 text-[13px] text-[#f48771]">
-          <AlertCircle size={15} /> {error}
+          <AlertCircle size={15} /> {tr("Не удалось загрузить ленту активности.")}
         </div>
       ) : groups.length === 0 ? (
         <p className="text-[13px] text-vsc-muted">{tr("Пока нет событий для показа.")}</p>
