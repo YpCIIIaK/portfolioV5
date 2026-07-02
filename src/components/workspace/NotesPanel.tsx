@@ -5,6 +5,7 @@ import { Plus, Trash2, FileText } from "lucide-react";
 import { DEMO_NOTES, wsCreate, wsUpdate, wsDelete, type Note } from "@/lib/workspace";
 import { useCollection } from "./useCollection";
 import { GuestBanner } from "./GuestBanner";
+import { PriorityPicker, ColorPicker, PriorityDot, colorHex } from "./wsStyle";
 
 type SaveStatus = "idle" | "saving" | "saved";
 
@@ -63,6 +64,12 @@ export function NotesPanel() {
     setStatus("idle");
   }
 
+  async function patchMeta(id: string, body: Partial<Note>) {
+    if (readonly) return;
+    setItems(items.map((n) => (n.id === id ? { ...n, ...body } : n)));
+    await wsUpdate<Note>("notes", id, body as Record<string, unknown>);
+  }
+
   async function remove(id: string) {
     clearTimeout(timers.current[id]);
     const rest = items.filter((n) => n.id !== id);
@@ -90,12 +97,14 @@ export function NotesPanel() {
             <button
               key={n.id}
               onClick={() => setSelectedId(n.id)}
-              className={`group flex items-center gap-1.5 rounded px-2 py-1.5 text-left text-[13px] ${
+              className={`group flex items-center gap-1.5 rounded border-l-2 px-2 py-1.5 text-left text-[13px] ${
                 selectedId === n.id ? "bg-vsc-active-row text-vsc-bright" : "text-vsc-text hover:bg-vsc-hover"
               }`}
+              style={{ borderLeftColor: colorHex(n.color) ?? "transparent" }}
             >
               <FileText size={13} className="shrink-0 text-vsc-muted" />
               <span className="flex-1 truncate">{n.title?.trim() || "Без названия"}</span>
+              <PriorityDot priority={n.priority} />
               {!readonly && (
                 <Trash2
                   size={13}
@@ -127,11 +136,15 @@ export function NotesPanel() {
 
           {selected ? (
             <>
-              <div className="mb-2 flex h-4 items-center justify-end">
+              <div className="mb-2 flex h-6 items-center justify-end gap-1">
                 {!readonly && (
-                  <span className="text-[11px] text-vsc-muted">
-                    {status === "saving" ? "Сохранение…" : status === "saved" ? "Сохранено" : ""}
-                  </span>
+                  <>
+                    <span className="mr-1 text-[11px] text-vsc-muted">
+                      {status === "saving" ? "Сохранение…" : status === "saved" ? "Сохранено" : ""}
+                    </span>
+                    <PriorityPicker value={selected.priority} onChange={(p) => patchMeta(selected.id, { priority: p })} />
+                    <ColorPicker value={selected.color} onChange={(c) => patchMeta(selected.id, { color: c })} />
+                  </>
                 )}
               </div>
               <textarea

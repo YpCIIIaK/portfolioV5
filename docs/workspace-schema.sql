@@ -8,11 +8,17 @@
 
 create extension if not exists "pgcrypto";
 
+-- Priority scale shared by notes/tasks/events: none|low|medium|high.
+-- Stored as text; validated by the API (zod). `color` is a palette key
+-- ('', 'red', 'blue', …) resolved to a hex on the client (see wsStyle).
+
 -- Notes -------------------------------------------------------------
 create table if not exists public.ws_notes (
   id         uuid primary key default gen_random_uuid(),
   title      text not null default 'Без названия',
   body       text not null default '',
+  priority   text not null default 'none',
+  color      text not null default '',
   updated_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
@@ -23,6 +29,8 @@ create table if not exists public.ws_tasks (
   title      text not null,
   done       boolean not null default false,
   due        date,
+  priority   text not null default 'none',
+  color      text not null default '',
   created_at timestamptz not null default now()
 );
 
@@ -33,6 +41,11 @@ create table if not exists public.ws_events (
   date       date not null,
   time       text,
   note       text,
+  priority   text not null default 'none',
+  color      text not null default '',
+  -- Set once a reminder has been sent, so the cron never notifies twice.
+  -- Reset to null by the API when an event's date/time changes.
+  notified_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -55,3 +68,37 @@ alter table public.ws_tasks    enable row level security;
 alter table public.ws_events   enable row level security;
 alter table public.ws_projects enable row level security;
 -- (No policies created on purpose: anon/public key gets zero access.)
+
+-- Migration for existing databases (safe to re-run) -----------------
+-- Adds the priority/color columns to tables created before this change.
+alter table public.ws_notes  add column if not exists priority text not null default 'none';
+alter table public.ws_notes  add column if not exists color    text not null default '';
+alter table public.ws_tasks  add column if not exists priority text not null default 'none';
+alter table public.ws_tasks  add column if not exists color    text not null default '';
+alter table public.ws_events add column if not exists priority text not null default 'none';
+alter table public.ws_events add column if not exists color    text not null default '';
+alter table public.ws_events add column if not exists notified_at timestamptz;
+
+-- Calendar reminders via pg_cron + pg_net -------------------------------------
+-- Runs a scheduled HTTP POST to the app, which finds events whose reminder
+-- window has arrived and sends Telegram/email. Requires the pg_cron and pg_net
+-- extensions (enable under Database -> Extensions in the Supabase dashboard).
+--
+--   create extension if not exists pg_cron;
+--   create extension if not exists pg_net;
+--
+-- Then schedule (replace the URL host and CRON_SECRET with your own):
+--
+--   select cron.schedule(
+--     'ws-event-reminders',
+--     '*/5 * * * *',                       -- every 5 minutes
+--     $$
+--       select net.http_post(
+--         url    := 'https://your-domain/api/workspace/cron',
+--         headers:= '{"x-cron-secret":"YOUR_CRON_SECRET"}'::jsonb
+--       );
+--     $$
+--   );
+--
+-- To change the schedule later: select cron.unschedule('ws-event-reminders');
+-- then re-run cron.schedule(...). Inspect runs: select * from cron.job_run_details;

@@ -2,10 +2,15 @@
 
 /** Shared types, demo data and a tiny fetch helper for the personal workspace. */
 
+/** Shared priority scale used by tasks, events and notes. */
+export type Priority = "none" | "low" | "medium" | "high";
+
 export interface Note {
   id: string;
   title: string;
   body: string;
+  priority: Priority;
+  color: string; // palette key from wsStyle, "" = default
   updated_at: string;
 }
 
@@ -14,6 +19,8 @@ export interface Task {
   title: string;
   done: boolean;
   due: string | null;
+  priority: Priority;
+  color: string;
   created_at: string;
 }
 
@@ -23,6 +30,8 @@ export interface WsEvent {
   date: string; // YYYY-MM-DD
   time: string | null;
   note: string | null;
+  priority: Priority;
+  color: string;
 }
 
 export interface Project {
@@ -43,20 +52,24 @@ export const DEMO_NOTES: Note[] = [
     id: "demo-1",
     title: "Идеи для портфолио",
     body: "— добавить тёмную/светлую тему\n— живой график активности GitHub\n— секцию с AI-проектами\n\n(Это демо. Войди через GitHub, чтобы вести свои заметки.)",
+    priority: "medium",
+    color: "purple",
     updated_at: new Date().toISOString(),
   },
   {
     id: "demo-2",
     title: "Прочитать",
     body: "Документация Next 16, паттерны realtime на WebSocket, заметки по Go-конкурентности.",
+    priority: "none",
+    color: "",
     updated_at: new Date(Date.now() - 86400000).toISOString(),
   },
 ];
 
 export const DEMO_TASKS: Task[] = [
-  { id: "demo-1", title: "Запушить новый проект на GitHub", done: false, due: null, created_at: new Date().toISOString() },
-  { id: "demo-2", title: "Обновить резюме", done: true, due: null, created_at: new Date().toISOString() },
-  { id: "demo-3", title: "Ответить на письма рекрутеров", done: false, due: null, created_at: new Date().toISOString() },
+  { id: "demo-1", title: "Запушить новый проект на GitHub", done: false, due: isoDay(1), priority: "high", color: "", created_at: new Date().toISOString() },
+  { id: "demo-2", title: "Обновить резюме", done: true, due: null, priority: "low", color: "", created_at: new Date().toISOString() },
+  { id: "demo-3", title: "Ответить на письма рекрутеров", done: false, due: isoDay(0), priority: "medium", color: "blue", created_at: new Date().toISOString() },
 ];
 
 function isoDay(offset: number): string {
@@ -66,9 +79,9 @@ function isoDay(offset: number): string {
 }
 
 export const DEMO_EVENTS: WsEvent[] = [
-  { id: "demo-1", title: "Созвон по проекту", date: isoDay(0), time: "15:00", note: null },
-  { id: "demo-2", title: "Дедлайн: тестовое", date: isoDay(2), time: null, note: "Отправить ссылку на репозиторий" },
-  { id: "demo-3", title: "Спортзал", date: isoDay(1), time: "19:30", note: null },
+  { id: "demo-1", title: "Созвон по проекту", date: isoDay(0), time: "15:00", note: null, priority: "medium", color: "blue" },
+  { id: "demo-2", title: "Дедлайн: тестовое", date: isoDay(2), time: null, note: "Отправить ссылку на репозиторий", priority: "high", color: "" },
+  { id: "demo-3", title: "Спортзал", date: isoDay(1), time: "19:30", note: null, priority: "none", color: "green" },
 ];
 
 export const DEMO_PROJECTS: Project[] = [

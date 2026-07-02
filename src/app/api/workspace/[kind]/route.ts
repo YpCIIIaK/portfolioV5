@@ -27,18 +27,21 @@ const ORDER: Record<Kind, string> = {
   projects: "order=created_at.desc",
 };
 
+const priority = z.enum(["none", "low", "medium", "high"]);
+const color = z.string().max(20);
+
 // Field whitelists — anything else in the body is dropped before hitting the DB.
 const CREATE: Record<Kind, z.ZodTypeAny> = {
-  notes: z.object({ title: z.string().max(200).default("Без названия"), body: z.string().max(20000).default("") }),
-  tasks: z.object({ title: z.string().min(1).max(500), done: z.boolean().default(false), due: z.string().nullable().default(null) }),
-  events: z.object({ title: z.string().min(1).max(300), date: z.string(), time: z.string().nullable().default(null), note: z.string().max(2000).nullable().default(null) }),
+  notes: z.object({ title: z.string().max(200).default("Без названия"), body: z.string().max(20000).default(""), priority: priority.default("none"), color: color.default("") }),
+  tasks: z.object({ title: z.string().min(1).max(500), done: z.boolean().default(false), due: z.string().nullable().default(null), priority: priority.default("none"), color: color.default("") }),
+  events: z.object({ title: z.string().min(1).max(300), date: z.string(), time: z.string().nullable().default(null), note: z.string().max(2000).nullable().default(null), priority: priority.default("none"), color: color.default("") }),
   projects: z.object({ title: z.string().min(1).max(200), description: z.string().max(4000).default(""), repo_url: z.string().max(500).nullable().default(null), tags: z.string().max(500).default(""), is_public: z.boolean().default(true) }),
 };
 
 const UPDATE: Record<Kind, z.ZodTypeAny> = {
-  notes: z.object({ title: z.string().max(200).optional(), body: z.string().max(20000).optional() }),
-  tasks: z.object({ title: z.string().min(1).max(500).optional(), done: z.boolean().optional(), due: z.string().nullable().optional() }),
-  events: z.object({ title: z.string().min(1).max(300).optional(), date: z.string().optional(), time: z.string().nullable().optional(), note: z.string().max(2000).nullable().optional() }),
+  notes: z.object({ title: z.string().max(200).optional(), body: z.string().max(20000).optional(), priority: priority.optional(), color: color.optional() }),
+  tasks: z.object({ title: z.string().min(1).max(500).optional(), done: z.boolean().optional(), due: z.string().nullable().optional(), priority: priority.optional(), color: color.optional() }),
+  events: z.object({ title: z.string().min(1).max(300).optional(), date: z.string().optional(), time: z.string().nullable().optional(), note: z.string().max(2000).nullable().optional(), priority: priority.optional(), color: color.optional() }),
   projects: z.object({ title: z.string().min(1).max(200).optional(), description: z.string().max(4000).optional(), repo_url: z.string().max(500).nullable().optional(), tags: z.string().max(500).optional(), is_public: z.boolean().optional() }),
 };
 
@@ -99,6 +102,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (!parsed.success) return NextResponse.json({ error: "invalid body" }, { status: 400 });
   const patch = { ...(parsed.data as Record<string, unknown>) };
   if (g.kind === "notes") patch.updated_at = new Date().toISOString();
+  // Rescheduling an event re-arms its reminder.
+  if (g.kind === "events" && ("date" in patch || "time" in patch)) patch.notified_at = null;
   const row = await sbUpdate(TABLE[g.kind], `id=eq.${encodeURIComponent(id)}`, patch);
   return NextResponse.json({ item: row });
 }

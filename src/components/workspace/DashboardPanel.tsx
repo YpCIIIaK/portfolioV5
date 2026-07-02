@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { StickyNote, CalendarDays, Clock, Cloud, Mail } from "lucide-react";
-import { DEMO_NOTES, DEMO_EVENTS, type Note, type WsEvent } from "@/lib/workspace";
+import { ListTodo, CalendarDays, Clock, Cloud, Mail, Check } from "lucide-react";
+import { DEMO_TASKS, DEMO_EVENTS, wsUpdate, type Task, type WsEvent } from "@/lib/workspace";
 import { useCollection } from "./useCollection";
 import { useMailbox } from "./useMailbox";
 import { useEditor } from "@/lib/store";
 import { GuestBanner } from "./GuestBanner";
+import { PriorityDot, priorityRank } from "./wsStyle";
 
 /* ---- clocks ---------------------------------------------------------- */
 
@@ -131,32 +132,68 @@ function isoDay(offset: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function NotesWidget() {
-  const { items } = useCollection<Note>("notes", DEMO_NOTES);
+function dueLabel(due: string | null): { text: string; overdue: boolean } | null {
+  if (!due) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(due + "T00:00:00");
+  const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
+  if (diff === 0) return { text: "сегодня", overdue: false };
+  if (diff === 1) return { text: "завтра", overdue: false };
+  if (diff < 0) return { text: diff === -1 ? "вчера" : "просрочено", overdue: true };
+  return { text: d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }), overdue: false };
+}
+
+function TasksWidget() {
+  const { items, setItems, readonly } = useCollection<Task>("tasks", DEMO_TASKS);
   const openFile = useEditor((s) => s.openFile);
-  const recent = useMemo(
-    () => [...items].sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? "")).slice(0, 3),
+
+  const open = useMemo(
+    () =>
+      items
+        .filter((t) => !t.done)
+        .sort((a, b) => {
+          const pr = priorityRank(b.priority) - priorityRank(a.priority);
+          if (pr !== 0) return pr;
+          return (a.due ?? "9999").localeCompare(b.due ?? "9999");
+        })
+        .slice(0, 5),
     [items]
   );
+  const openCount = items.filter((t) => !t.done).length;
+
+  async function complete(t: Task) {
+    if (readonly) return;
+    setItems(items.map((x) => (x.id === t.id ? { ...x, done: true } : x)));
+    await wsUpdate<Task>("tasks", t.id, { done: true });
+  }
 
   return (
-    <Card title="Заметки" Icon={StickyNote} onTitle={() => openFile("workspace/notes.md")}>
-      {recent.length === 0 ? (
-        <p className="text-[12px] text-vsc-muted">Заметок пока нет.</p>
+    <Card title={`Задачи · ${openCount}`} Icon={ListTodo} onTitle={() => openFile("workspace/tasks.todo")}>
+      {open.length === 0 ? (
+        <p className="text-[12px] text-vsc-muted">Активных задач нет 🎉</p>
       ) : (
-        <div className="flex flex-col gap-2">
-          {recent.map((n) => (
-            <button
-              key={n.id}
-              onClick={() => openFile("workspace/notes.md")}
-              className="rounded border border-vsc-line bg-vsc-bg px-3 py-2 text-left hover:border-vsc-muted"
-            >
-              <div className="truncate text-[13px] text-vsc-bright">{n.title?.trim() || "Без названия"}</div>
-              {n.body?.trim() && (
-                <div className="mt-0.5 line-clamp-2 text-[12px] text-vsc-muted">{n.body.trim()}</div>
-              )}
-            </button>
-          ))}
+        <div className="flex flex-col gap-0.5">
+          {open.map((t) => {
+            const due = dueLabel(t.due);
+            return (
+              <div key={t.id} className="group flex items-center gap-2 rounded px-1 py-1 hover:bg-vsc-hover">
+                <button
+                  onClick={() => complete(t)}
+                  disabled={readonly}
+                  title="Выполнить"
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-vsc-muted text-transparent hover:border-vsc-green hover:text-vsc-green disabled:opacity-50"
+                >
+                  <Check size={11} />
+                </button>
+                <PriorityDot priority={t.priority} />
+                <span className="flex-1 truncate text-[13px] text-vsc-text">{t.title}</span>
+                {due && (
+                  <span className={`shrink-0 text-[11px] ${due.overdue ? "text-red-400" : "text-vsc-muted"}`}>{due.text}</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </Card>
@@ -193,6 +230,7 @@ function AgendaWidget() {
                 {g.events.map((e) => (
                   <div key={e.id} className="flex items-center gap-2 rounded px-1 py-0.5">
                     <span className="w-12 shrink-0 font-mono text-[12px] text-vsc-yellow">{e.time ?? "—"}</span>
+                    <PriorityDot priority={e.priority} />
                     <span className="truncate text-[13px] text-vsc-text">{e.title}</span>
                   </div>
                 ))}
@@ -277,18 +315,18 @@ export function DashboardPanel() {
       <h1 className="mb-5 text-[22px] font-semibold text-vsc-bright">{greeting} 👋</h1>
       <GuestBannerIfNeeded />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <TasksWidget />
+        <AgendaWidget />
+        <MailWidget />
         <Clocks />
         <Weather />
-        <MailWidget />
-        <AgendaWidget />
-        <NotesWidget />
       </div>
     </div>
   );
 }
 
 function GuestBannerIfNeeded() {
-  const { readonly } = useCollection<Note>("notes", DEMO_NOTES);
+  const { readonly } = useCollection<Task>("tasks", DEMO_TASKS);
   if (!readonly) return null;
   return (
     <div className="mb-4">
