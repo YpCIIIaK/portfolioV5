@@ -71,6 +71,35 @@ const about: FileNode = {
   ],
 };
 
+const resume: FileNode = {
+  id: "about/resume.md",
+  name: "resume.md",
+  language: "Markdown",
+  blocks: [
+    { t: "h1", text: "📄 Резюме" },
+    { t: "p", text: "Владимир — Fullstack Developer (React / TypeScript / Next.js / Go / AI). Астана, открыт к удалёнке и любому формату сотрудничества." },
+    { t: "callout", text: "Нужен классический PDF? Открой печатную версию по ссылке ниже и нажми «Скачать PDF» — браузер сохранит файл со всеми стилями." },
+    { t: "h2", text: "Кратко" },
+    {
+      t: "ul",
+      items: [
+        "2+ года: пет-проекты, два стартапа, коммерческая разработка",
+        "Frontend: React 18/19, TypeScript strict, Next.js, Angular 19, Vue 3",
+        "Backend: Go, Node.js, PHP/Symfony, Python; realtime на WebSocket",
+        "AI: OpenRouter / Claude API, RAG, мультиагентные системы",
+      ],
+    },
+    {
+      t: "links",
+      items: [
+        { label: "📥 Открыть печатную версию (PDF)", href: "/cv" },
+        { label: "GitHub", href: GITHUB },
+        { label: "Email", href: "mailto:bigboyvova01@gmail.com" },
+      ],
+    },
+  ],
+};
+
 const skills: FileNode = {
   id: "about/skills.json",
   name: "skills.json",
@@ -732,6 +761,17 @@ const ccusage: FileNode = {
   ],
 };
 
+const guestbook: FileNode = {
+  id: "community/guestbook.tsx",
+  name: "guestbook.tsx",
+  language: "TypeScript React",
+  blocks: [
+    { t: "h1", text: "💬 Гостевая книга" },
+    { t: "p", text: "Оставь след: пара слов о сайте, фидбек или просто привет. Вход через GitHub — записи публичные и живут в Supabase." },
+    { t: "callout", text: "Это живая фича: GitHub OAuth + Postgres. Автор записи берётся из подписанной сессии, а не из формы — подделать имя не выйдет." },
+  ],
+};
+
 const contact: FileNode = {
   id: "contact/contact.tsx",
   name: "contact.tsx",
@@ -760,7 +800,7 @@ export const tree: FolderNode = {
     {
       id: "about",
       name: "about",
-      children: [about, skills],
+      children: [about, skills, resume],
     } as FolderNode,
     {
       id: "projects",
@@ -781,6 +821,11 @@ export const tree: FolderNode = {
       id: "meta",
       name: "meta",
       children: [ccusage],
+    } as FolderNode,
+    {
+      id: "community",
+      name: "community",
+      children: [guestbook],
     } as FolderNode,
     {
       id: "contact",

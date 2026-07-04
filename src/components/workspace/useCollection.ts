@@ -14,27 +14,42 @@ export function useCollection<T>(kind: Kind, demo: T[]) {
   const [items, setItems] = useState<T[]>(demo);
   const [loading, setLoading] = useState(owner);
   const [error, setError] = useState<string | null>(null);
+  const [fetchKey, setFetchKey] = useState(0);
 
-  const reload = useCallback(async () => {
-    if (!owner) {
-      setItems(demo);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
+  // Reset to the demo snapshot when ownership flips (login/logout).
+  const [prevOwner, setPrevOwner] = useState(owner);
+  if (prevOwner !== owner) {
+    setPrevOwner(owner);
+    setItems(demo);
+    setLoading(owner);
     setError(null);
-    try {
-      setItems(await wsList<T>(kind));
-    } catch {
-      setError("Не удалось загрузить данные. Проверь настройку Supabase.");
-    } finally {
-      setLoading(false);
-    }
-  }, [owner, kind, demo]);
+  }
 
   useEffect(() => {
-    reload();
-  }, [reload]);
+    if (!owner) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await wsList<T>(kind);
+        if (cancelled) return;
+        setItems(data);
+        setError(null);
+      } catch {
+        if (!cancelled) setError("Не удалось загрузить данные. Проверь настройку Supabase.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [owner, kind, fetchKey]);
+
+  // Manual refresh; safe to call from event handlers.
+  const reload = useCallback(() => {
+    setLoading(true);
+    setFetchKey((k) => k + 1);
+  }, []);
 
   return { items, setItems, loading, error, readonly: !owner, reload };
 }

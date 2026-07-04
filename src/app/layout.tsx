@@ -36,6 +36,18 @@ export const metadata: Metadata = {
   },
 };
 
+const PERSON_JSONLD = {
+  "@context": "https://schema.org",
+  "@type": "Person",
+  name: "Vladimir",
+  url: SITE_URL,
+  jobTitle: "Fullstack Developer",
+  sameAs: ["https://github.com/YpCIIIaK"],
+  email: "mailto:bigboyvova01@gmail.com",
+  address: { "@type": "PostalAddress", addressLocality: "Астана", addressCountry: "KZ" },
+  knowsAbout: ["TypeScript", "React", "Next.js", "Go", "Node.js", "AI engineering"],
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -43,7 +55,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="ru"
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
@@ -52,6 +64,10 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `try{var t=localStorage.getItem('portfolio-theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}`,
           }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(PERSON_JSONLD) }}
         />
       </head>
       <body className="min-h-full flex flex-col">{children}</body>

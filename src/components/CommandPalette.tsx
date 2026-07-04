@@ -66,15 +66,19 @@ export function CommandPalette() {
     );
   }, [q, commands]);
 
-  useEffect(() => {
+  // Reset the query when the palette (re)opens — during render, per React docs.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (prevOpen !== open) {
+    setPrevOpen(open);
     if (open) {
       setQ("");
       setSel(0);
-      setTimeout(() => inputRef.current?.focus(), 0);
     }
-  }, [open]);
+  }
 
-  useEffect(() => setSel(0), [q]);
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 0);
+  }, [open]);
 
   if (!open) return null;
 
@@ -111,7 +115,10 @@ export function CommandPalette() {
         <input
           ref={inputRef}
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setSel(0);
+          }}
           onKeyDown={onKey}
           placeholder="Type a command or file name…"
           className="w-full border-b border-vsc-line bg-[#3c3c3c] px-3 py-2 text-[13px] text-vsc-text outline-none placeholder:text-vsc-muted"

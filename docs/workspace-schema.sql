@@ -62,11 +62,41 @@ create table if not exists public.ws_projects (
   created_at  timestamptz not null default now()
 );
 
+-- Guestbook -----------------------------------------------------------
+-- Public read, write for any logged-in GitHub user (identity comes from
+-- the signed session on the server, never from the client body).
+create table if not exists public.ws_guestbook (
+  id         uuid primary key default gen_random_uuid(),
+  github_id  bigint not null,
+  login      text not null,
+  name       text not null default '',
+  avatar     text not null default '',
+  message    text not null,
+  created_at timestamptz not null default now()
+);
+
+-- Visit analytics -----------------------------------------------------
+-- One row per visit beacon; aggregated by the owner-only /api/stats.
+create table if not exists public.ws_visits (
+  id          uuid primary key default gen_random_uuid(),
+  duration_ms integer not null default 0,
+  referrer    text not null default '',
+  tz          text not null default '',
+  screen      text not null default '',
+  ua          text not null default '',
+  geo         text not null default '',
+  files       jsonb not null default '[]'::jsonb,
+  created_at  timestamptz not null default now()
+);
+create index if not exists ws_visits_created_at_idx on public.ws_visits (created_at desc);
+
 -- Lock everything down to the service role (server-side) only.
 alter table public.ws_notes    enable row level security;
 alter table public.ws_tasks    enable row level security;
 alter table public.ws_events   enable row level security;
 alter table public.ws_projects enable row level security;
+alter table public.ws_guestbook enable row level security;
+alter table public.ws_visits   enable row level security;
 -- (No policies created on purpose: anon/public key gets zero access.)
 
 -- Migration for existing databases (safe to re-run) -----------------
@@ -78,6 +108,11 @@ alter table public.ws_tasks  add column if not exists color    text not null def
 alter table public.ws_events add column if not exists priority text not null default 'none';
 alter table public.ws_events add column if not exists color    text not null default '';
 alter table public.ws_events add column if not exists notified_at timestamptz;
+-- Kanban status for tasks: todo | doing | done (kept in sync with `done`).
+alter table public.ws_tasks  add column if not exists status text not null default 'todo';
+update public.ws_tasks set status = 'done' where done = true and status <> 'done';
+-- Recurring events: none | daily | weekly | monthly | yearly.
+alter table public.ws_events add column if not exists repeat text not null default 'none';
 
 -- Calendar reminders via pg_cron + pg_net -------------------------------------
 -- Runs a scheduled HTTP POST to the app, which finds events whose reminder

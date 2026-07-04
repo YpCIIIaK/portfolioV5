@@ -16,16 +16,16 @@ export function NotesPanel() {
 
   // Always-fresh snapshot for the debounced saver + per-note debounce timers.
   const itemsRef = useRef(items);
-  itemsRef.current = items;
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   const selected = items.find((n) => n.id === selectedId) ?? null;
 
-  // Auto-select the first note once data lands.
-  useEffect(() => {
-    if (!selectedId && items.length) setSelectedId(items[0].id);
-  }, [items, selectedId]);
+  // Auto-select the first note once data lands (state adjustment during render).
+  if (!selectedId && items.length) setSelectedId(items[0].id);
 
   // Grow the body textarea to fit its content (Notion-style, no inner scrollbar).
   useEffect(() => {

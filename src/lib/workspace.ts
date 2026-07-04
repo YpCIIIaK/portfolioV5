@@ -14,14 +14,29 @@ export interface Note {
   updated_at: string;
 }
 
+/** Kanban column of a task. `done` is kept in sync for older consumers. */
+export type TaskStatus = "todo" | "doing" | "done";
+
 export interface Task {
   id: string;
   title: string;
   done: boolean;
+  status: TaskStatus;
   due: string | null;
   priority: Priority;
   color: string;
   created_at: string;
+}
+
+/** Rows created before the kanban migration have no status — derive it. */
+export function normalizeTask(t: Task): Task {
+  const status: TaskStatus =
+    t.status === "todo" || t.status === "doing" || t.status === "done"
+      ? t.status
+      : t.done
+        ? "done"
+        : "todo";
+  return { ...t, status, done: status === "done" };
 }
 
 export interface WsEvent {
@@ -67,9 +82,9 @@ export const DEMO_NOTES: Note[] = [
 ];
 
 export const DEMO_TASKS: Task[] = [
-  { id: "demo-1", title: "Запушить новый проект на GitHub", done: false, due: isoDay(1), priority: "high", color: "", created_at: new Date().toISOString() },
-  { id: "demo-2", title: "Обновить резюме", done: true, due: null, priority: "low", color: "", created_at: new Date().toISOString() },
-  { id: "demo-3", title: "Ответить на письма рекрутеров", done: false, due: isoDay(0), priority: "medium", color: "blue", created_at: new Date().toISOString() },
+  { id: "demo-1", title: "Запушить новый проект на GitHub", done: false, status: "todo", due: isoDay(1), priority: "high", color: "", created_at: new Date().toISOString() },
+  { id: "demo-2", title: "Обновить резюме", done: true, status: "done", due: null, priority: "low", color: "", created_at: new Date().toISOString() },
+  { id: "demo-3", title: "Ответить на письма рекрутеров", done: false, status: "doing", due: isoDay(0), priority: "medium", color: "blue", created_at: new Date().toISOString() },
 ];
 
 function isoDay(offset: number): string {

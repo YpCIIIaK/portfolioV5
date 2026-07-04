@@ -7,6 +7,7 @@ import { fileById, DEFAULT_OPEN } from "@/lib/files";
 import { FileIcon } from "./FileIcon";
 import { BlockRenderer } from "./BlockRenderer";
 import { ContactForm } from "./ContactForm";
+import { GuestbookPanel } from "./GuestbookPanel";
 import { GitHubPanel } from "./GitHubPanel";
 import { MarketPanel } from "./MarketPanel";
 import { JournalPanel } from "./JournalPanel";
@@ -25,7 +26,6 @@ import { MailPanel } from "./workspace/MailPanel";
 import { ProjectsPanel } from "./workspace/ProjectsPanel";
 
 export function Editor() {
-  const openTabs = useEditor((s) => s.openTabs);
   const activeFile = useEditor((s) => s.activeFile);
   const fontSize = useEditor((s) => s.fontSize);
   const file = activeFile ? fileById(activeFile) : null;
@@ -92,6 +92,7 @@ export function Editor() {
               <SettingsPanel />
             </div>
           )}
+          {file.id === "community/guestbook.tsx" && <GuestbookPanel />}
           {file.id === "workspace/dashboard.tsx" && <DashboardPanel />}
           {file.id === "workspace/notes.md" && <NotesPanel />}
           {file.id === "workspace/calendar.tsx" && <CalendarPanel />}

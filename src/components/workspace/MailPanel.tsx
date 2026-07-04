@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Mail, RefreshCw, ArrowLeft, Dot } from "lucide-react";
 import { mailRead, demoRead, type MailFull } from "@/lib/mail";
 import { useMailbox } from "./useMailbox";

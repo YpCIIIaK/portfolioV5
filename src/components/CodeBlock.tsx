@@ -1,9 +1,26 @@
 "use client";
 
-import { useState } from "react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { lazy, Suspense, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
+
+/** The highlighter is heavy (grammars + themes) — split it out of the main
+ *  bundle and show the plain code as a fallback while it loads. */
+const CodeHighlight = lazy(() => import("./CodeHighlight"));
+
+/** Un-highlighted fallback with the same metrics, shown while the grammar loads. */
+function PlainCode({ code }: { code: string }) {
+  return (
+    <pre
+      className="m-0 overflow-x-auto whitespace-pre px-2 py-3 text-[12.5px] leading-normal text-[#d4d4d4]"
+      style={{ fontFamily: "var(--font-mono)" }}
+    >
+      {code
+        .split("\n")
+        .map((l, i) => `${String(i + 1).padStart(3, " ")}  ${l}`)
+        .join("\n")}
+    </pre>
+  );
+}
 
 export function CodeBlock({
   lang,
@@ -57,23 +74,9 @@ export function CodeBlock({
         </button>
       </div>
       {open && (
-        <SyntaxHighlighter
-          language={lang}
-          style={vscDarkPlus}
-          showLineNumbers
-          customStyle={{
-            margin: 0,
-            background: "transparent",
-            fontSize: "12.5px",
-            padding: "12px 8px",
-          }}
-          lineNumberStyle={{ color: "#5a5a5a", minWidth: "2.2em" }}
-          codeTagProps={{
-            style: { fontFamily: "var(--font-mono)" },
-          }}
-        >
-          {code}
-        </SyntaxHighlighter>
+        <Suspense fallback={<PlainCode code={code} />}>
+          <CodeHighlight lang={lang} code={code} />
+        </Suspense>
       )}
     </div>
   );
