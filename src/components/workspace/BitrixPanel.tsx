@@ -1,0 +1,219 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Briefcase, RefreshCw, ArrowLeft, MessageSquare, ListTodo, Newspaper, ExternalLink, Dot } from "lucide-react";
+
+/** Client-side mirrors of the shapes returned by /api/bitrix. */
+interface BxTask { id: string; title: string; status: string; statusCode: number; deadline: string | null; responsible: string | null; groupName: string | null; url: string | null }
+interface BxChat { dialogId: string; title: string; type: string; lastMessage: string; lastDate: string | null; unread: boolean }
+interface BxMessage { id: number; author: string; text: string; date: string }
+interface BxFeedPost { id: string; title: string; text: string; author: string | null; date: string | null }
+
+type Tab = "tasks" | "chats" | "feed";
+
+function when(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return sameDay
+    ? new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(d)
+    : new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short" }).format(d);
+}
+
+const STATUS_COLOR: Record<number, string> = {
+  2: "#60a5fa", // ждёт выполнения
+  3: "#fbbf24", // выполняется
+  4: "#c084fc", // ждёт контроля
+  5: "#4ade80", // завершена
+  6: "#8b8b8b", // отложена
+};
+
+async function getJson<T>(qs: string): Promise<T> {
+  const res = await fetch(`/api/bitrix?${qs}`);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+  return json.items as T;
+}
+
+export function BitrixPanel() {
+  const [tab, setTab] = useState<Tab>("tasks");
+  const [tasks, setTasks] = useState<BxTask[]>([]);
+  const [chats, setChats] = useState<BxChat[]>([]);
+  const [feed, setFeed] = useState<BxFeedPost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  // open dialog
+  const [openChat, setOpenChat] = useState<BxChat | null>(null);
+  const [messages, setMessages] = useState<BxMessage[]>([]);
+  const [msgLoading, setMsgLoading] = useState(false);
+
+  const reload = useCallback(async (t: Tab) => {
+    setLoading(true);
+    setError("");
+    try {
+      if (t === "tasks") setTasks(await getJson<BxTask[]>("scope=tasks"));
+      if (t === "chats") setChats(await getJson<BxChat[]>("scope=chats"));
+      if (t === "feed") setFeed(await getJson<BxFeedPost[]>("scope=feed"));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    reload(tab);
+  }, [tab, reload]);
+
+  async function readChat(c: BxChat) {
+    setOpenChat(c);
+    setMsgLoading(true);
+    try {
+      setMessages(await getJson<BxMessage[]>(`scope=messages&dialog=${encodeURIComponent(c.dialogId)}`));
+    } catch (e) {
+      setError((e as Error).message);
+      setMessages([]);
+    } finally {
+      setMsgLoading(false);
+    }
+  }
+
+  if (openChat) {
+    return (
+      <div className="mx-auto max-w-3xl px-8 py-5">
+        <button
+          onClick={() => setOpenChat(null)}
+          className="mb-4 flex items-center gap-1.5 text-[13px] text-vsc-muted hover:text-vsc-text"
+        >
+          <ArrowLeft size={15} /> К чатам
+        </button>
+        <h1 className="mb-4 text-[18px] font-semibold text-vsc-bright">{openChat.title}</h1>
+        {msgLoading ? (
+          <p className="text-[13px] text-vsc-muted">Загрузка сообщений…</p>
+        ) : messages.length === 0 ? (
+          <p className="text-[13px] text-vsc-muted">Сообщений нет.</p>
+        ) : (
+          <div className="space-y-3">
+            {messages.map((m) => (
+              <div key={m.id} className="rounded border border-vsc-line px-3 py-2">
+                <div className="mb-0.5 flex items-center gap-2 text-[12px] text-vsc-muted">
+                  <span className="font-medium text-vsc-text">{m.author}</span>
+                  <span>{when(m.date)}</span>
+                </div>
+                <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-vsc-text">{m.text || "—"}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const TABS: { key: Tab; label: string; Icon: typeof ListTodo }[] = [
+    { key: "tasks", label: "Задачи", Icon: ListTodo },
+    { key: "chats", label: "Чаты", Icon: MessageSquare },
+    { key: "feed", label: "Лента", Icon: Newspaper },
+  ];
+
+  return (
+    <div className="mx-auto max-w-3xl px-8 py-5">
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="flex items-center gap-2 text-[18px] font-semibold text-vsc-bright">
+          <Briefcase size={18} /> Bitrix24
+        </h1>
+        <button
+          onClick={() => reload(tab)}
+          title="Обновить"
+          className="rounded p-1.5 text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"
+        >
+          <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+        </button>
+      </div>
+
+      <div className="mb-4 flex gap-1 border-b border-vsc-line">
+        {TABS.map(({ key, label, Icon }) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`flex items-center gap-1.5 border-b-2 px-3 py-1.5 text-[13px] ${
+              tab === key ? "border-vsc-accent text-vsc-bright" : "border-transparent text-vsc-muted hover:text-vsc-text"
+            }`}
+          >
+            <Icon size={14} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {error && <p className="mb-3 text-[13px] text-vsc-yellow">{error}</p>}
+      {loading ? (
+        <p className="text-[13px] text-vsc-muted">Загрузка…</p>
+      ) : tab === "tasks" ? (
+        tasks.length === 0 ? (
+          <p className="text-[13px] text-vsc-muted">Открытых задач нет.</p>
+        ) : (
+          <div className="divide-y divide-vsc-line">
+            {tasks.map((t) => (
+              <div key={t.id} className="flex items-center gap-3 px-1 py-2.5">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: STATUS_COLOR[t.statusCode] || "#8b8b8b" }} title={t.status} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] text-vsc-text">{t.title}</div>
+                  <div className="flex items-center gap-1 text-[11px] text-vsc-muted">
+                    <span>{t.status}</span>
+                    {t.groupName && (<><Dot size={12} /><span className="truncate">{t.groupName}</span></>)}
+                    {t.deadline && (<><Dot size={12} /><span>до {when(t.deadline)}</span></>)}
+                  </div>
+                </div>
+                {t.url && (
+                  <a href={t.url} target="_blank" rel="noreferrer" title="Открыть в Bitrix24" className="rounded p-1 text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text">
+                    <ExternalLink size={14} />
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      ) : tab === "chats" ? (
+        chats.length === 0 ? (
+          <p className="text-[13px] text-vsc-muted">Чатов нет.</p>
+        ) : (
+          <div className="divide-y divide-vsc-line">
+            {chats.map((c) => (
+              <button
+                key={c.dialogId}
+                onClick={() => readChat(c)}
+                className="flex w-full items-center gap-3 px-1 py-2.5 text-left hover:bg-vsc-hover"
+              >
+                <span className={`h-2 w-2 shrink-0 rounded-full ${c.unread ? "bg-vsc-accent" : "bg-transparent"}`} />
+                <span className={`w-44 shrink-0 truncate text-[13px] ${c.unread ? "font-semibold text-vsc-bright" : "text-vsc-text"}`}>
+                  {c.title}
+                </span>
+                <span className="flex-1 truncate text-[13px] text-vsc-muted">{c.lastMessage}</span>
+                <span className="shrink-0 text-[12px] text-vsc-muted">{when(c.lastDate)}</span>
+              </button>
+            ))}
+          </div>
+        )
+      ) : feed.length === 0 ? (
+        <p className="text-[13px] text-vsc-muted">В ленте пусто.</p>
+      ) : (
+        <div className="space-y-3">
+          {feed.map((p) => (
+            <article key={p.id} className="rounded border border-vsc-line px-3 py-2.5">
+              {p.title && <h2 className="text-[14px] font-medium text-vsc-bright">{p.title}</h2>}
+              <p className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-vsc-text">
+                {p.text.length > 600 ? p.text.slice(0, 600) + "…" : p.text}
+              </p>
+              <div className="mt-1.5 flex items-center gap-1 text-[11px] text-vsc-muted">
+                {p.author && <span>{p.author}</span>}
+                {p.author && p.date && <Dot size={12} />}
+                {p.date && <span>{when(p.date)}</span>}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -901,6 +901,12 @@ export const WORKSPACE_FILES: FileNode[] = [
     blocks: [{ t: "h1", text: "📬 Почта" }],
   },
   {
+    id: "workspace/bitrix.tsx",
+    name: "bitrix.tsx",
+    language: "TypeScript",
+    blocks: [{ t: "h1", text: "💼 Bitrix24" }],
+  },
+  {
     id: "workspace/projects.tsx",
     name: "projects.tsx",
     language: "TypeScript",
