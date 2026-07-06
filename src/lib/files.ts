@@ -874,7 +874,7 @@ export const WORKSPACE_FILES: FileNode[] = [
     id: "workspace/dashboard.tsx",
     name: "dashboard.tsx",
     language: "TypeScript",
-    blocks: [{ t: "h1", text: "🏠 Главная" }],
+    blocks: [],
   },
   {
     id: "workspace/notes.md",

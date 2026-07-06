@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Briefcase, RefreshCw, ArrowLeft, MessageSquare, ListTodo, Newspaper, ExternalLink, Dot } from "lucide-react";
+import { getCached, setCached, invalidate } from "@/lib/cache";
 
 /** Client-side mirrors of the shapes returned by /api/bitrix. */
 interface BxTask { id: string; title: string; status: string; statusCode: number; deadline: string | null; responsible: string | null; groupName: string | null; url: string | null }
@@ -38,10 +39,10 @@ async function getJson<T>(qs: string): Promise<T> {
 
 export function BitrixPanel() {
   const [tab, setTab] = useState<Tab>("tasks");
-  const [tasks, setTasks] = useState<BxTask[]>([]);
-  const [chats, setChats] = useState<BxChat[]>([]);
-  const [feed, setFeed] = useState<BxFeedPost[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tasks, setTasks] = useState<BxTask[]>(() => getCached<BxTask[]>("bitrix:tasks") ?? []);
+  const [chats, setChats] = useState<BxChat[]>(() => getCached<BxChat[]>("bitrix:chats") ?? []);
+  const [feed, setFeed] = useState<BxFeedPost[]>(() => getCached<BxFeedPost[]>("bitrix:feed") ?? []);
+  const [loading, setLoading] = useState(() => !getCached("bitrix:tasks"));
   const [error, setError] = useState("");
 
   // open dialog
@@ -49,23 +50,44 @@ export function BitrixPanel() {
   const [messages, setMessages] = useState<BxMessage[]>([]);
   const [msgLoading, setMsgLoading] = useState(false);
 
-  const reload = useCallback(async (t: Tab) => {
+  const [fetchKey, setFetchKey] = useState(0);
+
+  // On tab switch, seed the view from cache during render (no fetch if fresh).
+  const [prevTab, setPrevTab] = useState(tab);
+  if (prevTab !== tab) {
+    setPrevTab(tab);
+    if (tab === "tasks") { const c = getCached<BxTask[]>("bitrix:tasks"); if (c) setTasks(c); setLoading(!c); }
+    else if (tab === "chats") { const c = getCached<BxChat[]>("bitrix:chats"); if (c) setChats(c); setLoading(!c); }
+    else { const c = getCached<BxFeedPost[]>("bitrix:feed"); if (c) setFeed(c); setLoading(!c); }
+    setError("");
+  }
+
+  // Drops the cache and refetches the current tab (refresh button).
+  const forceReload = useCallback((t: Tab) => {
+    invalidate(`bitrix:${t}`);
     setLoading(true);
     setError("");
-    try {
-      if (t === "tasks") setTasks(await getJson<BxTask[]>("scope=tasks"));
-      if (t === "chats") setChats(await getJson<BxChat[]>("scope=chats"));
-      if (t === "feed") setFeed(await getJson<BxFeedPost[]>("scope=feed"));
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
+    setFetchKey((k) => k + 1);
   }, []);
 
   useEffect(() => {
-    reload(tab);
-  }, [tab, reload]);
+    const key = `bitrix:${tab}`;
+    // Fresh cache is already reflected in state — skip the network round-trip.
+    if (getCached(key)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (tab === "tasks") { const d = await getJson<BxTask[]>("scope=tasks"); if (!cancelled) { setTasks(d); setCached(key, d); } }
+        if (tab === "chats") { const d = await getJson<BxChat[]>("scope=chats"); if (!cancelled) { setChats(d); setCached(key, d); } }
+        if (tab === "feed") { const d = await getJson<BxFeedPost[]>("scope=feed"); if (!cancelled) { setFeed(d); setCached(key, d); } }
+      } catch (e) {
+        if (!cancelled) setError((e as Error).message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [tab, fetchKey]);
 
   async function readChat(c: BxChat) {
     setOpenChat(c);
@@ -124,7 +146,7 @@ export function BitrixPanel() {
           <Briefcase size={18} /> Bitrix24
         </h1>
         <button
-          onClick={() => reload(tab)}
+          onClick={() => forceReload(tab)}
           title="Обновить"
           className="rounded p-1.5 text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"
         >

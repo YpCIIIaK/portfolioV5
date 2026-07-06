@@ -1,62 +1,29 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ListTodo, CalendarDays, Clock, Cloud, Mail, Check } from "lucide-react";
+import { ListTodo, CalendarDays, Mail, Check, Briefcase, ExternalLink } from "lucide-react";
 import { DEMO_TASKS, DEMO_EVENTS, wsUpdate, type Task, type WsEvent } from "@/lib/workspace";
+import { getCached, setCached } from "@/lib/cache";
 import { useCollection } from "./useCollection";
 import { useMailbox } from "./useMailbox";
 import { useEditor } from "@/lib/store";
 import { GuestBanner } from "./GuestBanner";
 import { PriorityDot, priorityRank } from "./wsStyle";
 
-/* ---- clocks ---------------------------------------------------------- */
-
-const ZONES = [
-  { label: "Астана", tz: "Asia/Almaty" }, // UTC+5 — рабочий пояс
-  { label: "Москва", tz: "Europe/Moscow" }, // UTC+3
-];
-
-function zoneTime(tz: string, d: Date): string {
-  return new Intl.DateTimeFormat("ru-RU", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: tz,
-  }).format(d);
-}
-
-function Clocks() {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000 * 15);
-    return () => clearInterval(t);
-  }, []);
-
-  return (
-    <Card title="Время" Icon={Clock}>
-      <div className="flex gap-4">
-        {ZONES.map((z) => (
-          <div key={z.tz} className="flex-1">
-            <div className="text-[11px] uppercase tracking-wide text-vsc-muted">{z.label}</div>
-            <div className="font-mono text-[26px] leading-tight text-vsc-bright">{zoneTime(z.tz, now)}</div>
-          </div>
-        ))}
-      </div>
-      <p className="mt-1 text-[11px] text-vsc-muted">Астана = МСК&nbsp;+2&nbsp;ч</p>
-    </Card>
-  );
-}
-
-/* ---- weather (Open-Meteo, без ключа) --------------------------------- */
+/* ---- combined time + weather (compact header widget) ----------------- */
 
 const CITIES = [
-  { name: "Астана", lat: 51.18, lon: 71.45 },
-  { name: "Москва", lat: 55.75, lon: 37.62 },
-  { name: "Алматы", lat: 43.24, lon: 76.92 },
+  { name: "Астана", tz: "Asia/Almaty", lat: 51.18, lon: 71.45 }, // UTC+5 — рабочий пояс
+  { name: "Москва", tz: "Europe/Moscow", lat: 55.75, lon: 37.62 }, // UTC+3
 ];
 
 interface Wx {
   temp: number;
   code: number;
+}
+
+function zoneTime(tz: string, d: Date): string {
+  return new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: tz }).format(d);
 }
 
 function wxIcon(code: number): string {
@@ -72,18 +39,26 @@ function wxIcon(code: number): string {
   return "🌡️";
 }
 
-function Weather() {
-  const [data, setData] = useState<(Wx | null)[]>(() => CITIES.map(() => null));
-  const [failed, setFailed] = useState(false);
+const WEATHER_KEY = "weather:cities";
+
+/** Compact strip: per-city time + weather. Sits to the right of the greeting. */
+function TimeWeather() {
+  const [now, setNow] = useState(() => new Date());
+  const [wx, setWx] = useState<(Wx | null)[]>(() => getCached<(Wx | null)[]>(WEATHER_KEY) ?? CITIES.map(() => null));
 
   useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000 * 15);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (getCached<(Wx | null)[]>(WEATHER_KEY)) return; // свежий кэш — не дёргаем API
     let alive = true;
     Promise.all(
       CITIES.map(async (c) => {
         try {
           const res = await fetch(
-            `https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current=temperature_2m,weather_code`,
-            { cache: "no-store" }
+            `https://api.open-meteo.com/v1/forecast?latitude=${c.lat}&longitude=${c.lon}&current=temperature_2m,weather_code`
           );
           if (!res.ok) throw new Error();
           const j = await res.json();
@@ -94,8 +69,8 @@ function Weather() {
       })
     ).then((r) => {
       if (!alive) return;
-      setData(r);
-      setFailed(r.every((x) => x === null));
+      setWx(r);
+      if (r.some((x) => x !== null)) setCached(WEATHER_KEY, r);
     });
     return () => {
       alive = false;
@@ -103,24 +78,20 @@ function Weather() {
   }, []);
 
   return (
-    <Card title="Погода" Icon={Cloud}>
-      {failed ? (
-        <p className="text-[12px] text-vsc-muted">Не удалось загрузить погоду.</p>
-      ) : (
-        <div className="flex gap-3">
-          {CITIES.map((c, i) => {
-            const w = data[i];
-            return (
-              <div key={c.name} className="flex-1 rounded border border-vsc-line bg-vsc-bg px-2 py-2 text-center">
-                <div className="text-[11px] text-vsc-muted">{c.name}</div>
-                <div className="text-[22px] leading-tight">{w ? wxIcon(w.code) : "·"}</div>
-                <div className="text-[15px] text-vsc-bright">{w ? `${w.temp}°` : "…"}</div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </Card>
+    <div className="flex shrink-0 gap-2">
+      {CITIES.map((c, i) => {
+        const w = wx[i];
+        return (
+          <div key={c.name} className="rounded-lg border border-vsc-line bg-vsc-sidebar px-3 py-1.5 text-center">
+            <div className="text-[10px] uppercase tracking-wide text-vsc-muted">{c.name}</div>
+            <div className="font-mono text-[18px] leading-tight text-vsc-bright">{zoneTime(c.tz, now)}</div>
+            <div className="text-[11px] text-vsc-muted">
+              {w ? `${wxIcon(w.code)} ${w.temp}°` : "…"}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -277,6 +248,103 @@ function MailWidget() {
   );
 }
 
+/* ---- Bitrix24 tasks -------------------------------------------------- */
+
+interface BxTask {
+  id: string;
+  title: string;
+  status: string;
+  statusCode: number;
+  deadline: string | null;
+  groupName: string | null;
+  url: string | null;
+}
+
+const BX_STATUS_COLOR: Record<number, string> = {
+  2: "#60a5fa",
+  3: "#fbbf24",
+  4: "#c084fc",
+  5: "#4ade80",
+  6: "#8b8b8b",
+};
+
+function bxDeadline(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short" }).format(d);
+}
+
+function BitrixTasksWidget() {
+  const openFile = useEditor((s) => s.openFile);
+  const [tasks, setTasks] = useState<BxTask[]>(() => getCached<BxTask[]>("bitrix:tasks") ?? []);
+  const [loading, setLoading] = useState(!getCached<BxTask[]>("bitrix:tasks"));
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    // Initial state already seeded from cache; fetch only on a cache miss.
+    if (getCached<BxTask[]>("bitrix:tasks")) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/bitrix?scope=tasks");
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+        const items = (json.items as BxTask[]) ?? [];
+        if (cancelled) return;
+        setTasks(items);
+        setCached("bitrix:tasks", items);
+        setError("");
+      } catch (e) {
+        if (!cancelled) setError((e as Error).message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <Card title="Bitrix24 · задачи" Icon={Briefcase} onTitle={() => openFile("workspace/bitrix.tsx")}>
+      {loading ? (
+        <p className="text-[12px] text-vsc-muted">Загрузка…</p>
+      ) : error ? (
+        <p className="text-[12px] text-vsc-yellow">{error}</p>
+      ) : tasks.length === 0 ? (
+        <p className="text-[12px] text-vsc-muted">Открытых задач нет 🎉</p>
+      ) : (
+        <div className="flex flex-col gap-0.5">
+          {tasks.slice(0, 5).map((t) => (
+            <div key={t.id} className="group flex items-center gap-2 rounded px-1 py-1 hover:bg-vsc-hover">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ backgroundColor: BX_STATUS_COLOR[t.statusCode] || "#8b8b8b" }}
+                title={t.status}
+              />
+              <span className="flex-1 truncate text-[13px] text-vsc-text">{t.title}</span>
+              {t.deadline && <span className="shrink-0 text-[11px] text-vsc-muted">до {bxDeadline(t.deadline)}</span>}
+              {t.url && (
+                <a
+                  href={t.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="shrink-0 rounded p-0.5 text-vsc-muted opacity-0 hover:text-vsc-text group-hover:opacity-100"
+                  title="Открыть в Bitrix24"
+                >
+                  <ExternalLink size={13} />
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /* ---- shell ----------------------------------------------------------- */
 
 function Card({
@@ -286,7 +354,7 @@ function Card({
   onTitle,
 }: {
   title: string;
-  Icon: typeof Clock;
+  Icon: typeof Mail;
   children: React.ReactNode;
   onTitle?: () => void;
 }) {
@@ -312,14 +380,16 @@ export function DashboardPanel() {
 
   return (
     <div className="mx-auto max-w-4xl px-8 py-6">
-      <h1 className="mb-5 text-[22px] font-semibold text-vsc-bright">{greeting} 👋</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-[32px] font-semibold leading-none text-vsc-bright">{greeting} 👋</h1>
+        <TimeWeather />
+      </div>
       <GuestBannerIfNeeded />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <TasksWidget />
+        <BitrixTasksWidget />
         <AgendaWidget />
         <MailWidget />
-        <Clocks />
-        <Weather />
       </div>
     </div>
   );

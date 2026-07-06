@@ -6,6 +6,7 @@ import { useTr } from "@/lib/i18n";
 import { CodeBlock } from "./CodeBlock";
 
 export function BlockRenderer({ blocks }: { blocks: Block[] }) {
+  if (blocks.length === 0) return null;
   return (
     <div className="mx-auto max-w-3xl px-8 py-8 leading-relaxed">
       {blocks.map((b, i) => (
