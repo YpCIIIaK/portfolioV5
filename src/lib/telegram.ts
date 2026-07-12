@@ -220,6 +220,16 @@ export async function sendFiles(peerId: string, files: UploadFile[], caption: st
   });
 }
 
+/* ---- delete ----------------------------------------------------------- */
+
+/** Delete messages. revoke=true removes them for everyone (not just for me). */
+export async function deleteMessages(peerId: string, ids: number[], revoke = true): Promise<void> {
+  return withClient(async (client) => {
+    const entity = await resolvePeer(client, peerId);
+    await client.deleteMessages(entity, ids, { revoke });
+  });
+}
+
 /* ---- media download --------------------------------------------------- */
 
 /** Best-guess content type for a media message (falls back to the document's). */

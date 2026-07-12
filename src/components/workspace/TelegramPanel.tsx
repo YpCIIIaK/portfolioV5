@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Send, RefreshCw, User, Users, Radio, Play, Paperclip, X, Clock, FileText } from "lucide-react";
+import { Send, RefreshCw, User, Users, Radio, Play, Paperclip, X, Clock, FileText, Trash2 } from "lucide-react";
 import { getCached, setCached, invalidate } from "@/lib/cache";
 
 /** Client-side mirrors of /api/telegram shapes. */
@@ -274,6 +274,33 @@ export function TelegramPanel() {
     e.target.value = "";
   }
 
+  // Paste images straight from the clipboard (Ctrl/⌘+V) into the attachments.
+  function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const imgs = Array.from(e.clipboardData?.items || [])
+      .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+      .map((it) => it.getAsFile())
+      .filter((f): f is File => !!f)
+      // Clipboard images often have no/blob name — give a real one so the
+      // extension lets Telegram send it as a photo, not a document.
+      .map((f) => (f.name && f.name !== "blob" ? f : new File([f], `pasted-${Date.now()}.${f.type.split("/")[1] || "png"}`, { type: f.type })));
+    if (imgs.length) {
+      e.preventDefault();
+      setAttachments((prev) => [...prev, ...imgs]);
+    }
+  }
+
+  async function removeMessage(id: number) {
+    if (!openChat) return;
+    setMessages((prev) => prev.filter((m) => m.id !== id));
+    try {
+      const r = await fetch(`/api/telegram?peer=${encodeURIComponent(openChat.id)}&id=${id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+    } catch (e) {
+      setError((e as Error).message);
+      loadLatest(openChat.id, true); // restore truth from server
+    }
+  }
+
   const openChat_ = openChat;
   return (
     <div className="flex h-full">
@@ -347,7 +374,16 @@ export function TelegramPanel() {
               ) : (
                 <>
                   {messages.map((m) => (
-                    <div key={m.id} className={`flex ${m.out ? "justify-end" : "justify-start"}`}>
+                    <div key={m.id} className={`group flex items-center gap-1.5 ${m.out ? "justify-end" : "justify-start"}`}>
+                      {m.out && (
+                        <button
+                          onClick={() => removeMessage(m.id)}
+                          title="Удалить сообщение"
+                          className="shrink-0 rounded p-1 text-vsc-muted opacity-0 hover:text-red-400 group-hover:opacity-100"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                       <div
                         className={`max-w-[75%] rounded-lg px-3 py-1.5 ${
                           m.out ? "bg-vsc-accent/20 text-vsc-text" : "border border-vsc-line text-vsc-text"
@@ -362,6 +398,15 @@ export function TelegramPanel() {
                         )}
                         <div className="mt-0.5 text-right text-[10px] text-vsc-muted">{when(m.date)}</div>
                       </div>
+                      {!m.out && (
+                        <button
+                          onClick={() => removeMessage(m.id)}
+                          title="Удалить сообщение"
+                          className="shrink-0 rounded p-1 text-vsc-muted opacity-0 hover:text-red-400 group-hover:opacity-100"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                     </div>
                   ))}
                   {pending.map((p) => (
@@ -421,8 +466,9 @@ export function TelegramPanel() {
                   <textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
+                    onPaste={onPaste}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-                    placeholder="Сообщение… (Enter — отправить, Shift+Enter — перенос)"
+                    placeholder="Сообщение… (Enter — отправить, Shift+Enter — перенос, картинки — Ctrl+V)"
                     rows={1}
                     className="max-h-32 min-h-[38px] flex-1 resize-none rounded border border-vsc-line bg-vsc-sidebar px-3 py-2 text-[13px] text-vsc-text outline-none focus:border-vsc-accent"
                   />

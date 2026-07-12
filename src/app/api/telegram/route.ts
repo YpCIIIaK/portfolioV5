@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireOwner } from "@/lib/auth";
-import { telegramConfigured, fetchDialogs, fetchMessages, sendMessage } from "@/lib/telegram";
+import { telegramConfigured, fetchDialogs, fetchMessages, sendMessage, deleteMessages } from "@/lib/telegram";
 
 export const runtime = "nodejs";
 // MTProto connect + work can take a few seconds; give it room.
@@ -31,6 +31,23 @@ export async function GET(req: Request) {
       return NextResponse.json({ items: await fetchMessages(peer, 40, before) });
     }
     return NextResponse.json({ error: "unknown scope" }, { status: 400 });
+  } catch (e) {
+    return NextResponse.json({ error: "Telegram: " + (e as Error).message }, { status: 502 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  if (!(await requireOwner())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!telegramConfigured()) return NextResponse.json({ error: "Telegram не настроен" }, { status: 503 });
+
+  const url = new URL(req.url);
+  const peer = url.searchParams.get("peer");
+  const id = Number(url.searchParams.get("id"));
+  if (!peer || !id) return NextResponse.json({ error: "missing peer/id" }, { status: 400 });
+
+  try {
+    await deleteMessages(peer, [id]);
+    return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: "Telegram: " + (e as Error).message }, { status: 502 });
   }
