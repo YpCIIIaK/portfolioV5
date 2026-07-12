@@ -16,7 +16,6 @@
 // fails with "Only StringSession and StoreSessions are supported".
 import { TelegramClient, sessions } from "telegram";
 import { LogLevel } from "telegram/extensions/Logger";
-import bigInt from "big-integer";
 
 const { StringSession } = sessions;
 
@@ -81,12 +80,22 @@ export interface TgMessage {
   date: string;
 }
 
+/**
+ * Resolve a dialog to its input entity by walking the dialog list. A fresh
+ * serverless invocation has no cached access hashes, so resolving a marked id
+ * directly throws "Cannot cast ... to any kind of peer" — the dialog objects
+ * already carry a usable inputEntity, so we match on the id string instead.
+ */
+async function resolvePeer(client: TelegramClient, peerId: string) {
+  const dialogs = await client.getDialogs({ limit: 200 });
+  const dlg = dialogs.find((d) => String(d.id) === peerId);
+  if (!dlg) throw new Error("диалог не найден (возможно, вне последних 200)");
+  return dlg.inputEntity;
+}
+
 export async function fetchMessages(peerId: string, limit = 40): Promise<TgMessage[]> {
   return withClient(async (client) => {
-    // Warm the in-memory entity cache: a fresh serverless invocation has no
-    // access hashes, so resolving a user/chat by id would otherwise fail.
-    await client.getDialogs({ limit: 100 });
-    const entity = await client.getInputEntity(bigInt(peerId));
+    const entity = await resolvePeer(client, peerId);
     const messages = await client.getMessages(entity, { limit });
 
     return messages
@@ -112,8 +121,7 @@ export async function fetchMessages(peerId: string, limit = 40): Promise<TgMessa
 
 export async function sendMessage(peerId: string, text: string): Promise<{ id: number }> {
   return withClient(async (client) => {
-    await client.getDialogs({ limit: 100 });
-    const entity = await client.getInputEntity(bigInt(peerId));
+    const entity = await resolvePeer(client, peerId);
     const res = await client.sendMessage(entity, { message: text });
     return { id: res.id };
   });
