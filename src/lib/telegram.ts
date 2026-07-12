@@ -56,7 +56,10 @@ export interface TgDialog {
 
 export async function fetchDialogs(limit = 30): Promise<TgDialog[]> {
   return withClient(async (client) => {
-    const dialogs = await client.getDialogs({ limit });
+    // folder: 0 = main list only (chats that belong to no folder). Telegram puts
+    // archived chats in folder 1, so this drops the archive. Custom folders
+    // (chat filters) are a separate mechanism and are not filtered here.
+    const dialogs = await client.getDialogs({ limit, archived: false });
     return dialogs
       .filter((d) => d.id)
       .map((d) => ({
