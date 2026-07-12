@@ -75,12 +75,20 @@ export async function fetchDialogs(limit = 30): Promise<TgDialog[]> {
 
 /* ---- messages of one dialog ------------------------------------------- */
 
+export type MediaDisplay = "image" | "video" | "audio";
+
+export interface TgMedia {
+  kind: string; // photo | video | videoNote | gif | sticker | voice | audio | file
+  display: MediaDisplay; // how the client should render it inline
+}
+
 export interface TgMessage {
   id: number;
   out: boolean; // true = sent by me
   author: string;
   text: string;
   date: string;
+  media: TgMedia | null; // set when the attachment can be rendered inline
 }
 
 /**
@@ -123,6 +131,27 @@ function mediaLabel(m: MediaMsg): string {
   return "";
 }
 
+/** Short kind slug for a media message. */
+function mediaKind(m: MediaMsg): string {
+  if (m.sticker) return "sticker";
+  if (m.gif) return "gif";
+  if (m.photo) return "photo";
+  if (m.videoNote) return "videoNote";
+  if (m.video) return "video";
+  if (m.voice) return "voice";
+  if (m.audio) return "audio";
+  if (m.document) return "file";
+  return "other";
+}
+
+/** How the browser should render this attachment inline, or null (label only). */
+function mediaDisplay(m: MediaMsg): MediaDisplay | null {
+  if (m.photo || m.sticker) return "image";
+  if (m.video || m.videoNote || m.gif) return "video";
+  if (m.voice || m.audio) return "audio";
+  return null;
+}
+
 export async function fetchMessages(peerId: string, limit = 40): Promise<TgMessage[]> {
   return withClient(async (client) => {
     const entity = await resolvePeer(client, peerId);
@@ -135,15 +164,20 @@ export async function fetchMessages(peerId: string, limit = 40): Promise<TgMessa
         const name = sender
           ? [sender.firstName, sender.lastName].filter(Boolean).join(" ") || sender.title || ""
           : "";
-        // Caption (m.message) + a typed badge for the attachment, if any.
-        const badge = mediaLabel(m as unknown as MediaMsg);
-        const text = [badge, m.message].filter(Boolean).join(" ").trim();
+        const mm = m as unknown as MediaMsg;
+        const display = mediaDisplay(mm);
+        // When we can render the media inline, text is just the caption.
+        // Otherwise fall back to a typed badge (+ caption) as before.
+        const text = display
+          ? m.message || ""
+          : [mediaLabel(mm), m.message].filter(Boolean).join(" ").trim();
         return {
           id: m.id,
           out: !!m.out,
           author: m.out ? "Вы" : name || "—",
           text,
           date: m.date ? new Date(m.date * 1000).toISOString() : new Date().toISOString(),
+          media: display ? { kind: mediaKind(mm), display } : null,
         };
       })
       .sort((a, b) => a.id - b.id);
@@ -157,5 +191,35 @@ export async function sendMessage(peerId: string, text: string): Promise<{ id: n
     const entity = await resolvePeer(client, peerId);
     const res = await client.sendMessage(entity, { message: text });
     return { id: res.id };
+  });
+}
+
+/* ---- media download --------------------------------------------------- */
+
+/** Best-guess content type for a media message (falls back to the document's). */
+function mediaMime(m: MediaMsg & { document?: { mimeType?: string } }): string {
+  const docMime = m.document?.mimeType;
+  if (m.photo) return "image/jpeg";
+  if (m.sticker) return docMime || "image/webp";
+  if (m.gif || m.video || m.videoNote) return docMime || "video/mp4";
+  if (m.voice) return docMime || "audio/ogg";
+  if (m.audio) return docMime || "audio/mpeg";
+  return docMime || "application/octet-stream";
+}
+
+/**
+ * Download the full media of one message. Loads the whole file into memory, so
+ * it's meant for photos / short clips in a personal workspace, not huge files.
+ */
+export async function downloadMedia(peerId: string, msgId: number): Promise<{ data: Uint8Array; mime: string } | null> {
+  return withClient(async (client) => {
+    const entity = await resolvePeer(client, peerId);
+    const messages = await client.getMessages(entity, { ids: [msgId] });
+    const msg = messages[0];
+    if (!msg || !msg.media) return null;
+    const buf = await client.downloadMedia(msg, {});
+    if (!buf) return null;
+    const bytes = typeof buf === "string" ? new TextEncoder().encode(buf) : new Uint8Array(buf);
+    return { data: bytes, mime: mediaMime(msg as unknown as MediaMsg & { document?: { mimeType?: string } }) };
   });
 }

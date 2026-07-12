@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, RefreshCw, ArrowLeft, User, Users, Radio } from "lucide-react";
+import { Send, RefreshCw, ArrowLeft, User, Users, Radio, Play } from "lucide-react";
 import { getCached, setCached, invalidate } from "@/lib/cache";
 
 /** Client-side mirrors of /api/telegram shapes. */
 interface TgDialog { id: string; title: string; kind: "user" | "group" | "channel"; unread: number; lastMessage: string; lastDate: string | null }
-interface TgMessage { id: number; out: boolean; author: string; text: string; date: string }
+interface TgMedia { kind: string; display: "image" | "video" | "audio" }
+interface TgMessage { id: number; out: boolean; author: string; text: string; date: string; media: TgMedia | null }
 
 // How often to re-poll the currently open chat (adaptive: only while it's open).
 const CHAT_POLL_MS = 3000;
@@ -31,6 +32,53 @@ async function getJson<T>(qs: string): Promise<T> {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
   return json.items as T;
+}
+
+/** Renders one message attachment inline. Video loads only on user action. */
+function MediaView({ peer, msgId, media }: { peer: string; msgId: number; media: TgMedia }) {
+  const [play, setPlay] = useState(false);
+  const src = `/api/telegram/media?peer=${encodeURIComponent(peer)}&id=${msgId}`;
+  const round = media.kind === "videoNote";
+
+  if (media.display === "image") {
+    return (
+      <a href={src} target="_blank" rel="noreferrer" className="block">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          className={`my-1 max-h-72 object-cover ${round ? "h-40 w-40 rounded-full" : "max-w-full rounded-lg"}`}
+        />
+      </a>
+    );
+  }
+
+  if (media.display === "video") {
+    if (!play) {
+      return (
+        <button
+          onClick={() => setPlay(true)}
+          className={`my-1 flex items-center justify-center bg-black/40 text-white ${round ? "h-40 w-40 rounded-full" : "h-40 w-56 max-w-full rounded-lg"}`}
+        >
+          <Play size={28} />
+        </button>
+      );
+    }
+    return (
+      <video
+        src={src}
+        controls
+        autoPlay
+        playsInline
+        loop={round || media.kind === "gif"}
+        className={`my-1 max-h-80 ${round ? "h-40 w-40 rounded-full object-cover" : "max-w-full rounded-lg"}`}
+      />
+    );
+  }
+
+  // audio (voice / music)
+  return <audio src={src} controls preload="none" className="my-1 max-w-full" />;
 }
 
 export function TelegramPanel() {
@@ -117,7 +165,7 @@ export function TelegramPanel() {
     if (!text || !openChat || sending) return;
     setSending(true);
     // Optimistic echo; the next poll reconciles with the real message.
-    const optimistic: TgMessage = { id: Date.now(), out: true, author: "Вы", text, date: new Date().toISOString() };
+    const optimistic: TgMessage = { id: Date.now(), out: true, author: "Вы", text, date: new Date().toISOString(), media: null };
     setMessages((prev) => [...prev, optimistic]);
     setDraft("");
     try {
@@ -166,7 +214,10 @@ export function TelegramPanel() {
                   {!m.out && openChat.kind !== "user" && (
                     <div className="mb-0.5 text-[11px] font-medium text-vsc-muted">{m.author}</div>
                   )}
-                  <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{m.text || "—"}</p>
+                  {m.media && <MediaView peer={openChat.id} msgId={m.id} media={m.media} />}
+                  {(m.text || !m.media) && (
+                    <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{m.text || "—"}</p>
+                  )}
                   <div className="mt-0.5 text-right text-[10px] text-vsc-muted">{when(m.date)}</div>
                 </div>
               </div>
