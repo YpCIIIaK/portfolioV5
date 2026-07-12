@@ -11,12 +11,14 @@
   "dependencies": {
     "framer-motion": "^12.40.0",
     "imapflow": "^1.4.2",
+    "input": "^1.0.1",
     "lucide-react": "^1.21.0",
     "mailparser": "^3.9.11",
     "next": "16.2.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-syntax-highlighter": "^16.1.1",
+    "telegram": "^2.26.22",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
