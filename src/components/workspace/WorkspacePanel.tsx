@@ -2,12 +2,13 @@
 
 import { useEffect } from "react";
 import Image from "next/image";
-import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, FolderGit2, Blocks, Briefcase, Send, CreditCard } from "lucide-react";
+import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, FolderGit2, Blocks, Briefcase, Send, CreditCard, Sparkles } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
 
 const FEATURES = [
   { id: "workspace/dashboard.tsx", label: "Главная", Icon: LayoutDashboard },
+  { id: "workspace/assistant.tsx", label: "Ассистент", Icon: Sparkles },
   { id: "workspace/notes.md", label: "Заметки", Icon: StickyNote },
   { id: "workspace/calendar.tsx", label: "Календарь", Icon: CalendarDays },
   { id: "workspace/tasks.todo", label: "Задачи", Icon: ListTodo },

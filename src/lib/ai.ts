@@ -29,8 +29,24 @@ interface AskOptions {
   maxTokens?: number;
 }
 
+export interface AiMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
 /** One-shot completion (no streaming). Throws with a helpful message on failure. */
 export async function askAI(prompt: string, opts: AskOptions = {}): Promise<string> {
+  return chatAI(
+    [
+      ...(opts.system ? [{ role: "system" as const, content: opts.system }] : []),
+      { role: "user" as const, content: prompt },
+    ],
+    opts,
+  );
+}
+
+/** Multi-turn completion over an explicit message list (system + conversation). */
+export async function chatAI(messages: AiMessage[], opts: Omit<AskOptions, "system"> = {}): Promise<string> {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error("OPENROUTER_API_KEY не задан");
 
@@ -43,10 +59,7 @@ export async function askAI(prompt: string, opts: AskOptions = {}): Promise<stri
     },
     body: JSON.stringify({
       model: MODEL,
-      messages: [
-        ...(opts.system ? [{ role: "system", content: opts.system }] : []),
-        { role: "user", content: prompt },
-      ],
+      messages,
       temperature: opts.temperature ?? 0.3,
       max_tokens: opts.maxTokens ?? 800,
       reasoning: { exclude: true },
