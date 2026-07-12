@@ -1,11 +1,15 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
-import { Sparkles, Send, Lock } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Sparkles, Send, Lock, Plus, Trash2, MessageSquare } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { MiniMarkdown } from "./MiniMarkdown";
 
 interface Msg { role: "user" | "assistant"; content: string }
+interface Conversation { id: string; title: string; messages: Msg[]; updatedAt: number }
+
+const STORE_KEY = "assistant:conversations";
+const MAX_CONVERSATIONS = 50;
 
 const SUGGESTIONS = [
   "Что горит сегодня?",
@@ -14,24 +18,77 @@ const SUGGESTIONS = [
   "Собери задачи из непрочитанных сообщений",
 ];
 
+// Module-level so the React Compiler doesn't flag impure calls inside render.
+const now = () => Date.now();
+const uid = () => crypto.randomUUID();
+
+function relTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const min = Math.round(diff / 60000);
+  if (min < 1) return "только что";
+  if (min < 60) return `${min} мин`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} ч`;
+  return new Date(ts).toLocaleDateString("ru-RU", { day: "2-digit", month: "short" });
+}
+
 export function AssistantPanel() {
   const owner = useSession((s) => !!s.user?.owner);
-  const [messages, setMessages] = useState<Msg[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Load persisted conversations once (client-only).
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = localStorage.getItem(STORE_KEY);
+        if (raw) setConversations(JSON.parse(raw) as Conversation[]);
+      } catch { /* ignore corrupt storage */ }
+      setLoaded(true);
+    })();
+  }, []);
+
+  // Persist on every change.
+  useEffect(() => {
+    if (!loaded) return;
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(conversations.slice(0, MAX_CONVERSATIONS))); } catch { /* quota */ }
+  }, [conversations, loaded]);
+
+  const active = conversations.find((c) => c.id === activeId) ?? null;
+  const messages = active?.messages ?? [];
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, sending]);
 
+  function upsert(convo: Conversation) {
+    setConversations((prev) => {
+      const i = prev.findIndex((c) => c.id === convo.id);
+      const next = i >= 0 ? prev.map((c) => (c.id === convo.id ? convo : c)) : [convo, ...prev];
+      return next.sort((a, b) => b.updatedAt - a.updatedAt);
+    });
+  }
+
+  function remove(id: string) {
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+    if (activeId === id) setActiveId(null);
+  }
+
   async function ask(text: string) {
     const q = text.trim();
     if (!q || sending) return;
-    const next: Msg[] = [...messages, { role: "user", content: q }];
-    setMessages(next);
+
+    // Continue the active conversation, or start a new one.
+    const base: Conversation = active ?? { id: uid(), title: q.slice(0, 48), messages: [], updatedAt: now() };
+    const withUser: Conversation = { ...base, messages: [...base.messages, { role: "user", content: q }], updatedAt: now() };
+    upsert(withUser);
+    setActiveId(withUser.id);
     setDraft("");
     setSending(true);
     setError("");
@@ -39,11 +96,11 @@ export function AssistantPanel() {
       const res = await fetch("/api/assistant/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ messages: withUser.messages }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-      setMessages((m) => [...m, { role: "assistant", content: json.answer || "—" }]);
+      upsert({ ...withUser, messages: [...withUser.messages, { role: "assistant", content: json.answer || "—" }], updatedAt: now() });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -62,64 +119,106 @@ export function AssistantPanel() {
   }
 
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col px-8 py-5">
-      <h1 className="mb-1 flex items-center gap-2 text-[18px] font-semibold text-vsc-bright">
-        <Sparkles size={18} /> Ассистент
-      </h1>
-      <p className="mb-4 text-[12px] text-vsc-muted">
-        Знает твои задачи, календарь, Bitrix, непрочитанное в Telegram и почте. Спрашивай про приоритеты, ответы, дедлайны.
-      </p>
-
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-        {messages.length === 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                onClick={() => ask(s)}
-                className="rounded-full border border-vsc-line px-3 py-1.5 text-[12px] text-vsc-muted hover:border-vsc-accent hover:text-vsc-text"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        ) : (
-          messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+    <div className="flex h-full">
+      {/* ---- left: conversation history ---- */}
+      <aside className="flex w-60 shrink-0 flex-col border-r border-vsc-line">
+        <div className="p-2">
+          <button
+            onClick={() => { setActiveId(null); setError(""); }}
+            className="flex w-full items-center justify-center gap-1.5 rounded bg-vsc-accent px-3 py-2 text-[12px] text-white hover:opacity-90"
+          >
+            <Plus size={14} /> Новый чат
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {conversations.length === 0 ? (
+            <p className="px-3 py-2 text-[12px] text-vsc-muted">Истории пока нет.</p>
+          ) : (
+            conversations.map((c) => (
               <div
-                className={`max-w-[80%] rounded-lg px-3 py-2 text-[13px] leading-relaxed ${
-                  m.role === "user" ? "bg-vsc-accent/20 text-vsc-text" : "border border-vsc-line text-vsc-text"
-                }`}
+                key={c.id}
+                className={`group flex items-center gap-2 px-3 py-2 ${c.id === activeId ? "bg-vsc-hover" : "hover:bg-vsc-hover"}`}
               >
-                {m.role === "user"
-                  ? <p className="whitespace-pre-wrap break-words">{m.content}</p>
-                  : <MiniMarkdown text={m.content} />}
+                <button onClick={() => { setActiveId(c.id); setError(""); }} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                  <MessageSquare size={13} className="shrink-0 text-vsc-muted" />
+                  <div className="min-w-0">
+                    <div className={`truncate text-[12.5px] ${c.id === activeId ? "text-vsc-bright" : "text-vsc-text"}`}>{c.title}</div>
+                    <div className="text-[10px] text-vsc-muted">{relTime(c.updatedAt)}</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => remove(c.id)}
+                  title="Удалить чат"
+                  className="shrink-0 rounded p-1 text-vsc-muted opacity-0 hover:text-red-400 group-hover:opacity-100"
+                >
+                  <Trash2 size={13} />
+                </button>
               </div>
-            </div>
-          ))
-        )}
-        {sending && <p className="text-[12px] text-vsc-muted">Думаю…</p>}
-        {error && <p className="text-[12px] text-vsc-yellow">{error}</p>}
-      </div>
+            ))
+          )}
+        </div>
+      </aside>
 
-      <div className="mt-3 flex items-end gap-2 border-t border-vsc-line pt-3">
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(draft); } }}
-          placeholder="Спроси про свои дела…"
-          rows={1}
-          className="max-h-32 min-h-[38px] flex-1 resize-none rounded border border-vsc-line bg-vsc-sidebar px-3 py-2 text-[13px] text-vsc-text outline-none focus:border-vsc-accent"
-        />
-        <button
-          onClick={() => ask(draft)}
-          disabled={sending || !draft.trim()}
-          title="Отправить"
-          className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded bg-vsc-accent text-white hover:opacity-90 disabled:opacity-40"
-        >
-          <Send size={16} className={sending ? "animate-pulse" : ""} />
-        </button>
-      </div>
+      {/* ---- right: active chat ---- */}
+      <section className="flex min-w-0 flex-1 flex-col px-6 py-4">
+        <h1 className="mb-1 flex items-center gap-2 text-[16px] font-semibold text-vsc-bright">
+          <Sparkles size={17} /> Ассистент
+        </h1>
+        <p className="mb-3 text-[12px] text-vsc-muted">
+          Знает твои задачи, календарь, Bitrix, непрочитанное в Telegram и почте.
+        </p>
+
+        <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          {messages.length === 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => ask(s)}
+                  className="rounded-full border border-vsc-line px-3 py-1.5 text-[12px] text-vsc-muted hover:border-vsc-accent hover:text-vsc-text"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          ) : (
+            messages.map((m, i) => (
+              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div
+                  className={`max-w-[80%] rounded-lg px-3 py-2 text-[13px] leading-relaxed ${
+                    m.role === "user" ? "bg-vsc-accent/20 text-vsc-text" : "border border-vsc-line text-vsc-text"
+                  }`}
+                >
+                  {m.role === "user"
+                    ? <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                    : <MiniMarkdown text={m.content} />}
+                </div>
+              </div>
+            ))
+          )}
+          {sending && <p className="text-[12px] text-vsc-muted">Думаю…</p>}
+          {error && <p className="text-[12px] text-vsc-yellow">{error}</p>}
+        </div>
+
+        <div className="mt-3 flex items-end gap-2 border-t border-vsc-line pt-3">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(draft); } }}
+            placeholder="Спроси про свои дела…"
+            rows={1}
+            className="max-h-32 min-h-[38px] flex-1 resize-none rounded border border-vsc-line bg-vsc-sidebar px-3 py-2 text-[13px] text-vsc-text outline-none focus:border-vsc-accent"
+          />
+          <button
+            onClick={() => ask(draft)}
+            disabled={sending || !draft.trim()}
+            title="Отправить"
+            className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded bg-vsc-accent text-white hover:opacity-90 disabled:opacity-40"
+          >
+            <Send size={16} className={sending ? "animate-pulse" : ""} />
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
