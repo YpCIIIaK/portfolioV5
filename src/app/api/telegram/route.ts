@@ -24,7 +24,7 @@ export async function GET(req: Request) {
 
   try {
     if (scope === "dialogs") {
-      const limit = Math.min(Number(url.searchParams.get("limit")) || 500, 1000);
+      const limit = Math.min(Number(url.searchParams.get("limit")) || 1000, 2000);
       return NextResponse.json({ items: await fetchDialogs(limit) });
     }
     if (scope === "messages") {

@@ -82,7 +82,7 @@ function formatMessages(title: string, msgs: { author: string; text: string; dat
 /** Fetch and format Telegram history for assistant context. */
 export async function buildTgContext(specs: TgReadSpec[]): Promise<string> {
   if (!specs.length || !telegramConfigured()) return "";
-  const dialogs = await fetchDialogs(200);
+  const dialogs = await fetchDialogs(2000);
   const parts: string[] = [];
 
   for (const spec of specs) {

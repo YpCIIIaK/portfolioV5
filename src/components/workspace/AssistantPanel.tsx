@@ -67,7 +67,7 @@ export function AssistantPanel() {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch("/api/telegram?scope=dialogs&limit=1000");
+        const res = await fetch("/api/telegram?scope=dialogs&limit=2000");
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !alive) return;
         setDialogs((json.items as TgDialog[]) ?? []);
@@ -85,7 +85,7 @@ export function AssistantPanel() {
   }, [messages, sending]);
 
   const mentionOptions = mentionAt !== null
-    ? dialogs.filter((d) => d.title.toLowerCase().includes(mentionQ)).slice(0, 8)
+    ? dialogs.filter((d) => d.title.toLowerCase().includes(mentionQ)).slice(0, 30)
     : [];
 
   function upsert(convo: Conversation) {

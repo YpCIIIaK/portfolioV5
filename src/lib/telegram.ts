@@ -56,7 +56,9 @@ export interface TgDialog {
 }
 
 async function getAllDialogs(client: TelegramClient, limit: number) {
-  const perBucket = Math.max(1, Math.ceil(limit / 2));
+  // Fetch the full requested amount from both regular and archived lists.
+  // Splitting the limit hides older non-archived chats from assistant mentions.
+  const perBucket = Math.max(1, limit);
   const [main, archived] = await Promise.all([
     client.getDialogs({ limit: perBucket, archived: false }),
     client.getDialogs({ limit: perBucket, archived: true }),
@@ -65,10 +67,10 @@ async function getAllDialogs(client: TelegramClient, limit: number) {
   for (const d of [...main, ...archived]) {
     if (d.id) map.set(String(d.id), d);
   }
-  return [...map.values()].slice(0, limit);
+  return [...map.values()].slice(0, limit * 2);
 }
 
-export async function fetchDialogs(limit = 500): Promise<TgDialog[]> {
+export async function fetchDialogs(limit = 1000): Promise<TgDialog[]> {
   return withClient(async (client) => {
     const dialogs = await getAllDialogs(client, limit);
     return dialogs
@@ -109,9 +111,9 @@ export interface TgMessage {
  * already carry a usable inputEntity, so we match on the id string instead.
  */
 async function resolvePeer(client: TelegramClient, peerId: string) {
-  const dialogs = await getAllDialogs(client, 1000);
+  const dialogs = await getAllDialogs(client, 2000);
   const dlg = dialogs.find((d) => String(d.id) === peerId);
-  if (!dlg) throw new Error("диалог не найден (возможно, вне последних 1000)");
+  if (!dlg) throw new Error("диалог не найден (возможно, вне последних 2000)");
   return dlg.inputEntity;
 }
 
