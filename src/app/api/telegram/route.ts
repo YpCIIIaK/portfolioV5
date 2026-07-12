@@ -27,7 +27,8 @@ export async function GET(req: Request) {
     if (scope === "messages") {
       const peer = url.searchParams.get("peer");
       if (!peer) return NextResponse.json({ error: "missing peer" }, { status: 400 });
-      return NextResponse.json({ items: await fetchMessages(peer) });
+      const before = Number(url.searchParams.get("before")) || 0;
+      return NextResponse.json({ items: await fetchMessages(peer, 40, before) });
     }
     return NextResponse.json({ error: "unknown scope" }, { status: 400 });
   } catch (e) {

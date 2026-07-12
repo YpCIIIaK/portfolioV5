@@ -1,13 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, RefreshCw, User, Users, Radio, Play } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Send, RefreshCw, User, Users, Radio, Play, Paperclip, X, Clock, FileText } from "lucide-react";
 import { getCached, setCached, invalidate } from "@/lib/cache";
 
 /** Client-side mirrors of /api/telegram shapes. */
 interface TgDialog { id: string; title: string; kind: "user" | "group" | "channel"; unread: number; lastMessage: string; lastDate: string | null }
 interface TgMedia { kind: string; display: "image" | "video" | "audio" }
 interface TgMessage { id: number; out: boolean; author: string; text: string; date: string; media: TgMedia | null }
+/** Locally-shown, not-yet-confirmed outgoing message (optimistic echo). */
+interface Pending { localId: number; text: string; note?: string }
+
+/** Merge server messages into existing ones, dedup by id, sorted oldest→newest. */
+function mergeMsgs(prev: TgMessage[], incoming: TgMessage[]): TgMessage[] {
+  const map = new Map<number, TgMessage>();
+  for (const m of prev) map.set(m.id, m);
+  for (const m of incoming) map.set(m.id, m);
+  return [...map.values()].sort((a, b) => a.id - b.id);
+}
+
+const PAGE = 40;
 
 // How often to re-poll the currently open chat (adaptive: only while it's open).
 const CHAT_POLL_MS = 3000;
@@ -90,11 +102,19 @@ export function TelegramPanel() {
   // open dialog
   const [openChat, setOpenChat] = useState<TgDialog | null>(null);
   const [messages, setMessages] = useState<TgMessage[]>([]);
+  const [pending, setPending] = useState<Pending[]>([]);
   const [msgLoading, setMsgLoading] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastIdRef = useRef<number | null>(null);
+  const olderBusyRef = useRef(false);
+  const prependRef = useRef<{ h: number; top: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   /* ---- dialog list ---- */
   useEffect(() => {
@@ -121,16 +141,17 @@ export function TelegramPanel() {
   }, []);
 
   /* ---- open chat + adaptive polling ---- */
-  const loadMessages = useCallback(async (peer: string, initial: boolean) => {
+  // Fetch the latest page; reset replaces (chat switch), otherwise merge (poll).
+  const loadLatest = useCallback(async (peer: string, reset: boolean) => {
     try {
       const m = await getJson<TgMessage[]>(`scope=messages&peer=${encodeURIComponent(peer)}`);
-      setMessages(m);
+      setMessages((prev) => (reset ? m : mergeMsgs(prev, m)));
       setError("");
     } catch (e) {
-      if (initial) setMessages([]);
+      if (reset) setMessages([]);
       setError((e as Error).message);
     } finally {
-      if (initial) setMsgLoading(false);
+      if (reset) setMsgLoading(false);
     }
   }, []);
 
@@ -138,50 +159,119 @@ export function TelegramPanel() {
     if (!openChat) return;
     let alive = true;
     const peer = openChat.id;
-    lastIdRef.current = null; // reset "seen last message" for the new chat
-    (async () => { await loadMessages(peer, true); })();
+    lastIdRef.current = null;
+    (async () => { await loadLatest(peer, true); })();
     // Poll only while this chat is open — cheap "almost realtime" without SSE.
-    const t = setInterval(() => { if (alive) loadMessages(peer, false); }, CHAT_POLL_MS);
+    const t = setInterval(() => { if (alive) loadLatest(peer, false); }, CHAT_POLL_MS);
     return () => { alive = false; clearInterval(t); };
-  }, [openChat, loadMessages]);
+  }, [openChat, loadLatest]);
 
-  // Auto-scroll only when a genuinely new message arrives (not on every 3s
-  // poll of unchanged data), and only if the user is already near the bottom —
-  // otherwise reading history / reaching the input box would get yanked away.
-  useEffect(() => {
+  // Load an older page and keep the scroll anchored where the user was reading.
+  const loadOlder = useCallback(async () => {
+    const el = scrollRef.current;
+    if (!openChat || !el || olderBusyRef.current || !hasMore || messages.length === 0) return;
+    olderBusyRef.current = true;
+    setLoadingOlder(true);
+    const oldest = messages[0].id;
+    try {
+      const older = await getJson<TgMessage[]>(`scope=messages&peer=${encodeURIComponent(openChat.id)}&before=${oldest}`);
+      if (older.length < PAGE) setHasMore(false);
+      if (older.length > 0) {
+        prependRef.current = { h: el.scrollHeight, top: el.scrollTop };
+        setMessages((prev) => mergeMsgs(prev, older));
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      olderBusyRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [openChat, hasMore, messages]);
+
+  // Object-URL previews for the picked attachments; revoked when they change.
+  const previews = useMemo(
+    () =>
+      attachments.map((f) => {
+        const kind: "image" | "video" | "file" = f.type.startsWith("image/") ? "image" : f.type.startsWith("video/") ? "video" : "file";
+        return { name: f.name, kind, url: kind === "file" ? null : URL.createObjectURL(f) };
+      }),
+    [attachments],
+  );
+  useEffect(() => () => previews.forEach((p) => p.url && URL.revokeObjectURL(p.url)), [previews]);
+
+  // Scroll management: preserve position on prepend, pin to bottom on new msgs.
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el || messages.length === 0) return;
+    if (prependRef.current) {
+      const { h, top } = prependRef.current;
+      prependRef.current = null;
+      el.scrollTop = top + (el.scrollHeight - h); // keep the same message under the cursor
+      lastIdRef.current = messages[messages.length - 1].id;
+      return;
+    }
     const last = messages[messages.length - 1].id;
     const isNew = last !== lastIdRef.current;
     const firstLoad = lastIdRef.current === null;
     lastIdRef.current = last;
     if (!isNew) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
     if (firstLoad || nearBottom) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
+  // Sending your own message: always drop to the bottom.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [pending.length]);
+
+  function onScroll(e: React.UIEvent<HTMLDivElement>) {
+    if (e.currentTarget.scrollTop < 80) loadOlder();
+  }
+
   async function send() {
+    if (sending || !openChat) return;
     const text = draft.trim();
-    if (!text || !openChat || sending) return;
+    const files = attachments;
+    if (!text && files.length === 0) return;
     setSending(true);
-    // Optimistic echo; the next poll reconciles with the real message.
-    const optimistic: TgMessage = { id: Date.now(), out: true, author: "Вы", text, date: new Date().toISOString(), media: null };
-    setMessages((prev) => [...prev, optimistic]);
+    const localId = Date.now();
+    const note = files.length > 0 ? `📎 ${files.length} ${files.length === 1 ? "файл" : "файла(ов)"}` : undefined;
+    setPending((p) => [...p, { localId, text, note }]);
     setDraft("");
+    setAttachments([]);
     try {
-      await fetch("/api/telegram", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ peer: openChat.id, text }),
-      }).then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`); });
-      await loadMessages(openChat.id, false);
+      if (files.length > 0) {
+        const fd = new FormData();
+        fd.append("peer", openChat.id);
+        fd.append("caption", text);
+        files.forEach((f) => fd.append("files", f));
+        const r = await fetch("/api/telegram/upload", { method: "POST", body: fd });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+      } else {
+        const r = await fetch("/api/telegram", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ peer: openChat.id, text }),
+        });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+      }
+      await loadLatest(openChat.id, false);
+      setPending((p) => p.filter((x) => x.localId !== localId));
     } catch (e) {
       setError((e as Error).message);
-      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
-      setDraft(text); // let the user retry
+      setPending((p) => p.filter((x) => x.localId !== localId));
+      setDraft(text);
+      setAttachments(files);
     } finally {
       setSending(false);
     }
+  }
+
+  function pickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const fs = Array.from(e.target.files || []);
+    if (fs.length) setAttachments((prev) => [...prev, ...fs]);
+    e.target.value = "";
   }
 
   const openChat_ = openChat;
@@ -210,7 +300,7 @@ export function TelegramPanel() {
               return (
                 <button
                   key={c.id}
-                  onClick={() => { if (active) return; setMsgLoading(true); setMessages([]); setOpenChat(c); }}
+                  onClick={() => { if (active) return; setMsgLoading(true); setMessages([]); setPending([]); setAttachments([]); setHasMore(true); setError(""); setOpenChat(c); }}
                   className={`flex w-full items-center gap-2.5 px-3 py-2 text-left ${active ? "bg-vsc-hover" : "hover:bg-vsc-hover"}`}
                 >
                   <KindIcon kind={c.kind} />
@@ -248,53 +338,103 @@ export function TelegramPanel() {
               <h2 className="truncate text-[15px] font-semibold text-vsc-bright">{openChat_.title}</h2>
             </header>
 
-            <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-6 py-4">
+            <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-6 py-4">
+              {loadingOlder && <p className="text-center text-[11px] text-vsc-muted">Загрузка истории…</p>}
               {msgLoading ? (
                 <p className="text-[13px] text-vsc-muted">Загрузка сообщений…</p>
-              ) : messages.length === 0 ? (
+              ) : messages.length === 0 && pending.length === 0 ? (
                 <p className="text-[13px] text-vsc-muted">Сообщений нет.</p>
               ) : (
-                messages.map((m) => (
-                  <div key={m.id} className={`flex ${m.out ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className={`max-w-[75%] rounded-lg px-3 py-1.5 ${
-                        m.out ? "bg-vsc-accent/20 text-vsc-text" : "border border-vsc-line text-vsc-text"
-                      }`}
-                    >
-                      {!m.out && openChat_.kind !== "user" && (
-                        <div className="mb-0.5 text-[11px] font-medium text-vsc-muted">{m.author}</div>
-                      )}
-                      {m.media && <MediaView peer={openChat_.id} msgId={m.id} media={m.media} />}
-                      {(m.text || !m.media) && (
-                        <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{m.text || "—"}</p>
-                      )}
-                      <div className="mt-0.5 text-right text-[10px] text-vsc-muted">{when(m.date)}</div>
+                <>
+                  {messages.map((m) => (
+                    <div key={m.id} className={`flex ${m.out ? "justify-end" : "justify-start"}`}>
+                      <div
+                        className={`max-w-[75%] rounded-lg px-3 py-1.5 ${
+                          m.out ? "bg-vsc-accent/20 text-vsc-text" : "border border-vsc-line text-vsc-text"
+                        }`}
+                      >
+                        {!m.out && openChat_.kind !== "user" && (
+                          <div className="mb-0.5 text-[11px] font-medium text-vsc-muted">{m.author}</div>
+                        )}
+                        {m.media && <MediaView peer={openChat_.id} msgId={m.id} media={m.media} />}
+                        {(m.text || !m.media) && (
+                          <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{m.text || "—"}</p>
+                        )}
+                        <div className="mt-0.5 text-right text-[10px] text-vsc-muted">{when(m.date)}</div>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                  {pending.map((p) => (
+                    <div key={p.localId} className="flex justify-end">
+                      <div className="max-w-[75%] rounded-lg bg-vsc-accent/10 px-3 py-1.5 opacity-70">
+                        {p.note && <div className="mb-0.5 text-[12px] text-vsc-muted">{p.note}</div>}
+                        {p.text && <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-vsc-text">{p.text}</p>}
+                        <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-vsc-muted">
+                          <Clock size={10} /> отправка…
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </>
               )}
             </div>
 
             {error && <p className="px-6 text-[12px] text-vsc-yellow">{error}</p>}
 
             {openChat_.kind !== "channel" && (
-              <div className="flex items-end gap-2 border-t border-vsc-line px-6 py-3">
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-                  placeholder="Сообщение… (Enter — отправить, Shift+Enter — перенос)"
-                  rows={1}
-                  className="max-h-32 min-h-[38px] flex-1 resize-none rounded border border-vsc-line bg-vsc-sidebar px-3 py-2 text-[13px] text-vsc-text outline-none focus:border-vsc-accent"
-                />
-                <button
-                  onClick={send}
-                  disabled={sending || !draft.trim()}
-                  title="Отправить"
-                  className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded bg-vsc-accent text-white hover:opacity-90 disabled:opacity-40"
-                >
-                  <Send size={16} className={sending ? "animate-pulse" : ""} />
-                </button>
+              <div className="border-t border-vsc-line px-6 py-3">
+                {previews.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {previews.map((p, i) => (
+                      <div key={i} className="group relative">
+                        {p.kind === "image" && p.url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={p.url} alt="" className="h-16 w-16 rounded object-cover" />
+                        ) : p.kind === "video" && p.url ? (
+                          <video src={p.url} className="h-16 w-16 rounded object-cover" />
+                        ) : (
+                          <div className="flex h-16 w-16 flex-col items-center justify-center rounded border border-vsc-line px-1 text-center">
+                            <FileText size={18} className="text-vsc-muted" />
+                            <span className="mt-0.5 w-full truncate text-[9px] text-vsc-muted">{p.name}</span>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                          title="Убрать"
+                          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-vsc-bg text-vsc-muted opacity-0 shadow group-hover:opacity-100 hover:text-vsc-text"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-end gap-2">
+                  <input ref={fileInputRef} type="file" multiple hidden onChange={pickFiles} />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    title="Прикрепить файлы"
+                    className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded border border-vsc-line text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"
+                  >
+                    <Paperclip size={16} />
+                  </button>
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+                    placeholder="Сообщение… (Enter — отправить, Shift+Enter — перенос)"
+                    rows={1}
+                    className="max-h-32 min-h-[38px] flex-1 resize-none rounded border border-vsc-line bg-vsc-sidebar px-3 py-2 text-[13px] text-vsc-text outline-none focus:border-vsc-accent"
+                  />
+                  <button
+                    onClick={send}
+                    disabled={sending || (!draft.trim() && attachments.length === 0)}
+                    title="Отправить"
+                    className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded bg-vsc-accent text-white hover:opacity-90 disabled:opacity-40"
+                  >
+                    <Send size={16} className={sending ? "animate-pulse" : ""} />
+                  </button>
+                </div>
               </div>
             )}
           </>

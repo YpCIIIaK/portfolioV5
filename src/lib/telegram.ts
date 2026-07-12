@@ -14,10 +14,11 @@
 // (telegram/sessions, telegram/extensions/…) can resolve to a second physical
 // copy of the module, and then `session instanceof Session` inside the client
 // fails with "Only StringSession and StoreSessions are supported".
-import { TelegramClient, sessions } from "telegram";
+import { TelegramClient, sessions, client as gram } from "telegram";
 import { LogLevel } from "telegram/extensions/Logger";
 
 const { StringSession } = sessions;
+const { CustomFile } = gram.uploads;
 
 const apiId = Number(process.env.TELEGRAM_API_ID || 0);
 const apiHash = process.env.TELEGRAM_API_HASH || "";
@@ -152,10 +153,11 @@ function mediaDisplay(m: MediaMsg): MediaDisplay | null {
   return null;
 }
 
-export async function fetchMessages(peerId: string, limit = 40): Promise<TgMessage[]> {
+export async function fetchMessages(peerId: string, limit = 40, offsetId = 0): Promise<TgMessage[]> {
   return withClient(async (client) => {
     const entity = await resolvePeer(client, peerId);
-    const messages = await client.getMessages(entity, { limit });
+    // offsetId > 0 pages backwards: returns messages strictly older than it.
+    const messages = await client.getMessages(entity, offsetId ? { limit, offsetId } : { limit });
 
     return messages
       .filter((m) => m.id)
@@ -191,6 +193,30 @@ export async function sendMessage(peerId: string, text: string): Promise<{ id: n
     const entity = await resolvePeer(client, peerId);
     const res = await client.sendMessage(entity, { message: text });
     return { id: res.id };
+  });
+}
+
+/* ---- send files (photos / videos / documents, album for multiple) ----- */
+
+export interface UploadFile {
+  name: string;
+  data: Uint8Array;
+}
+
+export async function sendFiles(peerId: string, files: UploadFile[], caption: string): Promise<{ id: number }> {
+  return withClient(async (client) => {
+    const entity = await resolvePeer(client, peerId);
+    // CustomFile wraps in-memory bytes; the name's extension lets GramJS decide
+    // photo/video vs. document. Multiple files go as an album.
+    const wrapped = files.map((f) => new CustomFile(f.name || "file", f.data.byteLength, "", Buffer.from(f.data)));
+    const res = await client.sendFile(entity, {
+      file: wrapped.length === 1 ? wrapped[0] : wrapped,
+      caption: caption || undefined,
+      forceDocument: false,
+      workers: 1,
+    });
+    const msg = res as unknown as { id: number } | { id: number }[];
+    return { id: Array.isArray(msg) ? msg[0].id : msg.id };
   });
 }
 
