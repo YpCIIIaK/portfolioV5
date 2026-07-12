@@ -59,7 +59,30 @@ export interface Project {
   created_at: string;
 }
 
-export type Kind = "notes" | "tasks" | "events" | "projects";
+/** Billing cycle of a subscription. */
+export type SubPeriod = "monthly" | "yearly";
+
+export interface Subscription {
+  id: string;
+  name: string; // что: Netflix, Claude Pro, …
+  price: number; // сколько за период
+  currency: string; // символ: ₽ $ € ₸
+  period: SubPeriod;
+  tier: string; // тариф: Pro, Premium, Family (опционально)
+  description: string; // заметка (опционально)
+  next_date: string | null; // следующее списание YYYY-MM-DD (опционально)
+  created_at: string;
+}
+
+export type Kind = "notes" | "tasks" | "events" | "projects" | "subscriptions";
+
+/** Currency symbols offered in the subscriptions form. */
+export const CURRENCIES = ["₽", "₸", "$", "€"];
+
+/** Normalize a subscription's price to a per-month figure. */
+export function monthlyCost(s: Subscription): number {
+  return s.period === "yearly" ? s.price / 12 : s.price;
+}
 
 /** Read-only sample data shown to guests so the feature is explorable. */
 export const DEMO_NOTES: Note[] = [
@@ -118,6 +141,12 @@ export const DEMO_PROJECTS: Project[] = [
     is_public: true,
     created_at: new Date(Date.now() - 86400000).toISOString(),
   },
+];
+
+export const DEMO_SUBSCRIPTIONS: Subscription[] = [
+  { id: "demo-1", name: "Claude Pro", price: 20, currency: "$", period: "monthly", tier: "Pro", description: "AI-ассистент для кода и текста", next_date: isoDay(12), created_at: new Date().toISOString() },
+  { id: "demo-2", name: "Spotify", price: 169, currency: "₽", period: "monthly", tier: "Individual", description: "", next_date: isoDay(5), created_at: new Date().toISOString() },
+  { id: "demo-3", name: "GitHub Copilot", price: 100, currency: "$", period: "yearly", tier: "", description: "Годовая подписка", next_date: isoDay(120), created_at: new Date().toISOString() },
 ];
 
 interface ApiList<T> { items: T[] }

@@ -26,6 +26,7 @@ import { MailPanel } from "./workspace/MailPanel";
 import { ProjectsPanel } from "./workspace/ProjectsPanel";
 import { BitrixPanel } from "./workspace/BitrixPanel";
 import { TelegramPanel } from "./workspace/TelegramPanel";
+import { SubscriptionsPanel } from "./workspace/SubscriptionsPanel";
 
 export function Editor() {
   const activeFile = useEditor((s) => s.activeFile);
@@ -102,6 +103,7 @@ export function Editor() {
           {file.id === "workspace/mail.tsx" && <MailPanel />}
           {file.id === "workspace/bitrix.tsx" && <BitrixPanel />}
           {file.id === "workspace/telegram.tsx" && <TelegramPanel />}
+          {file.id === "workspace/subscriptions.tsx" && <SubscriptionsPanel />}
           {file.id === "workspace/projects.tsx" && <ProjectsPanel />}
           </div>
           <Minimap blocks={file.blocks} />

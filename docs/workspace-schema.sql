@@ -62,6 +62,20 @@ create table if not exists public.ws_projects (
   created_at  timestamptz not null default now()
 );
 
+-- Subscriptions -----------------------------------------------------
+-- Manual tracker of recurring paid services (what / how much / tier).
+create table if not exists public.ws_subscriptions (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null,
+  price       numeric not null default 0,
+  currency    text not null default '₽',
+  period      text not null default 'monthly', -- monthly | yearly
+  tier        text not null default '',
+  description text not null default '',
+  next_date   date,
+  created_at  timestamptz not null default now()
+);
+
 -- Guestbook -----------------------------------------------------------
 -- Public read, write for any logged-in GitHub user (identity comes from
 -- the signed session on the server, never from the client body).
@@ -95,6 +109,7 @@ alter table public.ws_notes    enable row level security;
 alter table public.ws_tasks    enable row level security;
 alter table public.ws_events   enable row level security;
 alter table public.ws_projects enable row level security;
+alter table public.ws_subscriptions enable row level security;
 alter table public.ws_guestbook enable row level security;
 alter table public.ws_visits   enable row level security;
 -- (No policies created on purpose: anon/public key gets zero access.)

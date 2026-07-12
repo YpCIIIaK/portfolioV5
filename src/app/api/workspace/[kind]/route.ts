@@ -11,13 +11,14 @@ export const runtime = "nodejs";
  * is gated behind requireOwner().
  */
 
-type Kind = "notes" | "tasks" | "events" | "projects";
+type Kind = "notes" | "tasks" | "events" | "projects" | "subscriptions";
 
 const TABLE: Record<Kind, string> = {
   notes: "ws_notes",
   tasks: "ws_tasks",
   events: "ws_events",
   projects: "ws_projects",
+  subscriptions: "ws_subscriptions",
 };
 
 const ORDER: Record<Kind, string> = {
@@ -25,11 +26,13 @@ const ORDER: Record<Kind, string> = {
   tasks: "order=created_at.desc",
   events: "order=date.asc",
   projects: "order=created_at.desc",
+  subscriptions: "order=created_at.desc",
 };
 
 const priority = z.enum(["none", "low", "medium", "high"]);
 const color = z.string().max(20);
 const taskStatus = z.enum(["todo", "doing", "done"]);
+const subPeriod = z.enum(["monthly", "yearly"]);
 
 // Field whitelists — anything else in the body is dropped before hitting the DB.
 const CREATE: Record<Kind, z.ZodTypeAny> = {
@@ -37,6 +40,7 @@ const CREATE: Record<Kind, z.ZodTypeAny> = {
   tasks: z.object({ title: z.string().min(1).max(500), done: z.boolean().default(false), status: taskStatus.default("todo"), due: z.string().nullable().default(null), priority: priority.default("none"), color: color.default("") }),
   events: z.object({ title: z.string().min(1).max(300), date: z.string(), time: z.string().nullable().default(null), note: z.string().max(2000).nullable().default(null), priority: priority.default("none"), color: color.default("") }),
   projects: z.object({ title: z.string().min(1).max(200), description: z.string().max(4000).default(""), repo_url: z.string().max(500).nullable().default(null), tags: z.string().max(500).default(""), is_public: z.boolean().default(true) }),
+  subscriptions: z.object({ name: z.string().min(1).max(200), price: z.number().min(0).max(1e9).default(0), currency: z.string().max(8).default("₽"), period: subPeriod.default("monthly"), tier: z.string().max(100).default(""), description: z.string().max(2000).default(""), next_date: z.string().nullable().default(null) }),
 };
 
 const UPDATE: Record<Kind, z.ZodTypeAny> = {
@@ -44,10 +48,11 @@ const UPDATE: Record<Kind, z.ZodTypeAny> = {
   tasks: z.object({ title: z.string().min(1).max(500).optional(), done: z.boolean().optional(), status: taskStatus.optional(), due: z.string().nullable().optional(), priority: priority.optional(), color: color.optional() }),
   events: z.object({ title: z.string().min(1).max(300).optional(), date: z.string().optional(), time: z.string().nullable().optional(), note: z.string().max(2000).nullable().optional(), priority: priority.optional(), color: color.optional() }),
   projects: z.object({ title: z.string().min(1).max(200).optional(), description: z.string().max(4000).optional(), repo_url: z.string().max(500).nullable().optional(), tags: z.string().max(500).optional(), is_public: z.boolean().optional() }),
+  subscriptions: z.object({ name: z.string().min(1).max(200).optional(), price: z.number().min(0).max(1e9).optional(), currency: z.string().max(8).optional(), period: subPeriod.optional(), tier: z.string().max(100).optional(), description: z.string().max(2000).optional(), next_date: z.string().nullable().optional() }),
 };
 
 function parseKind(raw: string): Kind | null {
-  return raw === "notes" || raw === "tasks" || raw === "events" || raw === "projects" ? raw : null;
+  return raw === "notes" || raw === "tasks" || raw === "events" || raw === "projects" || raw === "subscriptions" ? raw : null;
 }
 
 async function guard(kindRaw: string): Promise<{ kind: Kind } | NextResponse> {
