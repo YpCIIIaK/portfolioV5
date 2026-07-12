@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ListTodo, CalendarDays, Mail, Check, Briefcase, ExternalLink } from "lucide-react";
+import { ListTodo, CalendarDays, Mail, Check, Briefcase, ExternalLink, Send, User, Users, Radio } from "lucide-react";
 import { DEMO_TASKS, DEMO_EVENTS, wsUpdate, type Task, type WsEvent } from "@/lib/workspace";
 import { getCached, setCached } from "@/lib/cache";
 import { useCollection } from "./useCollection";
@@ -345,6 +345,84 @@ function BitrixTasksWidget() {
   );
 }
 
+/* ---- Telegram chats -------------------------------------------------- */
+
+interface TgDialog { id: string; title: string; kind: "user" | "group" | "channel"; unread: number; lastMessage: string; lastDate: string | null }
+
+function tgWhen(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return sameDay
+    ? new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(d)
+    : new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short" }).format(d);
+}
+
+function TelegramWidget() {
+  const openFile = useEditor((s) => s.openFile);
+  const [dialogs, setDialogs] = useState<TgDialog[]>(() => getCached<TgDialog[]>("tg:dialogs") ?? []);
+  const [loading, setLoading] = useState(!getCached<TgDialog[]>("tg:dialogs"));
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (getCached<TgDialog[]>("tg:dialogs")) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/telegram?scope=dialogs");
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+        const items = (json.items as TgDialog[]) ?? [];
+        if (cancelled) return;
+        setDialogs(items);
+        setCached("tg:dialogs", items);
+        setError("");
+      } catch (e) {
+        if (!cancelled) setError((e as Error).message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <Card title="Telegram" Icon={Send} onTitle={() => openFile("workspace/telegram.tsx")}>
+      {loading ? (
+        <p className="text-[12px] text-vsc-muted">Загрузка…</p>
+      ) : error ? (
+        <p className="text-[12px] text-vsc-yellow">{error}</p>
+      ) : dialogs.length === 0 ? (
+        <p className="text-[12px] text-vsc-muted">Чатов нет.</p>
+      ) : (
+        <div className="flex flex-col gap-0.5">
+          {dialogs.slice(0, 5).map((c) => {
+            const Icon = c.kind === "channel" ? Radio : c.kind === "group" ? Users : User;
+            return (
+              <button
+                key={c.id}
+                onClick={() => openFile("workspace/telegram.tsx")}
+                className="flex items-center gap-2 rounded px-1 py-1 text-left hover:bg-vsc-hover"
+              >
+                <Icon size={13} className="shrink-0 text-vsc-muted" />
+                <span className={`w-28 shrink-0 truncate text-[13px] ${c.unread > 0 ? "font-semibold text-vsc-bright" : "text-vsc-text"}`}>
+                  {c.title}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-vsc-muted">{c.lastMessage}</span>
+                {c.unread > 0 && (
+                  <span className="shrink-0 rounded-full bg-vsc-accent px-1.5 text-[10px] leading-4 text-white">{c.unread}</span>
+                )}
+                <span className="shrink-0 text-[11px] text-vsc-muted">{tgWhen(c.lastDate)}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /* ---- shell ----------------------------------------------------------- */
 
 function Card({
@@ -388,6 +466,7 @@ export function DashboardPanel() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <TasksWidget />
         <BitrixTasksWidget />
+        <TelegramWidget />
         <AgendaWidget />
         <MailWidget />
       </div>
