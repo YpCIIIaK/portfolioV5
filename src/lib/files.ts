@@ -913,6 +913,12 @@ export const WORKSPACE_FILES: FileNode[] = [
     blocks: [],
   },
   {
+    id: "workspace/news.tsx",
+    name: "news.tsx",
+    language: "TypeScript",
+    blocks: [{ t: "h1", text: "📰 Новости" }],
+  },
+  {
     id: "workspace/telegram.tsx",
     name: "telegram.tsx",
     language: "TypeScript",

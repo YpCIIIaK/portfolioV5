@@ -11,6 +11,7 @@ import { useSession } from "@/lib/session";
 import { MiniMarkdown } from "./MiniMarkdown";
 import { GuestBanner } from "./GuestBanner";
 import { PriorityDot, priorityRank } from "./wsStyle";
+import { NewsWidget } from "./NewsPanel";
 
 /* ---- combined time + weather (compact header widget) ----------------- */
 
@@ -526,6 +527,7 @@ export function DashboardPanel() {
       <GuestBannerIfNeeded />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <AiBriefWidget />
+        <NewsWidget />
         <TasksWidget />
         <BitrixTasksWidget />
         <TelegramWidget />

@@ -11,6 +11,7 @@ import { supabaseConfigured, sbSelect } from "@/lib/supabase";
 import { bitrixConfigured, fetchTasks } from "@/lib/bitrix";
 import { telegramConfigured, fetchDialogs } from "@/lib/telegram";
 import { mailConfigured, fetchInbox } from "@/lib/mail-server";
+import { fetchNews, formatNewsContext } from "@/lib/news";
 
 interface WsTask { title: string; due: string | null; priority: string; done: boolean }
 interface WsEvent { title: string; date: string; time: string | null }
@@ -58,6 +59,12 @@ async function build(): Promise<string> {
       if (unread.length) parts.push("ПОЧТА (непрочитанное):\n" + unread.map((m) => `- ${m.from}: ${m.subject}`).join("\n"));
     } catch { /* skip */ }
   }
+
+  try {
+    const news = await fetchNews();
+    const newsText = formatNewsContext(news);
+    if (newsText) parts.push(newsText);
+  } catch { /* skip */ }
 
   return parts.join("\n\n");
 }
