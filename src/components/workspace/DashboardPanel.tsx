@@ -8,6 +8,7 @@ import { useCollection } from "./useCollection";
 import { useMailbox } from "./useMailbox";
 import { useEditor } from "@/lib/store";
 import { useSession } from "@/lib/session";
+import { MiniMarkdown } from "./MiniMarkdown";
 import { GuestBanner } from "./GuestBanner";
 import { PriorityDot, priorityRank } from "./wsStyle";
 
@@ -475,7 +476,7 @@ function AiBriefWidget() {
       ) : error ? (
         <p className="text-[12px] text-vsc-yellow">{error}</p>
       ) : brief ? (
-        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-vsc-text">{brief}</p>
+        <MiniMarkdown text={brief} />
       ) : (
         <p className="text-[13px] text-vsc-muted">Нет данных для брифинга.</p>
       )}

@@ -3,6 +3,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Sparkles, Send, Lock } from "lucide-react";
 import { useSession } from "@/lib/session";
+import { MiniMarkdown } from "./MiniMarkdown";
 
 interface Msg { role: "user" | "assistant"; content: string }
 
@@ -90,7 +91,9 @@ export function AssistantPanel() {
                   m.role === "user" ? "bg-vsc-accent/20 text-vsc-text" : "border border-vsc-line text-vsc-text"
                 }`}
               >
-                <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                {m.role === "user"
+                  ? <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                  : <MiniMarkdown text={m.content} />}
               </div>
             </div>
           ))

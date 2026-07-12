@@ -6,6 +6,7 @@ import { useEditor } from "@/lib/store";
 import { fileById } from "@/lib/files";
 import { relevantFiles } from "@/lib/fileKeywords";
 import { FileIcon } from "./FileIcon";
+import { MiniMarkdown } from "./workspace/MiniMarkdown";
 
 interface Msg {
   role: "user" | "assistant";
@@ -243,8 +244,9 @@ function Bubble({ msg, streaming, onOpenFile }: { msg: Msg; streaming: boolean; 
             isUser ? "bg-vsc-accent text-white" : "bg-[var(--vsc-bg)] text-vsc-text"
           }`}
         >
-          {msg.content || (streaming ? "…" : "")}
-          {streaming && msg.content && <span className="cursor-blink">▋</span>}
+          {!isUser && !streaming && msg.content
+            ? <MiniMarkdown text={msg.content} />
+            : <>{msg.content || (streaming ? "…" : "")}{streaming && msg.content && <span className="cursor-blink">▋</span>}</>}
         </div>
 
         {!isUser && files.length > 0 && (
