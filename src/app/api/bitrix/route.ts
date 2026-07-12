@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireOwner } from "@/lib/auth";
-import { bitrixConfigured, fetchTasks, fetchChats, fetchMessages, fetchFeed } from "@/lib/bitrix";
+import { bitrixConfigured, fetchTasks, fetchTask, fetchChats, fetchMessages, fetchFeed } from "@/lib/bitrix";
 
 export const runtime = "nodejs";
 
@@ -20,6 +20,11 @@ export async function GET(req: Request) {
 
   try {
     if (scope === "tasks") return NextResponse.json({ items: await fetchTasks() });
+    if (scope === "task") {
+      const id = url.searchParams.get("id");
+      if (!id) return NextResponse.json({ error: "missing id" }, { status: 400 });
+      return NextResponse.json({ item: await fetchTask(id) });
+    }
     if (scope === "chats") return NextResponse.json({ items: await fetchChats() });
     if (scope === "feed") return NextResponse.json({ items: await fetchFeed() });
     if (scope === "messages") {

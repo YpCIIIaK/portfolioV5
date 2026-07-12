@@ -84,6 +84,90 @@ export async function fetchTasks(limit = 50): Promise<BxTask[]> {
   }));
 }
 
+/* ---- one task (full detail) ------------------------------------------- */
+
+export interface BxTaskFull {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  statusCode: number;
+  createdDate: string | null;
+  deadline: string | null;
+  closedDate: string | null;
+  creator: string | null; // кто поставил
+  responsible: string | null; // исполнитель
+  accomplices: string[]; // соисполнители
+  auditors: string[]; // наблюдатели
+  groupName: string | null;
+  url: string | null;
+}
+
+interface RawFullTask {
+  id?: string | number;
+  title?: string;
+  description?: string;
+  status?: string | number;
+  createdDate?: string;
+  deadline?: string;
+  closedDate?: string;
+  createdBy?: string | number;
+  responsibleId?: string | number;
+  creator?: { id?: string | number; name?: string };
+  responsible?: { id?: string | number; name?: string };
+  group?: { name?: string };
+  accomplices?: (string | number)[];
+  auditors?: (string | number)[];
+}
+
+/** Strip light BBCode so descriptions read as plain text. */
+function stripBB(s: string): string {
+  return s.replace(/\[\/?[a-z][^\]]*\]/gi, "").trim();
+}
+
+export async function fetchTask(id: string): Promise<BxTaskFull> {
+  const r = await call<{ task: RawFullTask }>("tasks.task.get", {
+    taskId: id,
+    select: ["ID", "TITLE", "DESCRIPTION", "STATUS", "CREATED_DATE", "DEADLINE", "CLOSED_DATE", "CREATED_BY", "RESPONSIBLE_ID", "GROUP_ID", "ACCOMPLICES", "AUDITORS"],
+  });
+  const t = r.task || {};
+  const accIds = (t.accomplices || []).map(String);
+  const audIds = (t.auditors || []).map(String);
+  const creatorId = String(t.createdBy ?? t.creator?.id ?? "");
+  const respId = String(t.responsibleId ?? t.responsible?.id ?? "");
+
+  // Resolve every referenced user in one batch (names are only ids otherwise).
+  const ids = [...new Set([creatorId, respId, ...accIds, ...audIds].filter(Boolean))];
+  const names = new Map<string, string>();
+  if (ids.length) {
+    try {
+      const users = await call<{ ID: string; NAME?: string; LAST_NAME?: string; EMAIL?: string }[]>("user.get", { FILTER: { ID: ids } });
+      for (const u of users || []) names.set(String(u.ID), [u.NAME, u.LAST_NAME].filter(Boolean).join(" ") || u.EMAIL || `#${u.ID}`);
+    } catch {
+      // names are cosmetic — fall back to #id below
+    }
+  }
+  const nameOf = (uid: string): string | null => (uid ? names.get(uid) || `#${uid}` : null);
+  const origin = BASE.replace(/\/rest\/.*$/, "");
+
+  return {
+    id: String(t.id ?? id),
+    title: t.title || "",
+    description: stripBB(t.description || ""),
+    statusCode: Number(t.status),
+    status: TASK_STATUS[Number(t.status)] || `Статус ${t.status}`,
+    createdDate: t.createdDate || null,
+    deadline: t.deadline || null,
+    closedDate: t.closedDate || null,
+    creator: nameOf(creatorId),
+    responsible: nameOf(respId),
+    accomplices: accIds.map(nameOf).filter((x): x is string => !!x),
+    auditors: audIds.map(nameOf).filter((x): x is string => !!x),
+    groupName: t.group?.name || null,
+    url: origin ? `${origin}/company/personal/user/0/tasks/task/view/${t.id ?? id}/` : null,
+  };
+}
+
 /* ---- chats (recent list + one dialog) ---------------------------------- */
 
 export interface BxChat {

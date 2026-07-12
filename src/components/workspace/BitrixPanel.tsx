@@ -6,6 +6,7 @@ import { getCached, setCached, invalidate } from "@/lib/cache";
 
 /** Client-side mirrors of the shapes returned by /api/bitrix. */
 interface BxTask { id: string; title: string; status: string; statusCode: number; deadline: string | null; responsible: string | null; groupName: string | null; url: string | null }
+interface BxTaskFull { id: string; title: string; description: string; status: string; statusCode: number; createdDate: string | null; deadline: string | null; closedDate: string | null; creator: string | null; responsible: string | null; accomplices: string[]; auditors: string[]; groupName: string | null; url: string | null }
 interface BxChat { dialogId: string; title: string; type: string; lastMessage: string; lastDate: string | null; unread: boolean }
 interface BxMessage { id: number; author: string; text: string; date: string }
 interface BxFeedPost { id: string; title: string; text: string; author: string | null; date: string | null }
@@ -20,6 +21,22 @@ function when(iso: string | null): string {
   return sameDay
     ? new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(d)
     : new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short" }).format(d);
+}
+
+function fullДата(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wide text-vsc-muted">{label}</div>
+      <div className="text-[13px] text-vsc-text">{value}</div>
+    </div>
+  );
 }
 
 const STATUS_COLOR: Record<number, string> = {
@@ -49,6 +66,10 @@ export function BitrixPanel() {
   const [openChat, setOpenChat] = useState<BxChat | null>(null);
   const [messages, setMessages] = useState<BxMessage[]>([]);
   const [msgLoading, setMsgLoading] = useState(false);
+
+  // open task detail
+  const [openTask, setOpenTask] = useState<BxTaskFull | null>(null);
+  const [taskLoading, setTaskLoading] = useState(false);
 
   const [fetchKey, setFetchKey] = useState(0);
 
@@ -88,6 +109,69 @@ export function BitrixPanel() {
     })();
     return () => { cancelled = true; };
   }, [tab, fetchKey]);
+
+  async function readTask(id: string) {
+    setTaskLoading(true);
+    setOpenTask(null);
+    try {
+      const res = await fetch(`/api/bitrix?scope=task&id=${encodeURIComponent(id)}`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      setOpenTask(json.item as BxTaskFull);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setTaskLoading(false);
+    }
+  }
+
+  if (taskLoading || openTask) {
+    return (
+      <div className="mx-auto max-w-3xl px-8 py-5">
+        <button
+          onClick={() => { setOpenTask(null); setTaskLoading(false); }}
+          className="mb-4 flex items-center gap-1.5 text-[13px] text-vsc-muted hover:text-vsc-text"
+        >
+          <ArrowLeft size={15} /> К задачам
+        </button>
+        {taskLoading || !openTask ? (
+          <p className="text-[13px] text-vsc-muted">Загрузка задачи…</p>
+        ) : (
+          <div>
+            <div className="mb-3 flex items-start gap-2">
+              <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: STATUS_COLOR[openTask.statusCode] || "#8b8b8b" }} title={openTask.status} />
+              <h1 className="text-[18px] font-semibold text-vsc-bright">{openTask.title}</h1>
+            </div>
+
+            <div className="mb-4 grid grid-cols-1 gap-x-6 gap-y-2 rounded-lg border border-vsc-line bg-vsc-sidebar p-4 sm:grid-cols-2">
+              <Field label="Статус" value={openTask.status} />
+              <Field label="Группа / проект" value={openTask.groupName || "—"} />
+              <Field label="Кто поставил" value={openTask.creator || "—"} />
+              <Field label="Исполнитель" value={openTask.responsible || "—"} />
+              <Field label="Соисполнители" value={openTask.accomplices.length ? openTask.accomplices.join(", ") : "—"} />
+              <Field label="Наблюдатели" value={openTask.auditors.length ? openTask.auditors.join(", ") : "—"} />
+              <Field label="Создана" value={fullДата(openTask.createdDate)} />
+              <Field label="Дедлайн" value={fullДата(openTask.deadline)} />
+              {openTask.closedDate && <Field label="Завершена" value={fullДата(openTask.closedDate)} />}
+            </div>
+
+            <div className="mb-1 text-[12px] font-medium uppercase tracking-wide text-vsc-muted">Описание</div>
+            {openTask.description ? (
+              <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-vsc-text">{openTask.description}</p>
+            ) : (
+              <p className="text-[13px] text-vsc-muted">Без описания.</p>
+            )}
+
+            {openTask.url && (
+              <a href={openTask.url} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1.5 text-[13px] text-vsc-light-blue hover:text-vsc-bright">
+                <ExternalLink size={14} /> Открыть в Bitrix24
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   async function readChat(c: BxChat) {
     setOpenChat(c);
@@ -177,16 +261,16 @@ export function BitrixPanel() {
         ) : (
           <div className="divide-y divide-vsc-line">
             {tasks.map((t) => (
-              <div key={t.id} className="flex items-center gap-3 px-1 py-2.5">
+              <div key={t.id} className="group flex items-center gap-3 px-1 py-2.5 hover:bg-vsc-hover">
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: STATUS_COLOR[t.statusCode] || "#8b8b8b" }} title={t.status} />
-                <div className="min-w-0 flex-1">
+                <button onClick={() => readTask(t.id)} className="min-w-0 flex-1 text-left">
                   <div className="truncate text-[13px] text-vsc-text">{t.title}</div>
                   <div className="flex items-center gap-1 text-[11px] text-vsc-muted">
                     <span>{t.status}</span>
                     {t.groupName && (<><Dot size={12} /><span className="truncate">{t.groupName}</span></>)}
                     {t.deadline && (<><Dot size={12} /><span>до {when(t.deadline)}</span></>)}
                   </div>
-                </div>
+                </button>
                 {t.url && (
                   <a href={t.url} target="_blank" rel="noreferrer" title="Открыть в Bitrix24" className="rounded p-1 text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text">
                     <ExternalLink size={14} />
