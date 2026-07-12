@@ -186,6 +186,24 @@ export async function fetchMessages(peerId: string, limit = 40, offsetId = 0): P
   });
 }
 
+/** Load up to `total` recent messages (max 100), paging backwards through history. */
+export async function fetchMessageHistory(peerId: string, total: number): Promise<TgMessage[]> {
+  const want = Math.min(Math.max(total, 1), 100);
+  let result: TgMessage[] = [];
+  let offsetId = 0;
+
+  while (result.length < want) {
+    const batch = await fetchMessages(peerId, Math.min(40, want - result.length), offsetId);
+    if (!batch.length) break;
+    const ids = new Set(result.map((m) => m.id));
+    result = [...batch.filter((m) => !ids.has(m.id)), ...result];
+    offsetId = batch[0].id;
+    if (batch.length < 40) break;
+  }
+
+  return result.slice(-want);
+}
+
 /* ---- send ------------------------------------------------------------- */
 
 export async function sendMessage(peerId: string, text: string): Promise<{ id: number }> {

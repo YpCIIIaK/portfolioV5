@@ -101,7 +101,7 @@ export function TasksPanel() {
     setTitle("");
     const p = priority;
     setPriority("none");
-    const created = await wsCreate<Task>("tasks", { title: t, priority: p });
+    const created = await wsCreate<Task>("tasks", { title: t, priority: p, status: "todo", done: false });
     setItems([normalizeTask(created), ...items]);
   }
 
@@ -136,7 +136,7 @@ export function TasksPanel() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && add()}
-              placeholder="Новая задача…"
+              placeholder="Новая задача… (/task high … — в ассистенте)"
               className="flex-1 rounded border border-vsc-line bg-vsc-sidebar px-3 py-2 text-[13.5px] text-vsc-text outline-none focus:border-vsc-accent"
             />
             <PriorityPicker value={priority} onChange={setPriority} />

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ListTodo, CalendarDays, Mail, Check, Briefcase, ExternalLink, Send, User, Users, Radio, Sparkles, RefreshCw } from "lucide-react";
 import { DEMO_TASKS, DEMO_EVENTS, wsUpdate, type Task, type WsEvent } from "@/lib/workspace";
 import { getCached, setCached } from "@/lib/cache";
+import { getDaily, setDaily, DAILY_BRIEF_KEY } from "@/lib/daily-cache";
 import { useCollection } from "./useCollection";
 import { useMailbox } from "./useMailbox";
 import { useEditor } from "@/lib/store";
@@ -12,6 +13,7 @@ import { MiniMarkdown } from "./MiniMarkdown";
 import { GuestBanner } from "./GuestBanner";
 import { PriorityDot, priorityRank } from "./wsStyle";
 import { NewsWidget } from "./NewsPanel";
+import { MusicWidget } from "./MusicPanel";
 
 /* ---- combined time + weather (compact header widget) ----------------- */
 
@@ -430,7 +432,7 @@ function TelegramWidget() {
 
 function AiBriefWidget() {
   const owner = useSession((s) => !!s.user?.owner);
-  const [brief, setBrief] = useState<string>(() => getCached<string>("ai:brief") ?? "");
+  const [brief, setBrief] = useState(() => getDaily<string>(DAILY_BRIEF_KEY) ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -441,8 +443,9 @@ function AiBriefWidget() {
       const res = await fetch(`/api/assistant/brief${force ? "?force=1" : ""}`);
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-      setBrief(json.brief || "");
-      setCached("ai:brief", json.brief || "");
+      const text = json.brief || "";
+      setBrief(text);
+      setDaily(DAILY_BRIEF_KEY, text);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -452,7 +455,7 @@ function AiBriefWidget() {
 
   useEffect(() => {
     if (!owner) return;
-    if (getCached<string>("ai:brief")) return; // fresh — server also caches 30 min
+    if (getDaily<string>(DAILY_BRIEF_KEY)) return; // уже есть брифинг на сегодня
     (async () => { await load(false); })();
   }, [owner, load]);
 
@@ -528,6 +531,7 @@ export function DashboardPanel() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <AiBriefWidget />
         <NewsWidget />
+        <MusicWidget />
         <TasksWidget />
         <BitrixTasksWidget />
         <TelegramWidget />

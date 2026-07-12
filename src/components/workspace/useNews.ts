@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getCached, setCached, invalidate } from "@/lib/cache";
 import type { NewsSnapshot } from "@/lib/news";
 
-const CACHE_KEY = "news:snapshot";
+const CACHE_KEY = "news:snapshot:v2";
 const POLL_MS = 5 * 60 * 1000;
 
 export function useNews() {

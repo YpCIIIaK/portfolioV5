@@ -15,10 +15,12 @@ export interface NewsRepo {
 }
 
 export interface NewsHeadline {
+  id: string;
   title: string;
   url: string;
   source: string;
   time: string | null;
+  description: string | null;
 }
 
 export interface NewsSnapshot {
@@ -57,6 +59,10 @@ function decodeHtml(s: string): string {
     .trim();
 }
 
+function stripHtml(html: string): string {
+  return decodeHtml(html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+}
+
 function parseRss(xml: string, source: string, limit: number): NewsHeadline[] {
   const out: NewsHeadline[] = [];
   const re = /<item[\s>]([\s\S]*?)<\/item>/gi;
@@ -74,7 +80,21 @@ function parseRss(xml: string, source: string, limit: number): NewsHeadline[] {
       block.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i)?.[1]?.trim() ??
       block.match(/<updated[^>]*>([\s\S]*?)<\/updated>/i)?.[1]?.trim() ??
       null;
-    if (title && link) out.push({ title, url: link, source, time });
+    const rawDesc =
+      block.match(/<content:encoded[^>]*>([\s\S]*?)<\/content:encoded>/i)?.[1] ??
+      block.match(/<description[^>]*>([\s\S]*?)<\/description>/i)?.[1] ??
+      "";
+    const description = rawDesc ? stripHtml(rawDesc).slice(0, 600) || null : null;
+    if (title && link) {
+      out.push({
+        id: `rss:${source}:${link}`,
+        title,
+        url: link,
+        source,
+        time,
+        description,
+      });
+    }
   }
   return out;
 }
@@ -111,6 +131,14 @@ async function fetchTrendingRepos(limit: number): Promise<NewsRepo[]> {
   }));
 }
 
+export type NewsSelection =
+  | { kind: "repo"; item: NewsRepo }
+  | { kind: "headline"; item: NewsHeadline };
+
+export function newsItemId(item: NewsSelection): string {
+  return item.kind === "repo" ? `repo:${item.item.url}` : item.item.id;
+}
+
 async function fetchHackerNews(limit: number): Promise<NewsHeadline[]> {
   const res = await fetch(
     `https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=${limit}`,
@@ -118,14 +146,30 @@ async function fetchHackerNews(limit: number): Promise<NewsHeadline[]> {
   );
   if (!res.ok) throw new Error(`HN ${res.status}`);
   const json = (await res.json()) as {
-    hits: { title: string; url: string | null; objectID: string; created_at: string }[];
+    hits: { title: string; url: string | null; objectID: string; created_at: string; points: number; num_comments: number }[];
   };
-  return json.hits.map((h) => ({
-    title: h.title,
-    url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
-    source: "HN",
-    time: h.created_at,
-  }));
+
+  const details = await Promise.allSettled(
+    json.hits.map((h) =>
+      fetch(`https://hacker-news.firebaseio.com/v0/item/${h.objectID}.json`, { cache: "no-store" }).then((r) =>
+        r.ok ? (r.json() as Promise<{ text?: string; url?: string }>) : null,
+      ),
+    ),
+  );
+
+  return json.hits.map((h, i) => {
+    const item = details[i].status === "fulfilled" ? details[i].value : null;
+    const text = item?.text ? stripHtml(item.text).slice(0, 600) : null;
+    const meta = `${h.points} pts · ${h.num_comments} комм.`;
+    return {
+      id: `hn:${h.objectID}`,
+      title: h.title,
+      url: h.url || item?.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
+      source: "HN",
+      time: h.created_at,
+      description: text || meta,
+    };
+  });
 }
 
 async function fetchAiNews(limit: number): Promise<NewsHeadline[]> {
@@ -188,7 +232,7 @@ export function formatNewsContext(s: NewsSnapshot): string {
       "ТЕХ-НОВОСТИ:\n" +
         s.tech
           .slice(0, 8)
-          .map((h) => `- [${h.source}] ${h.title}`)
+          .map((h) => `- [${h.source}] ${h.title}${h.description ? `: ${h.description.slice(0, 120)}` : ""}`)
           .join("\n"),
     );
   }
@@ -197,7 +241,7 @@ export function formatNewsContext(s: NewsSnapshot): string {
       "AI-НОВОСТИ:\n" +
         s.ai
           .slice(0, 8)
-          .map((h) => `- [${h.source}] ${h.title}`)
+          .map((h) => `- [${h.source}] ${h.title}${h.description ? `: ${h.description.slice(0, 120)}` : ""}`)
           .join("\n"),
     );
   }

@@ -1,24 +1,25 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Sparkles, Send, Lock, Plus, Trash2, MessageSquare } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { MiniMarkdown } from "./MiniMarkdown";
 
 interface Msg { role: "user" | "assistant"; content: string }
 interface Conversation { id: string; title: string; messages: Msg[]; updatedAt: number }
+interface TgDialog { id: string; title: string; kind: string }
 
 const STORE_KEY = "assistant:conversations";
 const MAX_CONVERSATIONS = 50;
+const DEFAULT_TG_COUNT = 50;
 
 const SUGGESTIONS = [
+  "@Чат 50 — что обсуждали?",
+  "/task high Согласовать дедлайн",
   "Что горит сегодня?",
-  "Кто ждёт моего ответа?",
-  "Какие дедлайны на этой неделе?",
-  "Собери задачи из непрочитанных сообщений",
+  "Собери задачи из переписки",
 ];
 
-// Module-level so the React Compiler doesn't flag impure calls inside render.
 const now = () => Date.now();
 const uid = () => crypto.randomUUID();
 
@@ -40,24 +41,40 @@ export function AssistantPanel() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [dialogs, setDialogs] = useState<TgDialog[]>([]);
+  const [mentionAt, setMentionAt] = useState<number | null>(null);
+  const [mentionQ, setMentionQ] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load persisted conversations once (client-only).
   useEffect(() => {
     (async () => {
       try {
         const raw = localStorage.getItem(STORE_KEY);
         if (raw) setConversations(JSON.parse(raw) as Conversation[]);
-      } catch { /* ignore corrupt storage */ }
+      } catch { /* ignore */ }
       setLoaded(true);
     })();
   }, []);
 
-  // Persist on every change.
   useEffect(() => {
     if (!loaded) return;
     try { localStorage.setItem(STORE_KEY, JSON.stringify(conversations.slice(0, MAX_CONVERSATIONS))); } catch { /* quota */ }
   }, [conversations, loaded]);
+
+  useEffect(() => {
+    if (!owner) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/telegram?scope=dialogs");
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !alive) return;
+        setDialogs((json.items as TgDialog[]) ?? []);
+      } catch { /* telegram optional */ }
+    })();
+    return () => { alive = false; };
+  }, [owner]);
 
   const active = conversations.find((c) => c.id === activeId) ?? null;
   const messages = active?.messages ?? [];
@@ -66,6 +83,10 @@ export function AssistantPanel() {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, sending]);
+
+  const mentionOptions = mentionAt !== null
+    ? dialogs.filter((d) => d.title.toLowerCase().includes(mentionQ)).slice(0, 8)
+    : [];
 
   function upsert(convo: Conversation) {
     setConversations((prev) => {
@@ -80,11 +101,46 @@ export function AssistantPanel() {
     if (activeId === id) setActiveId(null);
   }
 
+  const syncMention = useCallback((value: string, cursor: number) => {
+    const before = value.slice(0, cursor);
+    const m = before.match(/@([^\s@]*)$/);
+    if (m) {
+      setMentionAt(cursor - m[0].length);
+      setMentionQ(m[1].toLowerCase());
+    } else {
+      setMentionAt(null);
+      setMentionQ("");
+    }
+  }, []);
+
+  function onDraftChange(value: string, cursor: number) {
+    setDraft(value);
+    syncMention(value, cursor);
+  }
+
+  function insertMention(title: string) {
+    if (mentionAt === null) return;
+    const el = textareaRef.current;
+    const cursor = el?.selectionStart ?? draft.length;
+    const before = draft.slice(0, mentionAt);
+    const after = draft.slice(cursor);
+    const insert = `@${title} ${DEFAULT_TG_COUNT} `;
+    const next = before + insert + after;
+    setDraft(next);
+    setMentionAt(null);
+    setMentionQ("");
+    requestAnimationFrame(() => {
+      el?.focus();
+      const pos = before.length + insert.length;
+      el?.setSelectionRange(pos, pos);
+    });
+  }
+
   async function ask(text: string) {
     const q = text.trim();
     if (!q || sending) return;
 
-    // Continue the active conversation, or start a new one.
+    setMentionAt(null);
     const base: Conversation = active ?? { id: uid(), title: q.slice(0, 48), messages: [], updatedAt: now() };
     const withUser: Conversation = { ...base, messages: [...base.messages, { role: "user", content: q }], updatedAt: now() };
     upsert(withUser);
@@ -100,7 +156,11 @@ export function AssistantPanel() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-      upsert({ ...withUser, messages: [...withUser.messages, { role: "assistant", content: json.answer || "—" }], updatedAt: now() });
+      upsert({
+        ...withUser,
+        messages: [...withUser.messages, { role: "assistant", content: json.answer || "—" }],
+        updatedAt: now(),
+      });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -120,10 +180,10 @@ export function AssistantPanel() {
 
   return (
     <div className="flex h-full">
-      {/* ---- left: conversation history ---- */}
       <aside className="flex w-60 shrink-0 flex-col border-r border-vsc-line">
         <div className="p-2">
           <button
+            type="button"
             onClick={() => { setActiveId(null); setError(""); }}
             className="flex w-full items-center justify-center gap-1.5 rounded bg-vsc-accent px-3 py-2 text-[12px] text-white hover:opacity-90"
           >
@@ -139,7 +199,7 @@ export function AssistantPanel() {
                 key={c.id}
                 className={`group flex items-center gap-2 px-3 py-2 ${c.id === activeId ? "bg-vsc-hover" : "hover:bg-vsc-hover"}`}
               >
-                <button onClick={() => { setActiveId(c.id); setError(""); }} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                <button type="button" onClick={() => { setActiveId(c.id); setError(""); }} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                   <MessageSquare size={13} className="shrink-0 text-vsc-muted" />
                   <div className="min-w-0">
                     <div className={`truncate text-[12.5px] ${c.id === activeId ? "text-vsc-bright" : "text-vsc-text"}`}>{c.title}</div>
@@ -147,6 +207,7 @@ export function AssistantPanel() {
                   </div>
                 </button>
                 <button
+                  type="button"
                   onClick={() => remove(c.id)}
                   title="Удалить чат"
                   className="shrink-0 rounded p-1 text-vsc-muted opacity-0 hover:text-red-400 group-hover:opacity-100"
@@ -159,13 +220,13 @@ export function AssistantPanel() {
         </div>
       </aside>
 
-      {/* ---- right: active chat ---- */}
       <section className="flex min-w-0 flex-1 flex-col px-6 py-4">
         <h1 className="mb-1 flex items-center gap-2 text-[16px] font-semibold text-vsc-bright">
           <Sparkles size={17} /> Ассистент
         </h1>
-        <p className="mb-3 text-[12px] text-vsc-muted">
-          Знает твои задачи, календарь, Bitrix, непрочитанное в Telegram и почте.
+        <p className="mb-3 text-[12px] leading-relaxed text-vsc-muted">
+          <code className="text-vsc-text">@Чат 100</code> или <code className="text-vsc-text">/tg Чат 100</code> — прочитать переписку.
+          {" "}<code className="text-vsc-text">/task high Текст</code> — создать задачу с приоритетом.
         </p>
 
         <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
@@ -174,6 +235,7 @@ export function AssistantPanel() {
               {SUGGESTIONS.map((s) => (
                 <button
                   key={s}
+                  type="button"
                   onClick={() => ask(s)}
                   className="rounded-full border border-vsc-line px-3 py-1.5 text-[12px] text-vsc-muted hover:border-vsc-accent hover:text-vsc-text"
                 >
@@ -196,27 +258,51 @@ export function AssistantPanel() {
               </div>
             ))
           )}
-          {sending && <p className="text-[12px] text-vsc-muted">Думаю…</p>}
+          {sending && <p className="text-[12px] text-vsc-muted">Читаю данные и думаю…</p>}
           {error && <p className="text-[12px] text-vsc-yellow">{error}</p>}
         </div>
 
-        <div className="mt-3 flex items-end gap-2 border-t border-vsc-line pt-3">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(draft); } }}
-            placeholder="Спроси про свои дела…"
-            rows={1}
-            className="max-h-32 min-h-[38px] flex-1 resize-none rounded border border-vsc-line bg-vsc-sidebar px-3 py-2 text-[13px] text-vsc-text outline-none focus:border-vsc-accent"
-          />
-          <button
-            onClick={() => ask(draft)}
-            disabled={sending || !draft.trim()}
-            title="Отправить"
-            className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded bg-vsc-accent text-white hover:opacity-90 disabled:opacity-40"
-          >
-            <Send size={16} className={sending ? "animate-pulse" : ""} />
-          </button>
+        <div className="relative mt-3 border-t border-vsc-line pt-3">
+          {mentionOptions.length > 0 && (
+            <div className="absolute bottom-full left-0 right-12 z-10 mb-1 max-h-40 overflow-y-auto rounded-lg border border-vsc-line bg-vsc-sidebar py-1 shadow-lg">
+              {mentionOptions.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => insertMention(d.title)}
+                  className="flex w-full px-3 py-1.5 text-left text-[12px] text-vsc-text hover:bg-vsc-hover"
+                >
+                  {d.title}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex items-end gap-2">
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(e) => onDraftChange(e.target.value, e.target.selectionStart)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  ask(draft);
+                }
+                if (e.key === "Escape") setMentionAt(null);
+              }}
+              placeholder="@Чат 50 вопрос… или /task medium Задача"
+              rows={1}
+              className="max-h-32 min-h-[38px] flex-1 resize-none rounded border border-vsc-line bg-vsc-sidebar px-3 py-2 text-[13px] text-vsc-text outline-none focus:border-vsc-accent"
+            />
+            <button
+              type="button"
+              onClick={() => ask(draft)}
+              disabled={sending || !draft.trim()}
+              title="Отправить"
+              className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded bg-vsc-accent text-white hover:opacity-90 disabled:opacity-40"
+            >
+              <Send size={16} className={sending ? "animate-pulse" : ""} />
+            </button>
+          </div>
         </div>
       </section>
     </div>

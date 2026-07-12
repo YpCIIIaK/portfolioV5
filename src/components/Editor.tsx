@@ -29,6 +29,7 @@ import { TelegramPanel } from "./workspace/TelegramPanel";
 import { SubscriptionsPanel } from "./workspace/SubscriptionsPanel";
 import { AssistantPanel } from "./workspace/AssistantPanel";
 import { NewsPanel } from "./workspace/NewsPanel";
+import { MusicPanel } from "./workspace/MusicPanel";
 
 export function Editor() {
   const activeFile = useEditor((s) => s.activeFile);
@@ -108,6 +109,7 @@ export function Editor() {
           {file.id === "workspace/subscriptions.tsx" && <SubscriptionsPanel />}
           {file.id === "workspace/assistant.tsx" && <AssistantPanel />}
           {file.id === "workspace/news.tsx" && <NewsPanel />}
+          {file.id === "workspace/music.tsx" && <MusicPanel />}
           {file.id === "workspace/projects.tsx" && <ProjectsPanel />}
           </div>
           <Minimap blocks={file.blocks} />

@@ -919,6 +919,12 @@ export const WORKSPACE_FILES: FileNode[] = [
     blocks: [{ t: "h1", text: "📰 Новости" }],
   },
   {
+    id: "workspace/music.tsx",
+    name: "music.tsx",
+    language: "TypeScript",
+    blocks: [{ t: "h1", text: "🎵 Яндекс Музыка" }],
+  },
+  {
     id: "workspace/telegram.tsx",
     name: "telegram.tsx",
     language: "TypeScript",
