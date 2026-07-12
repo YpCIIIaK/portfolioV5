@@ -45,7 +45,8 @@ export function TelegramPanel() {
   const [msgLoading, setMsgLoading] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const lastIdRef = useRef<number | null>(null);
 
   /* ---- dialog list ---- */
   useEffect(() => {
@@ -89,15 +90,26 @@ export function TelegramPanel() {
     if (!openChat) return;
     let alive = true;
     const peer = openChat.id;
+    lastIdRef.current = null; // reset "seen last message" for the new chat
     (async () => { await loadMessages(peer, true); })();
     // Poll only while this chat is open — cheap "almost realtime" without SSE.
     const t = setInterval(() => { if (alive) loadMessages(peer, false); }, CHAT_POLL_MS);
     return () => { alive = false; clearInterval(t); };
   }, [openChat, loadMessages]);
 
-  // Keep the view pinned to the newest message.
+  // Auto-scroll only when a genuinely new message arrives (not on every 3s
+  // poll of unchanged data), and only if the user is already near the bottom —
+  // otherwise reading history / reaching the input box would get yanked away.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
+    const el = scrollRef.current;
+    if (!el || messages.length === 0) return;
+    const last = messages[messages.length - 1].id;
+    const isNew = last !== lastIdRef.current;
+    const firstLoad = lastIdRef.current === null;
+    lastIdRef.current = last;
+    if (!isNew) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (firstLoad || nearBottom) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   async function send() {
@@ -138,7 +150,7 @@ export function TelegramPanel() {
           <KindIcon kind={openChat.kind} /> {openChat.title}
         </h1>
 
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+        <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
           {msgLoading ? (
             <p className="text-[13px] text-vsc-muted">Загрузка сообщений…</p>
           ) : messages.length === 0 ? (
@@ -160,7 +172,6 @@ export function TelegramPanel() {
               </div>
             ))
           )}
-          <div ref={bottomRef} />
         </div>
 
         {error && <p className="mt-2 text-[12px] text-vsc-yellow">{error}</p>}

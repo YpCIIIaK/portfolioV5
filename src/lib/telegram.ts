@@ -96,6 +96,33 @@ async function resolvePeer(client: TelegramClient, peerId: string) {
   return dlg.inputEntity;
 }
 
+/** Structural view of a GramJS message's media getters (all optional). */
+type MediaMsg = {
+  photo?: unknown; video?: unknown; videoNote?: unknown; voice?: unknown;
+  audio?: unknown; gif?: unknown; sticker?: unknown; document?: unknown;
+  contact?: unknown; geo?: unknown; venue?: unknown; poll?: unknown;
+  dice?: unknown; webPreview?: unknown; media?: unknown;
+};
+
+/** Human badge for an attachment. Order matters (more specific kinds first). */
+function mediaLabel(m: MediaMsg): string {
+  if (m.sticker) return "🎯 [стикер]";
+  if (m.gif) return "🎞️ [GIF]";
+  if (m.photo) return "🖼️ [фото]";
+  if (m.videoNote) return "⭕ [видео-кружок]";
+  if (m.video) return "🎬 [видео]";
+  if (m.voice) return "🎤 [голосовое]";
+  if (m.audio) return "🎵 [аудио]";
+  if (m.contact) return "👤 [контакт]";
+  if (m.venue || m.geo) return "📍 [геолокация]";
+  if (m.poll) return "📊 [опрос]";
+  if (m.dice) return "🎲 [дайс]";
+  if (m.document) return "📎 [файл]";
+  // Any other media that isn't just a link preview.
+  if (m.media && !m.webPreview) return "📎 [вложение]";
+  return "";
+}
+
 export async function fetchMessages(peerId: string, limit = 40): Promise<TgMessage[]> {
   return withClient(async (client) => {
     const entity = await resolvePeer(client, peerId);
@@ -108,11 +135,14 @@ export async function fetchMessages(peerId: string, limit = 40): Promise<TgMessa
         const name = sender
           ? [sender.firstName, sender.lastName].filter(Boolean).join(" ") || sender.title || ""
           : "";
+        // Caption (m.message) + a typed badge for the attachment, if any.
+        const badge = mediaLabel(m as unknown as MediaMsg);
+        const text = [badge, m.message].filter(Boolean).join(" ").trim();
         return {
           id: m.id,
           out: !!m.out,
           author: m.out ? "Вы" : name || "—",
-          text: m.message || (m.media ? "[вложение]" : ""),
+          text,
           date: m.date ? new Date(m.date * 1000).toISOString() : new Date().toISOString(),
         };
       })
