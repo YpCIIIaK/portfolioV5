@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ListTodo, CalendarDays, Mail, Check, Briefcase, ExternalLink, Send, User, Users, Radio } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ListTodo, CalendarDays, Mail, Check, Briefcase, ExternalLink, Send, User, Users, Radio, Sparkles, RefreshCw } from "lucide-react";
 import { DEMO_TASKS, DEMO_EVENTS, wsUpdate, type Task, type WsEvent } from "@/lib/workspace";
 import { getCached, setCached } from "@/lib/cache";
 import { useCollection } from "./useCollection";
 import { useMailbox } from "./useMailbox";
 import { useEditor } from "@/lib/store";
+import { useSession } from "@/lib/session";
 import { GuestBanner } from "./GuestBanner";
 import { PriorityDot, priorityRank } from "./wsStyle";
 
@@ -423,6 +424,65 @@ function TelegramWidget() {
   );
 }
 
+/* ---- AI brief -------------------------------------------------------- */
+
+function AiBriefWidget() {
+  const owner = useSession((s) => !!s.user?.owner);
+  const [brief, setBrief] = useState<string>(() => getCached<string>("ai:brief") ?? "");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async (force: boolean) => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/assistant/brief${force ? "?force=1" : ""}`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      setBrief(json.brief || "");
+      setCached("ai:brief", json.brief || "");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!owner) return;
+    if (getCached<string>("ai:brief")) return; // fresh — server also caches 30 min
+    (async () => { await load(false); })();
+  }, [owner, load]);
+
+  if (!owner) return null; // AI brief is owner-only (personal data)
+
+  return (
+    <div className="rounded-lg border border-vsc-line bg-gradient-to-br from-vsc-accent/10 to-transparent p-4 md:col-span-2">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="flex items-center gap-2 text-[12px] font-medium uppercase tracking-wide text-vsc-muted">
+          <Sparkles size={14} /> AI-брифинг на сегодня
+        </span>
+        <button
+          onClick={() => load(true)}
+          title="Обновить"
+          className="rounded p-1 text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"
+        >
+          <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+        </button>
+      </div>
+      {loading && !brief ? (
+        <p className="text-[13px] text-vsc-muted">Собираю данные и думаю…</p>
+      ) : error ? (
+        <p className="text-[12px] text-vsc-yellow">{error}</p>
+      ) : brief ? (
+        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-vsc-text">{brief}</p>
+      ) : (
+        <p className="text-[13px] text-vsc-muted">Нет данных для брифинга.</p>
+      )}
+    </div>
+  );
+}
+
 /* ---- shell ----------------------------------------------------------- */
 
 function Card({
@@ -464,6 +524,7 @@ export function DashboardPanel() {
       </div>
       <GuestBannerIfNeeded />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <AiBriefWidget />
         <TasksWidget />
         <BitrixTasksWidget />
         <TelegramWidget />
