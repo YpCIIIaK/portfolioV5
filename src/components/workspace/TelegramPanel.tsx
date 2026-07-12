@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Send, RefreshCw, User, Users, Radio, Play, Paperclip, X, Clock, FileText, Trash2 } from "lucide-react";
+import { Send, RefreshCw, User, Users, Radio, Play, Paperclip, X, Clock, FileText, Trash2, ListTodo } from "lucide-react";
 import { getCached, setCached, invalidate } from "@/lib/cache";
+import { useSession } from "@/lib/session";
+import { wsCreate, type Task } from "@/lib/workspace";
 
 /** Client-side mirrors of /api/telegram shapes. */
 interface TgDialog { id: string; title: string; kind: "user" | "group" | "channel"; unread: number; lastMessage: string; lastDate: string | null }
@@ -94,6 +96,7 @@ function MediaView({ peer, msgId, media }: { peer: string; msgId: number; media:
 }
 
 export function TelegramPanel() {
+  const owner = useSession((s) => !!s.user?.owner);
   const [dialogs, setDialogs] = useState<TgDialog[]>(() => getCached<TgDialog[]>("tg:dialogs") ?? []);
   const [loading, setLoading] = useState(() => !getCached("tg:dialogs"));
   const [error, setError] = useState("");
@@ -107,6 +110,8 @@ export function TelegramPanel() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [creatingTaskId, setCreatingTaskId] = useState<string | null>(null);
+  const [taskNotice, setTaskNotice] = useState("");
   const [hasMore, setHasMore] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
 
@@ -301,6 +306,28 @@ export function TelegramPanel() {
     }
   }
 
+  async function createTaskFromMessage(message: TgMessage) {
+    if (!owner || !openChat) return;
+    const key = `${openChat.id}:${message.id}`;
+    const text = (message.text || message.media?.kind || "сообщение").replace(/\s+/g, " ").trim();
+    setCreatingTaskId(key);
+    setTaskNotice("");
+    try {
+      await wsCreate<Task>("tasks", {
+        title: `Telegram/${openChat.title}: ${text.slice(0, 120)}`,
+        priority: message.out ? "none" : "medium",
+        status: "todo",
+        done: false,
+      });
+      invalidate("coll:tasks");
+      setTaskNotice("Задача создана");
+    } catch {
+      setTaskNotice("Не удалось создать задачу");
+    } finally {
+      setCreatingTaskId(null);
+    }
+  }
+
   const openChat_ = openChat;
   return (
     <div className="flex h-full">
@@ -376,13 +403,24 @@ export function TelegramPanel() {
                   {messages.map((m) => (
                     <div key={m.id} className={`group flex items-center gap-1.5 ${m.out ? "justify-end" : "justify-start"}`}>
                       {m.out && (
-                        <button
-                          onClick={() => removeMessage(m.id)}
-                          title="Удалить сообщение"
-                          className="shrink-0 rounded p-1 text-vsc-muted opacity-0 hover:text-red-400 group-hover:opacity-100"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        <>
+                          {owner && (
+                            <button
+                              onClick={() => createTaskFromMessage(m)}
+                              title="Создать задачу"
+                              className="shrink-0 rounded p-1 text-vsc-muted opacity-0 hover:text-vsc-text group-hover:opacity-100"
+                            >
+                              <ListTodo size={13} className={creatingTaskId === `${openChat_.id}:${m.id}` ? "animate-pulse" : ""} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => removeMessage(m.id)}
+                            title="Удалить сообщение"
+                            className="shrink-0 rounded p-1 text-vsc-muted opacity-0 hover:text-red-400 group-hover:opacity-100"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </>
                       )}
                       <div
                         className={`max-w-[75%] rounded-lg px-3 py-1.5 ${
@@ -399,13 +437,24 @@ export function TelegramPanel() {
                         <div className="mt-0.5 text-right text-[10px] text-vsc-muted">{when(m.date)}</div>
                       </div>
                       {!m.out && (
-                        <button
-                          onClick={() => removeMessage(m.id)}
-                          title="Удалить сообщение"
-                          className="shrink-0 rounded p-1 text-vsc-muted opacity-0 hover:text-red-400 group-hover:opacity-100"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        <>
+                          {owner && (
+                            <button
+                              onClick={() => createTaskFromMessage(m)}
+                              title="Создать задачу"
+                              className="shrink-0 rounded p-1 text-vsc-muted opacity-0 hover:text-vsc-text group-hover:opacity-100"
+                            >
+                              <ListTodo size={13} className={creatingTaskId === `${openChat_.id}:${m.id}` ? "animate-pulse" : ""} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => removeMessage(m.id)}
+                            title="Удалить сообщение"
+                            className="shrink-0 rounded p-1 text-vsc-muted opacity-0 hover:text-red-400 group-hover:opacity-100"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </>
                       )}
                     </div>
                   ))}
@@ -425,6 +474,7 @@ export function TelegramPanel() {
             </div>
 
             {error && <p className="px-6 text-[12px] text-vsc-yellow">{error}</p>}
+            {taskNotice && <p className="px-6 text-[12px] text-vsc-muted">{taskNotice}</p>}
 
             {openChat_.kind !== "channel" && (
               <div className="border-t border-vsc-line px-6 py-3">

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireOwner, getSession } from "@/lib/auth";
+import { invalidateContext } from "@/lib/aggregate";
 import { supabaseConfigured, sbSelect, sbInsert, sbUpdate, sbDelete } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -95,6 +96,7 @@ export async function POST(req: Request, { params }: Ctx) {
   const parsed = CREATE[g.kind].safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid body" }, { status: 400 });
   const row = await sbInsert(TABLE[g.kind], parsed.data as Record<string, unknown>);
+  invalidateContext();
   return NextResponse.json({ item: row }, { status: 201 });
 }
 
@@ -116,6 +118,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   // Rescheduling an event re-arms its reminder.
   if (g.kind === "events" && ("date" in patch || "time" in patch)) patch.notified_at = null;
   const row = await sbUpdate(TABLE[g.kind], `id=eq.${encodeURIComponent(id)}`, patch);
+  invalidateContext();
   return NextResponse.json({ item: row });
 }
 
@@ -125,5 +128,6 @@ export async function DELETE(req: Request, { params }: Ctx) {
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "missing id" }, { status: 400 });
   await sbDelete(TABLE[g.kind], `id=eq.${encodeURIComponent(id)}`);
+  invalidateContext();
   return NextResponse.json({ ok: true });
 }

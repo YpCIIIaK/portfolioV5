@@ -31,7 +31,7 @@ export function useNews() {
 
   useEffect(() => {
     if (getCached<NewsSnapshot>(CACHE_KEY)) return;
-    load(false);
+    void Promise.resolve().then(() => load(false));
   }, [load]);
 
   useEffect(() => {

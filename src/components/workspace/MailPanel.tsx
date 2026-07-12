@@ -1,8 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Mail, RefreshCw, ArrowLeft, Dot } from "lucide-react";
+import { Mail, RefreshCw, ArrowLeft, Dot, ListTodo } from "lucide-react";
+import { invalidate } from "@/lib/cache";
 import { mailRead, demoRead, type MailFull } from "@/lib/mail";
+import { useSession } from "@/lib/session";
+import { wsCreate, type Task } from "@/lib/workspace";
 import { useMailbox } from "./useMailbox";
 
 /**
@@ -47,18 +50,43 @@ function when(iso: string): string {
 
 export function MailPanel() {
   const { items, loading, error, live, reload } = useMailbox(200);
+  const owner = useSession((s) => !!s.user?.owner);
   const [open, setOpen] = useState<MailFull | null>(null);
   const [reading, setReading] = useState(false);
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [taskStatus, setTaskStatus] = useState("");
 
   async function read(uid: number) {
     setReading(true);
     setOpen(null);
+    setTaskStatus("");
     try {
       setOpen(live ? await mailRead(uid) : demoRead(uid));
     } catch {
       setOpen(null);
     } finally {
       setReading(false);
+    }
+  }
+
+  async function createTaskFromMail(mail: MailFull) {
+    if (!owner || creatingTask) return;
+    setCreatingTask(true);
+    setTaskStatus("");
+    try {
+      const from = mail.from ? ` от ${mail.from}` : "";
+      await wsCreate<Task>("tasks", {
+        title: `Email${from}: ${mail.subject || "без темы"}`,
+        priority: mail.unread ? "medium" : "none",
+        status: "todo",
+        done: false,
+      });
+      invalidate("coll:tasks");
+      setTaskStatus("Задача создана");
+    } catch {
+      setTaskStatus("Не удалось создать задачу");
+    } finally {
+      setCreatingTask(false);
     }
   }
 
@@ -75,12 +103,24 @@ export function MailPanel() {
           <p className="text-[13px] text-vsc-muted">Загрузка письма…</p>
         ) : open ? (
           <article>
-            <h1 className="text-[20px] font-semibold text-vsc-bright">{open.subject}</h1>
+            <div className="flex items-start justify-between gap-3">
+              <h1 className="min-w-0 text-[20px] font-semibold text-vsc-bright">{open.subject}</h1>
+              {owner && (
+                <button
+                  onClick={() => createTaskFromMail(open)}
+                  disabled={creatingTask}
+                  className="flex shrink-0 items-center gap-1.5 rounded border border-vsc-line px-2.5 py-1.5 text-[12px] text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text disabled:opacity-50"
+                >
+                  <ListTodo size={14} /> {creatingTask ? "Создаю…" : "В задачу"}
+                </button>
+              )}
+            </div>
             <div className="mt-1 flex items-center gap-2 text-[13px] text-vsc-muted">
               <span className="text-vsc-text">{open.from}</span>
               <Dot size={14} />
               <span>{when(open.date)}</span>
             </div>
+            {taskStatus && <p className="mt-2 text-[12px] text-vsc-muted">{taskStatus}</p>}
             {open.html ? (
               <div className="mt-4">
                 <HtmlMail html={open.html} />

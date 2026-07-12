@@ -15,6 +15,9 @@ import { fetchNews, formatNewsContext } from "@/lib/news";
 
 interface WsTask { title: string; due: string | null; priority: string; done: boolean }
 interface WsEvent { title: string; date: string; time: string | null }
+interface WsNote { title: string; body: string; priority: string; updated_at: string }
+interface WsProject { title: string; description: string; tags: string; is_public: boolean; repo_url: string | null }
+interface WsSubscription { name: string; price: number; currency: string; period: string; tier: string; next_date: string | null }
 
 const TTL = 5 * 60 * 1000; // 5 min
 let cache: { at: number; text: string } | null = null;
@@ -42,6 +45,39 @@ async function build(): Promise<string> {
     try {
       const events = await sbSelect<WsEvent>("ws_events", `select=title,date,time&date=gte.${todayISO()}&order=date.asc&limit=20`);
       if (events.length) parts.push("КАЛЕНДАРЬ (ближайшее):\n" + events.map((e) => `- ${e.date}${e.time ? ` ${e.time}` : ""} — ${e.title}`).join("\n"));
+    } catch { /* skip */ }
+    try {
+      const notes = await sbSelect<WsNote>("ws_notes", "select=title,body,priority,updated_at&order=updated_at.desc&limit=10");
+      if (notes.length) {
+        parts.push(
+          "ЗАМЕТКИ (последние):\n" +
+            notes
+              .map((n) => `- ${n.title}${n.priority !== "none" ? ` [${n.priority}]` : ""}: ${n.body.replace(/\s+/g, " ").slice(0, 120)}`)
+              .join("\n"),
+        );
+      }
+    } catch { /* skip */ }
+    try {
+      const subscriptions = await sbSelect<WsSubscription>("ws_subscriptions", "select=name,price,currency,period,tier,next_date&order=next_date.asc&limit=15");
+      if (subscriptions.length) {
+        parts.push(
+          "ПОДПИСКИ:\n" +
+            subscriptions
+              .map((s) => `- ${s.name}${s.tier ? ` (${s.tier})` : ""}: ${s.price}${s.currency}/${s.period}${s.next_date ? `, следующее списание ${s.next_date}` : ""}`)
+              .join("\n"),
+        );
+      }
+    } catch { /* skip */ }
+    try {
+      const projects = await sbSelect<WsProject>("ws_projects", "select=title,description,tags,is_public,repo_url&order=created_at.desc&limit=10");
+      if (projects.length) {
+        parts.push(
+          "ПРОЕКТЫ:\n" +
+            projects
+              .map((p) => `- ${p.title}${p.is_public ? " [public]" : " [private]"}${p.tags ? ` (${p.tags})` : ""}: ${p.description.replace(/\s+/g, " ").slice(0, 120)}`)
+              .join("\n"),
+        );
+      }
     } catch { /* skip */ }
   }
 
@@ -90,4 +126,8 @@ export async function collectContext(force = false): Promise<string> {
   const text = await build();
   cache = { at: Date.now(), text };
   return text;
+}
+
+export function invalidateContext(): void {
+  cache = null;
 }

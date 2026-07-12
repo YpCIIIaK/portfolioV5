@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ListTodo, CalendarDays, Mail, Check, Briefcase, ExternalLink, Send, User, Users, Radio, Sparkles, RefreshCw } from "lucide-react";
+import { ListTodo, CalendarDays, Mail, Check, ExternalLink, Send, User, Users, Radio, Sparkles, RefreshCw } from "lucide-react";
 import { DEMO_TASKS, DEMO_EVENTS, wsUpdate, type Task, type WsEvent } from "@/lib/workspace";
 import { getCached, setCached } from "@/lib/cache";
 import { getDaily, setDaily, DAILY_BRIEF_KEY } from "@/lib/daily-cache";
@@ -11,7 +11,8 @@ import { useEditor } from "@/lib/store";
 import { useSession } from "@/lib/session";
 import { MiniMarkdown } from "./MiniMarkdown";
 import { GuestBanner } from "./GuestBanner";
-import { PriorityDot, priorityRank } from "./wsStyle";
+import { PriorityDot } from "./wsStyle";
+import { useUnifiedTasks, type UnifiedTask } from "./useUnifiedTasks";
 import { NewsWidget } from "./NewsPanel";
 import { MusicWidget } from "./MusicPanel";
 
@@ -121,31 +122,20 @@ function dueLabel(due: string | null): { text: string; overdue: boolean } | null
 }
 
 function TasksWidget() {
-  const { items, setItems, readonly } = useCollection<Task>("tasks", DEMO_TASKS);
+  const { items, setItems, readonly, unifiedOpen, bitrixError } = useUnifiedTasks();
   const openFile = useEditor((s) => s.openFile);
 
-  const open = useMemo(
-    () =>
-      items
-        .filter((t) => !t.done)
-        .sort((a, b) => {
-          const pr = priorityRank(b.priority) - priorityRank(a.priority);
-          if (pr !== 0) return pr;
-          return (a.due ?? "9999").localeCompare(b.due ?? "9999");
-        })
-        .slice(0, 5),
-    [items]
-  );
-  const openCount = items.filter((t) => !t.done).length;
+  const open = useMemo(() => unifiedOpen.slice(0, 7), [unifiedOpen]);
+  const openCount = unifiedOpen.length;
 
-  async function complete(t: Task) {
-    if (readonly) return;
-    setItems(items.map((x) => (x.id === t.id ? { ...x, done: true } : x)));
-    await wsUpdate<Task>("tasks", t.id, { done: true });
+  async function complete(t: UnifiedTask) {
+    if (readonly || !t.workspaceTask) return;
+    setItems(items.map((x) => (x.id === t.sourceId ? { ...x, done: true, status: "done" } : x)));
+    await wsUpdate<Task>("tasks", t.sourceId, { done: true, status: "done" });
   }
 
   return (
-    <Card title={`Задачи · ${openCount}`} Icon={ListTodo} onTitle={() => openFile("workspace/tasks.todo")}>
+    <Card title={`Inbox задач · ${openCount}`} Icon={ListTodo} onTitle={() => openFile("workspace/tasks.todo")}>
       {open.length === 0 ? (
         <p className="text-[12px] text-vsc-muted">Активных задач нет 🎉</p>
       ) : (
@@ -156,20 +146,36 @@ function TasksWidget() {
               <div key={t.id} className="group flex items-center gap-2 rounded px-1 py-1 hover:bg-vsc-hover">
                 <button
                   onClick={() => complete(t)}
-                  disabled={readonly}
+                  disabled={readonly || t.source !== "workspace"}
                   title="Выполнить"
                   className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-vsc-muted text-transparent hover:border-vsc-green hover:text-vsc-green disabled:opacity-50"
                 >
                   <Check size={11} />
                 </button>
                 <PriorityDot priority={t.priority} />
+                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${t.source === "workspace" ? "bg-vsc-accent/15 text-vsc-accent" : "bg-vsc-yellow/15 text-vsc-yellow"}`}>
+                  {t.sourceLabel}
+                </span>
                 <span className="flex-1 truncate text-[13px] text-vsc-text">{t.title}</span>
                 {due && (
                   <span className={`shrink-0 text-[11px] ${due.overdue ? "text-red-400" : "text-vsc-muted"}`}>{due.text}</span>
                 )}
+                {t.url && (
+                  <a
+                    href={t.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="shrink-0 rounded p-0.5 text-vsc-muted opacity-0 hover:text-vsc-text group-hover:opacity-100"
+                    title="Открыть источник"
+                  >
+                    <ExternalLink size={13} />
+                  </a>
+                )}
               </div>
             );
           })}
+          {bitrixError && <p className="mt-1 px-1 text-[11px] text-vsc-yellow">Bitrix: {bitrixError}</p>}
         </div>
       )}
     </Card>
@@ -247,103 +253,6 @@ function MailWidget() {
             </button>
           ))}
           {!live && <p className="mt-1 px-1 text-[11px] text-vsc-muted/70">демо · подключи IMAP в env</p>}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-/* ---- Bitrix24 tasks -------------------------------------------------- */
-
-interface BxTask {
-  id: string;
-  title: string;
-  status: string;
-  statusCode: number;
-  deadline: string | null;
-  groupName: string | null;
-  url: string | null;
-}
-
-const BX_STATUS_COLOR: Record<number, string> = {
-  2: "#60a5fa",
-  3: "#fbbf24",
-  4: "#c084fc",
-  5: "#4ade80",
-  6: "#8b8b8b",
-};
-
-function bxDeadline(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short" }).format(d);
-}
-
-function BitrixTasksWidget() {
-  const openFile = useEditor((s) => s.openFile);
-  const [tasks, setTasks] = useState<BxTask[]>(() => getCached<BxTask[]>("bitrix:tasks") ?? []);
-  const [loading, setLoading] = useState(!getCached<BxTask[]>("bitrix:tasks"));
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    // Initial state already seeded from cache; fetch only on a cache miss.
-    if (getCached<BxTask[]>("bitrix:tasks")) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/bitrix?scope=tasks");
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-        const items = (json.items as BxTask[]) ?? [];
-        if (cancelled) return;
-        setTasks(items);
-        setCached("bitrix:tasks", items);
-        setError("");
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return (
-    <Card title="Bitrix24 · задачи" Icon={Briefcase} onTitle={() => openFile("workspace/bitrix.tsx")}>
-      {loading ? (
-        <p className="text-[12px] text-vsc-muted">Загрузка…</p>
-      ) : error ? (
-        <p className="text-[12px] text-vsc-yellow">{error}</p>
-      ) : tasks.length === 0 ? (
-        <p className="text-[12px] text-vsc-muted">Открытых задач нет 🎉</p>
-      ) : (
-        <div className="flex flex-col gap-0.5">
-          {tasks.slice(0, 5).map((t) => (
-            <div key={t.id} className="group flex items-center gap-2 rounded px-1 py-1 hover:bg-vsc-hover">
-              <span
-                className="h-2 w-2 shrink-0 rounded-full"
-                style={{ backgroundColor: BX_STATUS_COLOR[t.statusCode] || "#8b8b8b" }}
-                title={t.status}
-              />
-              <span className="flex-1 truncate text-[13px] text-vsc-text">{t.title}</span>
-              {t.deadline && <span className="shrink-0 text-[11px] text-vsc-muted">до {bxDeadline(t.deadline)}</span>}
-              {t.url && (
-                <a
-                  href={t.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="shrink-0 rounded p-0.5 text-vsc-muted opacity-0 hover:text-vsc-text group-hover:opacity-100"
-                  title="Открыть в Bitrix24"
-                >
-                  <ExternalLink size={13} />
-                </a>
-              )}
-            </div>
-          ))}
         </div>
       )}
     </Card>
@@ -531,7 +440,6 @@ export function DashboardPanel() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <AiBriefWidget />
         <TasksWidget />
-        <BitrixTasksWidget />
         <TelegramWidget />
         <AgendaWidget />
         <MailWidget />

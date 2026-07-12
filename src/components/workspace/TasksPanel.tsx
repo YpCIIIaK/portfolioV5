@@ -13,10 +13,11 @@ import {
   CircleCheck,
   ChevronLeft,
   ChevronRight,
+  Inbox,
+  ExternalLink,
   type LucideIcon,
 } from "lucide-react";
 import {
-  DEMO_TASKS,
   wsCreate,
   wsUpdate,
   wsDelete,
@@ -25,9 +26,9 @@ import {
   type TaskStatus,
   type Priority,
 } from "@/lib/workspace";
-import { useCollection } from "./useCollection";
 import { GuestBanner } from "./GuestBanner";
 import { PriorityPicker, ColorPicker, PriorityDot, accentStyle, colorHex, priorityRank } from "./wsStyle";
+import { useUnifiedTasks, type UnifiedTask } from "./useUnifiedTasks";
 
 /* ---------------------------------------------------------------- */
 /*  shared helpers                                                   */
@@ -68,11 +69,12 @@ const COLUMNS: ColumnMeta[] = [
 ];
 
 const VIEW_KEY = "ws-tasks-view";
-type View = "list" | "board";
+type View = "inbox" | "list" | "board";
 
 function loadView(): View {
-  if (typeof window === "undefined") return "board";
-  return localStorage.getItem(VIEW_KEY) === "list" ? "list" : "board";
+  if (typeof window === "undefined") return "inbox";
+  const v = localStorage.getItem(VIEW_KEY);
+  return v === "list" || v === "board" || v === "inbox" ? v : "inbox";
 }
 
 /* ---------------------------------------------------------------- */
@@ -80,8 +82,7 @@ function loadView(): View {
 /* ---------------------------------------------------------------- */
 
 export function TasksPanel() {
-  const { items: raw, setItems, loading, error, readonly } = useCollection<Task>("tasks", DEMO_TASKS);
-  const items = useMemo(() => raw.map(normalizeTask), [raw]);
+  const { items, setItems, loading, error, readonly, unifiedOpen, bitrixError } = useUnifiedTasks();
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<Priority>("none");
   const [view, setViewState] = useState<View>(loadView);
@@ -122,6 +123,12 @@ export function TasksPanel() {
     patch(task, { status, done: status === "done" });
   }
 
+  async function completeUnified(task: UnifiedTask) {
+    if (readonly || !task.workspaceTask) return;
+    setItems(items.map((x) => (x.id === task.sourceId ? normalizeTask({ ...x, done: true, status: "done" }) : x)));
+    await wsUpdate<Task>("tasks", task.sourceId, { done: true, status: "done" });
+  }
+
   if (loading) return <p className="px-8 py-6 text-[13px] text-vsc-muted">Загрузка задач…</p>;
 
   return (
@@ -146,18 +153,21 @@ export function TasksPanel() {
           </>
         )}
         <div className={`flex overflow-hidden rounded border border-vsc-line ${readonly ? "ml-auto" : ""}`}>
+          <ViewButton active={view === "inbox"} onClick={() => setView("inbox")} Icon={Inbox} label="Inbox" />
           <ViewButton active={view === "board"} onClick={() => setView("board")} Icon={Columns3} label="Доска" />
           <ViewButton active={view === "list"} onClick={() => setView("list")} Icon={List} label="Список" />
         </div>
       </div>
 
-      {view === "board" ? (
+      {view === "inbox" ? (
+        <InboxView tasks={unifiedOpen} onComplete={completeUnified} readonly={readonly} bitrixError={bitrixError} />
+      ) : view === "board" ? (
         <Board tasks={items} onMove={moveTo} onPatch={patch} onRemove={remove} readonly={readonly} />
       ) : (
         <ListView tasks={items} onPatch={patch} onRemove={remove} readonly={readonly} />
       )}
 
-      {items.length === 0 && <p className="mt-3 text-[13px] text-vsc-muted">Задач пока нет.</p>}
+      {view !== "inbox" && items.length === 0 && <p className="mt-3 text-[13px] text-vsc-muted">Задач пока нет.</p>}
     </div>
   );
 }
@@ -173,6 +183,75 @@ function ViewButton({ active, onClick, Icon, label }: { active: boolean; onClick
     >
       <Icon size={14} /> {label}
     </button>
+  );
+}
+
+function InboxView({
+  tasks,
+  onComplete,
+  readonly,
+  bitrixError,
+}: {
+  tasks: UnifiedTask[];
+  onComplete: (task: UnifiedTask) => void;
+  readonly: boolean;
+  bitrixError: string;
+}) {
+  return (
+    <div className="rounded-lg border border-vsc-line bg-vsc-sidebar/60">
+      <div className="flex items-center justify-between border-b border-vsc-line px-3 py-2">
+        <div>
+          <div className="text-[12px] font-semibold uppercase tracking-wide text-vsc-text">Unified Task Inbox</div>
+          <div className="text-[11px] text-vsc-muted">Workspace + Bitrix24 в одном списке по полю source</div>
+        </div>
+        <span className="rounded-full bg-vsc-hover px-2 py-0.5 text-[11px] text-vsc-muted">{tasks.length}</span>
+      </div>
+
+      {bitrixError && <p className="border-b border-vsc-line px-3 py-2 text-[12px] text-vsc-yellow">Bitrix: {bitrixError}</p>}
+
+      {tasks.length === 0 ? (
+        <p className="px-3 py-4 text-[13px] text-vsc-muted">Активных задач нет.</p>
+      ) : (
+        <div className="divide-y divide-vsc-line">
+          {tasks.map((t) => {
+            const due = dueMeta(t.due);
+            return (
+              <div key={t.id} className="group flex items-center gap-2 px-3 py-2 hover:bg-vsc-hover">
+                <button
+                  onClick={() => onComplete(t)}
+                  disabled={readonly || t.source !== "workspace"}
+                  title={t.source === "workspace" ? "Выполнить" : "Bitrix-задача редактируется в источнике"}
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-vsc-muted text-transparent hover:border-vsc-green hover:text-vsc-green disabled:opacity-45"
+                >
+                  <Check size={11} />
+                </button>
+                <PriorityDot priority={t.priority} />
+                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${t.source === "workspace" ? "bg-vsc-accent/15 text-vsc-accent" : "bg-vsc-yellow/15 text-vsc-yellow"}`}>
+                  {t.sourceLabel}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[13.5px] text-vsc-text">{t.title}</span>
+                {t.bitrixStatus && <span className="hidden shrink-0 text-[11px] text-vsc-muted sm:inline">{t.bitrixStatus}</span>}
+                {due && (
+                  <span className={`shrink-0 text-[11px] ${due.overdue ? "text-red-400" : "text-vsc-muted"}`}>{due.label}</span>
+                )}
+                {t.url && (
+                  <a
+                    href={t.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="shrink-0 rounded p-1 text-vsc-muted opacity-100 hover:text-vsc-text sm:opacity-0 sm:group-hover:opacity-100"
+                    title="Открыть источник"
+                  >
+                    <ExternalLink size={13} />
+                  </a>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
