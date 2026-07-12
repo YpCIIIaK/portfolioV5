@@ -23,6 +23,14 @@ export function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function isToday(iso: string): boolean {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
+
 async function build(): Promise<string> {
   const parts: string[] = [];
 
@@ -54,9 +62,16 @@ async function build(): Promise<string> {
 
   if (mailConfigured()) {
     try {
-      const mail = await fetchInbox(15);
-      const unread = mail.filter((m) => m.unread).slice(0, 12);
-      if (unread.length) parts.push("ПОЧТА (непрочитанное):\n" + unread.map((m) => `- ${m.from}: ${m.subject}`).join("\n"));
+      const mail = await fetchInbox(200);
+      const relevant = mail.filter((m) => m.unread || isToday(m.date)).slice(0, 80);
+      if (relevant.length) {
+        parts.push(
+          "ПОЧТА (сегодня и непрочитанное):\n" +
+            relevant
+              .map((m) => `- ${m.unread ? "● " : ""}${m.from}: ${m.subject}`)
+              .join("\n"),
+        );
+      }
     } catch { /* skip */ }
   }
 

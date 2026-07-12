@@ -46,7 +46,7 @@ function when(iso: string): string {
 }
 
 export function MailPanel() {
-  const { items, loading, error, live, reload } = useMailbox(50);
+  const { items, loading, error, live, reload } = useMailbox(200);
   const [open, setOpen] = useState<MailFull | null>(null);
   const [reading, setReading] = useState(false);
 

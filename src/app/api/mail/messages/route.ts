@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 /**
  * Owner-only inbox reader.
- *   GET ?limit=5    -> latest N summaries
+ *   GET ?limit=200  -> latest N summaries
  *   GET ?uid=123    -> one full message
  */
 export async function GET(req: Request) {
@@ -22,7 +22,7 @@ export async function GET(req: Request) {
       if (!item) return NextResponse.json({ error: "not found" }, { status: 404 });
       return NextResponse.json({ item });
     }
-    const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") || 5)));
+    const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit") || 50)));
     const items = await fetchInbox(limit);
     return NextResponse.json({ items });
   } catch (e) {
