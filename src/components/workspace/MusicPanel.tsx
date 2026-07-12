@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { Music, Play, Plus, Trash2, ExternalLink } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Music, Play, Plus, Trash2, ExternalLink, Search, Heart } from "lucide-react";
 import { useEditor } from "@/lib/store";
 import {
   parseYmInput,
@@ -15,6 +15,13 @@ import {
   type YmItem,
   type YmEmbed,
 } from "@/lib/yandex-music";
+
+interface SearchState {
+  items: YmItem[];
+  loading: boolean;
+  error: string;
+  configured: boolean;
+}
 
 function YmPlayer({ embed, compact }: { embed: YmEmbed; compact?: boolean }) {
   return (
@@ -34,6 +41,7 @@ function useYmPlayer() {
   const [saved, setSaved] = useState<YmItem[]>(() => loadSavedYm());
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
+  const [search, setSearch] = useState<SearchState>({ items: [], loading: false, error: "", configured: true });
 
   const play = useCallback((item: YmItem) => {
     setCurrent(item);
@@ -56,18 +64,45 @@ function useYmPlayer() {
     play(item);
   }, [draft, play]);
 
-  const saveCurrent = useCallback(() => {
-    if (!current) return;
+  const searchTracks = useCallback(async (mode: "search" | "liked" = "search") => {
+    const q = draft.trim();
+    if (mode === "search" && !q) return;
+    setSearch((prev) => ({ ...prev, loading: true, error: "" }));
+    try {
+      const params = mode === "liked"
+        ? "?mode=liked"
+        : `?q=${encodeURIComponent(q)}`;
+      const res = await fetch(`/api/yandex-music/search${params}`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      const configured = json.configured !== false;
+      const items = (json.items as YmItem[]) ?? [];
+      setSearch({
+        items,
+        loading: false,
+        configured,
+        error: json.error || (configured && items.length === 0 ? "Ничего не нашёл" : ""),
+      });
+    } catch (e) {
+      setSearch((prev) => ({ ...prev, loading: false, error: (e as Error).message }));
+    }
+  }, [draft]);
+
+  const saveItem = useCallback((item: YmItem) => {
     setSaved((prev) => {
       const exists = prev.some(
-        (x) => ymEmbedSrc(x.embed) === ymEmbedSrc(current.embed),
+        (x) => ymEmbedSrc(x.embed) === ymEmbedSrc(item.embed),
       );
       if (exists) return prev;
-      const next = [{ ...current, id: crypto.randomUUID() }, ...prev].slice(0, 40);
+      const next = [{ ...item, id: crypto.randomUUID() }, ...prev].slice(0, 40);
       persistSavedYm(next);
       return next;
     });
-  }, [current]);
+  }, []);
+
+  const saveCurrent = useCallback(() => {
+    if (!current) return;
+    saveItem(current);
+  }, [current, saveItem]);
 
   const removeSaved = useCallback((id: string) => {
     setSaved((prev) => {
@@ -77,7 +112,72 @@ function useYmPlayer() {
     });
   }, []);
 
-  return { current, saved, draft, setDraft, error, play, playInput, saveCurrent, removeSaved };
+  return { current, saved, draft, setDraft, error, search, play, playInput, searchTracks, saveCurrent, saveItem, removeSaved };
+}
+
+function duration(ms: number | null | undefined): string {
+  if (!ms) return "";
+  const sec = Math.round(ms / 1000);
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+}
+
+function TrackRow({
+  item,
+  active,
+  onPlay,
+  onSave,
+  onRemove,
+}: {
+  item: YmItem;
+  active: boolean | null;
+  onPlay: (item: YmItem) => void;
+  onSave?: (item: YmItem) => void;
+  onRemove?: (id: string) => void;
+}) {
+  return (
+    <div
+      className={`group flex items-center gap-2 rounded-lg border px-2 py-2 ${
+        active ? "border-vsc-accent/50 bg-vsc-accent/10" : "border-vsc-line/60 hover:bg-vsc-hover"
+      }`}
+    >
+      <button type="button" onClick={() => onPlay(item)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+        {item.cover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={item.cover} alt="" className="h-9 w-9 shrink-0 rounded object-cover" />
+        ) : (
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-vsc-line text-vsc-muted">
+            <Music size={15} />
+          </div>
+        )}
+        <div className="min-w-0">
+          <div className="truncate text-[13px] text-vsc-bright">{item.title ?? item.label}</div>
+          <div className="truncate text-[11px] text-vsc-muted">
+            {item.artists?.join(", ") || item.album || item.label}
+          </div>
+        </div>
+      </button>
+      {duration(item.durationMs) && <span className="shrink-0 font-mono text-[11px] text-vsc-muted">{duration(item.durationMs)}</span>}
+      {onSave && (
+        <button type="button" onClick={() => onSave(item)} className="rounded p-1 text-vsc-muted hover:text-vsc-text" title="В сохранённые">
+          <Plus size={13} />
+        </button>
+      )}
+      <a
+        href={item.url.startsWith("http") ? item.url : `https://${item.url}`}
+        target="_blank"
+        rel="noreferrer"
+        className="rounded p-1 text-vsc-muted opacity-0 hover:text-vsc-text group-hover:opacity-100"
+        title="Открыть в Яндекс Музыке"
+      >
+        <ExternalLink size={12} />
+      </a>
+      {onRemove && (
+        <button type="button" onClick={() => onRemove(item.id)} className="rounded p-1 text-vsc-muted hover:text-red-400" title="Удалить">
+          <Trash2 size={12} />
+        </button>
+      )}
+    </div>
+  );
 }
 
 function SavedList({
@@ -106,13 +206,9 @@ function SavedList({
               isActive ? "border-vsc-accent/50 bg-vsc-accent/10" : "border-vsc-line/60 hover:bg-vsc-hover"
             }`}
           >
-            <button
-              type="button"
-              onClick={() => onPlay(item)}
-              className="flex min-w-0 flex-1 items-center gap-2 text-left"
-            >
+            <button type="button" onClick={() => onPlay(item)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
               <Play size={13} className="shrink-0 text-vsc-accent" />
-              <span className="truncate text-[13px] text-vsc-text">{item.label}</span>
+              <span className="truncate text-[13px] text-vsc-text">{item.title ?? item.label}</span>
             </button>
             <a
               href={item.url.startsWith("http") ? item.url : `https://${item.url}`}
@@ -139,37 +235,54 @@ function SavedList({
 }
 
 export function MusicPanel() {
-  const { current, saved, draft, setDraft, error, play, playInput, saveCurrent, removeSaved } = useYmPlayer();
+  const { current, saved, draft, setDraft, error, search, play, playInput, searchTracks, saveCurrent, saveItem, removeSaved } = useYmPlayer();
 
   return (
     <div className="mx-auto max-w-2xl px-8 py-6">
       <h1 className="mb-1 flex items-center gap-2 text-[22px] font-semibold text-vsc-bright">
         <Music size={20} className="text-vsc-accent" /> Яндекс Музыка
       </h1>
-      <p className="mb-5 text-[13px] text-vsc-muted">Вставь ссылку на трек, альбом или плейлист — или выбери из сохранённых</p>
+      <p className="mb-5 text-[13px] text-vsc-muted">Ищи трек по названию, запускай в виджете и сохраняй для быстрого доступа</p>
 
       <div className="mb-4 flex gap-2">
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && playInput()}
-          placeholder="https://music.yandex.ru/album/…/track/…"
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            if (parseYmInput(draft)) playInput();
+            else searchTracks();
+          }}
+          placeholder="Найти трек или вставить ссылку…"
           className="min-w-0 flex-1 rounded-lg border border-vsc-line bg-vsc-editor px-3 py-2 text-[13px] text-vsc-text outline-none focus:border-vsc-accent"
         />
         <button
           type="button"
-          onClick={playInput}
+          onClick={() => searchTracks()}
           className="flex shrink-0 items-center gap-1.5 rounded-lg bg-vsc-accent px-3 py-2 text-[13px] text-white hover:opacity-90"
         >
-          <Play size={14} /> Играть
+          <Search size={14} /> Найти
+        </button>
+        <button
+          type="button"
+          onClick={() => searchTracks("liked")}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-vsc-line px-3 py-2 text-[13px] text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"
+        >
+          <Heart size={14} /> Мои
         </button>
       </div>
-      {error && <p className="mb-3 text-[12px] text-vsc-yellow">{error}</p>}
+      {(error || search.error) && <p className="mb-3 text-[12px] text-vsc-yellow">{error || search.error}</p>}
+      {!search.configured && (
+        <p className="mb-3 rounded border border-vsc-line bg-vsc-sidebar px-3 py-2 text-[12px] leading-relaxed text-vsc-muted">
+          Для поиска и «Мои» нужен серверный <code className="text-vsc-text">YANDEX_MUSIC_TOKEN</code>.
+          Ссылки всё ещё можно вставлять вручную.
+        </p>
+      )}
 
       {current && (
         <div className="mb-6">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-[12px] text-vsc-muted">Сейчас играет · {current.label}</span>
+            <span className="text-[12px] text-vsc-muted">Сейчас играет · {current.title ?? current.label}</span>
             <button
               type="button"
               onClick={saveCurrent}
@@ -179,6 +292,28 @@ export function MusicPanel() {
             </button>
           </div>
           <YmPlayer embed={current.embed} />
+        </div>
+      )}
+
+      {search.items.length > 0 && (
+        <div className="mb-6">
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-vsc-muted">
+            {search.loading ? "Ищу…" : "Результаты"}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {search.items.map((item) => (
+              <TrackRow
+                key={item.id}
+                item={item}
+                active={current && ymEmbedSrc(current.embed) === ymEmbedSrc(item.embed)}
+                onPlay={play}
+                onSave={(x) => {
+                  play(x);
+                  saveItem(x);
+                }}
+              />
+            ))}
+          </div>
         </div>
       )}
 
@@ -193,7 +328,11 @@ export function MusicPanel() {
 /** Compact player for the dashboard. */
 export function MusicWidget() {
   const openFile = useEditor((s) => s.openFile);
-  const { current, saved, draft, setDraft, error, play, playInput } = useYmPlayer();
+  const { current, saved, draft, setDraft, error, search, play, playInput, searchTracks } = useYmPlayer();
+
+  useEffect(() => {
+    if (!current && saved.length > 0) play(saved[0]);
+  }, [current, saved, play]);
 
   return (
     <div className="rounded-lg border border-vsc-line bg-vsc-sidebar p-4 md:col-span-2">
@@ -211,21 +350,41 @@ export function MusicWidget() {
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && playInput()}
-          placeholder="Ссылка на трек…"
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            if (parseYmInput(draft)) playInput();
+            else searchTracks();
+          }}
+          placeholder="Найти трек…"
           className="min-w-0 flex-1 rounded border border-vsc-line bg-vsc-editor px-2 py-1.5 text-[12px] text-vsc-text outline-none focus:border-vsc-accent"
         />
         <button
           type="button"
-          onClick={playInput}
+          onClick={() => searchTracks()}
           className="shrink-0 rounded bg-vsc-accent px-2.5 py-1.5 text-[12px] text-white hover:opacity-90"
         >
-          <Play size={13} />
+          <Search size={13} />
         </button>
       </div>
-      {error && <p className="mb-2 text-[11px] text-vsc-yellow">{error}</p>}
+      {(error || search.error) && <p className="mb-2 text-[11px] text-vsc-yellow">{error || search.error}</p>}
 
       {current && <YmPlayer embed={current.embed} compact />}
+
+      {search.items.length > 0 && (
+        <div className="mt-3 flex flex-col gap-1">
+          {search.items.slice(0, 4).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => play(item)}
+              className="flex min-w-0 items-center gap-2 rounded px-2 py-1 text-left text-[12px] hover:bg-vsc-hover"
+            >
+              <Play size={12} className="shrink-0 text-vsc-accent" />
+              <span className="truncate text-vsc-text">{item.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {saved.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">

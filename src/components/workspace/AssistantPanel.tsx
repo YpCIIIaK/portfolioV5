@@ -67,7 +67,7 @@ export function AssistantPanel() {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch("/api/telegram?scope=dialogs");
+        const res = await fetch("/api/telegram?scope=dialogs&limit=1000");
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !alive) return;
         setDialogs((json.items as TgDialog[]) ?? []);

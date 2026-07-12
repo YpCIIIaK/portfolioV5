@@ -11,6 +11,11 @@ export interface YmItem {
   label: string;
   url: string;
   embed: YmEmbed;
+  title?: string;
+  artists?: string[];
+  album?: string;
+  cover?: string | null;
+  durationMs?: number | null;
 }
 
 const IFRAME = "https://music.yandex.ru/iframe/#";

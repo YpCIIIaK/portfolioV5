@@ -23,7 +23,10 @@ export async function GET(req: Request) {
   const scope = url.searchParams.get("scope") || "dialogs";
 
   try {
-    if (scope === "dialogs") return NextResponse.json({ items: await fetchDialogs() });
+    if (scope === "dialogs") {
+      const limit = Math.min(Number(url.searchParams.get("limit")) || 500, 1000);
+      return NextResponse.json({ items: await fetchDialogs(limit) });
+    }
     if (scope === "messages") {
       const peer = url.searchParams.get("peer");
       if (!peer) return NextResponse.json({ error: "missing peer" }, { status: 400 });

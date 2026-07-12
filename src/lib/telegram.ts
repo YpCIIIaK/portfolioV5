@@ -55,12 +55,22 @@ export interface TgDialog {
   lastDate: string | null;
 }
 
-export async function fetchDialogs(limit = 30): Promise<TgDialog[]> {
+async function getAllDialogs(client: TelegramClient, limit: number) {
+  const perBucket = Math.max(1, Math.ceil(limit / 2));
+  const [main, archived] = await Promise.all([
+    client.getDialogs({ limit: perBucket, archived: false }),
+    client.getDialogs({ limit: perBucket, archived: true }),
+  ]);
+  const map = new Map<string, (typeof main)[number]>();
+  for (const d of [...main, ...archived]) {
+    if (d.id) map.set(String(d.id), d);
+  }
+  return [...map.values()].slice(0, limit);
+}
+
+export async function fetchDialogs(limit = 500): Promise<TgDialog[]> {
   return withClient(async (client) => {
-    // folder: 0 = main list only (chats that belong to no folder). Telegram puts
-    // archived chats in folder 1, so this drops the archive. Custom folders
-    // (chat filters) are a separate mechanism and are not filtered here.
-    const dialogs = await client.getDialogs({ limit, archived: false });
+    const dialogs = await getAllDialogs(client, limit);
     return dialogs
       .filter((d) => d.id)
       .map((d) => ({
@@ -99,9 +109,9 @@ export interface TgMessage {
  * already carry a usable inputEntity, so we match on the id string instead.
  */
 async function resolvePeer(client: TelegramClient, peerId: string) {
-  const dialogs = await client.getDialogs({ limit: 200 });
+  const dialogs = await getAllDialogs(client, 1000);
   const dlg = dialogs.find((d) => String(d.id) === peerId);
-  if (!dlg) throw new Error("диалог не найден (возможно, вне последних 200)");
+  if (!dlg) throw new Error("диалог не найден (возможно, вне последних 1000)");
   return dlg.inputEntity;
 }
 

@@ -530,13 +530,13 @@ export function DashboardPanel() {
       <GuestBannerIfNeeded />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <AiBriefWidget />
-        <NewsWidget />
-        <MusicWidget />
         <TasksWidget />
         <BitrixTasksWidget />
         <TelegramWidget />
         <AgendaWidget />
         <MailWidget />
+        <NewsWidget />
+        <MusicWidget />
       </div>
     </div>
   );
