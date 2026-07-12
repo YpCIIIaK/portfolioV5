@@ -10,10 +10,15 @@
  * hides this behind a TTL cache + adaptive polling.
  */
 
-import { TelegramClient } from "telegram";
-import { StringSession } from "telegram/sessions";
+// Import everything from the single "telegram" entry: subpath imports
+// (telegram/sessions, telegram/extensions/…) can resolve to a second physical
+// copy of the module, and then `session instanceof Session` inside the client
+// fails with "Only StringSession and StoreSessions are supported".
+import { TelegramClient, sessions } from "telegram";
 import { LogLevel } from "telegram/extensions/Logger";
 import bigInt from "big-integer";
+
+const { StringSession } = sessions;
 
 const apiId = Number(process.env.TELEGRAM_API_ID || 0);
 const apiHash = process.env.TELEGRAM_API_HASH || "";
