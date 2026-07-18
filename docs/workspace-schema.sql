@@ -132,6 +132,25 @@ create table if not exists public.ws_bot_session (
 );
 alter table public.ws_bot_session enable row level security;
 
+-- External tool reports ----------------------------------------------
+-- Compact results pushed in by self-hosted/CLI/CI tools (e.g. repo-janitor
+-- health scans). The heavy work runs elsewhere; the portfolio only stores and
+-- displays the small JSON. `tool` groups them, `key` identifies the subject
+-- (e.g. a repo "owner/name"). Written by the server after an authenticated
+-- ingest POST (x-tools-secret). One row per pushed report (history kept).
+create table if not exists public.ws_tool_reports (
+  id         uuid primary key default gen_random_uuid(),
+  tool       text not null,            -- 'repo-health'
+  key        text not null,            -- subject, e.g. 'owner/name'
+  score      numeric,                  -- headline number, if any (0..100)
+  grade      text not null default '', -- headline grade, if any (A..F)
+  data       jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+alter table public.ws_tool_reports enable row level security;
+create index if not exists ws_tool_reports_tool_key_idx
+  on public.ws_tool_reports (tool, key, created_at desc);
+
 -- Visit analytics -----------------------------------------------------
 -- One row per visit beacon; aggregated by the owner-only /api/stats.
 create table if not exists public.ws_visits (

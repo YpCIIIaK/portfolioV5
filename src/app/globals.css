@@ -36,6 +36,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  /* Aliases used by the ported Figma→Code tool components. */
+  --color-panel: var(--vsc-sidebar);
+  --color-border: var(--vsc-border);
+  --color-accent: var(--vsc-accent);
   --color-vsc-bg: var(--vsc-bg);
   --color-vsc-sidebar: var(--vsc-sidebar);
   --color-vsc-activitybar: var(--vsc-activitybar);

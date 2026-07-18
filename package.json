@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "framer-motion": "^12.40.0",
     "imapflow": "^1.4.2",
     "input": "^1.0.1",

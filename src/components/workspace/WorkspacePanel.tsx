@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Image from "next/image";
-import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, FolderGit2, Blocks, Briefcase, Send, CreditCard, Sparkles, Newspaper, Music, BookText, Shapes } from "lucide-react";
+import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, FolderGit2, Blocks, Briefcase, Send, CreditCard, Sparkles, Newspaper, Music, BookText, Shapes, HeartPulse, Frame } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
 
@@ -21,6 +21,13 @@ const FEATURES = [
   { id: "workspace/telegram.tsx", label: "Telegram", Icon: Send },
   { id: "workspace/subscriptions.tsx", label: "Подписки", Icon: CreditCard },
   { id: "workspace/projects.tsx", label: "Проекты", Icon: FolderGit2 },
+];
+
+// Self-hosted / semi-local tools: heavy work runs elsewhere, the workspace
+// only drives them and shows results.
+const TOOLS = [
+  { id: "tools/repo-health.tsx", label: "Repo Health", Icon: HeartPulse },
+  { id: "tools/figma.tsx", label: "Figma → Code", Icon: Frame },
 ];
 
 export function WorkspacePanel() {
@@ -74,6 +81,19 @@ export function WorkspacePanel() {
       {/* feature launcher */}
       <div className="px-2 py-2">
         {FEATURES.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            onClick={() => openFile(id)}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] text-vsc-text hover:bg-vsc-hover"
+          >
+            <Icon size={15} className="text-vsc-muted" /> {label}
+          </button>
+        ))}
+
+        <div className="px-2 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-vsc-muted">
+          Инструменты
+        </div>
+        {TOOLS.map(({ id, label, Icon }) => (
           <button
             key={id}
             onClick={() => openFile(id)}
