@@ -31,6 +31,7 @@ import { AssistantPanel } from "./workspace/AssistantPanel";
 import { NewsPanel } from "./workspace/NewsPanel";
 import { MusicPanel } from "./workspace/MusicPanel";
 import { NotionPanel } from "./workspace/NotionPanel";
+import { DiagramPanel } from "./workspace/DiagramPanel";
 
 export function Editor() {
   const activeFile = useEditor((s) => s.activeFile);
@@ -112,6 +113,7 @@ export function Editor() {
           {file.id === "workspace/news.tsx" && <NewsPanel />}
           {file.id === "workspace/music.tsx" && <MusicPanel />}
           {file.id === "workspace/notion.tsx" && <NotionPanel />}
+          {file.id === "workspace/diagrams.tsx" && <DiagramPanel />}
           {file.id === "workspace/projects.tsx" && <ProjectsPanel />}
           </div>
           <Minimap blocks={file.blocks} />

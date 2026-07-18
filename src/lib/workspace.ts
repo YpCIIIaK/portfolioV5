@@ -74,7 +74,7 @@ export interface Subscription {
   created_at: string;
 }
 
-export type Kind = "notes" | "tasks" | "events" | "projects" | "subscriptions";
+export type Kind = "notes" | "tasks" | "events" | "projects" | "subscriptions" | "diagrams";
 
 /** Currency symbols offered in the subscriptions form. */
 export const CURRENCIES = ["₽", "₸", "$", "€"];

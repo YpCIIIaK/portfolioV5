@@ -107,7 +107,10 @@ async function fetchRss(url: string, source: string, limit: number): Promise<New
 
 async function fetchTrendingRepos(limit: number): Promise<NewsRepo[]> {
   const week = daysAgo(7);
-  const q = encodeURIComponent(`stars:>200+pushed:>${week}`);
+  // Qualifiers are space-separated; encodeURIComponent turns the space into
+  // %20 (which GitHub accepts). A literal "+" would be encoded to %2B and break
+  // the query (422), silently emptying the trending section.
+  const q = encodeURIComponent(`stars:>200 pushed:>${week}`);
   const res = await fetch(
     `${GH}/search/repositories?q=${q}&sort=stars&order=desc&per_page=${limit}`,
     { headers: ghHeaders(), cache: "no-store" },

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Image from "next/image";
-import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, FolderGit2, Blocks, Briefcase, Send, CreditCard, Sparkles, Newspaper, Music, BookText } from "lucide-react";
+import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, FolderGit2, Blocks, Briefcase, Send, CreditCard, Sparkles, Newspaper, Music, BookText, Shapes } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
 
@@ -12,6 +12,7 @@ const FEATURES = [
   { id: "workspace/news.tsx", label: "Новости", Icon: Newspaper },
   { id: "workspace/music.tsx", label: "Музыка", Icon: Music },
   { id: "workspace/notes.md", label: "Заметки", Icon: StickyNote },
+  { id: "workspace/diagrams.tsx", label: "Диаграммы", Icon: Shapes },
   { id: "workspace/calendar.tsx", label: "Календарь", Icon: CalendarDays },
   { id: "workspace/tasks.todo", label: "Задачи", Icon: ListTodo },
   { id: "workspace/mail.tsx", label: "Почта", Icon: Mail },

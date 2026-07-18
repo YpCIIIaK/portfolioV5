@@ -89,6 +89,18 @@ create table if not exists public.ws_guestbook (
   created_at timestamptz not null default now()
 );
 
+-- Diagrams (block/flow boards) ----------------------------------------
+-- Each row is one board; `data` holds { nodes, edges } produced by the
+-- in-app diagram editor. Owner-only (gated in the API, like the rest).
+create table if not exists public.ws_diagrams (
+  id         uuid primary key default gen_random_uuid(),
+  title      text not null default 'Новая диаграмма',
+  data       jsonb not null default '{"nodes":[],"edges":[]}'::jsonb,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+alter table public.ws_diagrams enable row level security;
+
 -- Integrations (OAuth tokens for third-party services) ----------------
 -- One row per provider ('notion', …). Holds the owner's OAuth access token
 -- and a free-form `config` (e.g. which Notion database backs "tasks").
