@@ -45,8 +45,8 @@ export async function askAI(prompt: string, opts: AskOptions = {}): Promise<stri
   );
 }
 
-/** Multi-turn completion over an explicit message list (system + conversation). */
-export async function chatAI(messages: AiMessage[], opts: Omit<AskOptions, "system"> = {}): Promise<string> {
+/** Low-level POST to OpenRouter's chat endpoint. Maps failures to clear errors. */
+async function callOpenRouter(body: Record<string, unknown>): Promise<AssistantChoice> {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error("OPENROUTER_API_KEY не задан");
 
@@ -59,12 +59,10 @@ export async function chatAI(messages: AiMessage[], opts: Omit<AskOptions, "syst
     },
     body: JSON.stringify({
       model: MODEL,
-      messages,
-      temperature: opts.temperature ?? 0.3,
-      max_tokens: opts.maxTokens ?? 800,
       reasoning: { exclude: true },
       // Privacy: keep the request off training/logging providers.
       provider: { data_collection: DATA_POLICY, allow_fallbacks: true },
+      ...body,
     }),
   });
 
@@ -81,11 +79,88 @@ export async function chatAI(messages: AiMessage[], opts: Omit<AskOptions, "syst
   }
 
   const json = (await res.json().catch(() => ({}))) as {
-    choices?: { message?: { content?: string } }[];
+    choices?: { message?: AssistantChoice }[];
     error?: { message?: string };
   };
   if (json.error) throw new Error(json.error.message || "ошибка модели");
-  const text = json.choices?.[0]?.message?.content?.trim();
+  const msg = json.choices?.[0]?.message;
+  if (!msg) throw new Error("Модель вернула пустой ответ");
+  return msg;
+}
+
+/** Multi-turn completion over an explicit message list (system + conversation). */
+export async function chatAI(messages: AiMessage[], opts: Omit<AskOptions, "system"> = {}): Promise<string> {
+  const msg = await callOpenRouter({
+    messages,
+    temperature: opts.temperature ?? 0.3,
+    max_tokens: opts.maxTokens ?? 800,
+  });
+  const text = msg.content?.trim();
   if (!text) throw new Error("Модель вернула пустой ответ");
   return text;
+}
+
+/* ---- tool calling ----------------------------------------------------- */
+
+/** JSON-schema description of one callable tool (OpenAI/OpenRouter format). */
+export interface ToolDef {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+/** A tool invocation the model asked us to run. */
+export interface ToolCall {
+  id: string;
+  name: string;
+  /** Raw JSON string of arguments — parse defensively at the call site. */
+  arguments: string;
+}
+
+/** Assistant message as returned by the API (may carry tool_calls). */
+interface AssistantChoice {
+  role?: string;
+  content?: string | null;
+  tool_calls?: { id: string; type?: string; function: { name: string; arguments: string } }[];
+}
+
+/** Messages in a tool-calling loop: system/user text, assistant turns, tool results. */
+export type AgentMessage =
+  | { role: "system" | "user"; content: string }
+  | { role: "assistant"; content: string | null; tool_calls?: AssistantChoice["tool_calls"] }
+  | { role: "tool"; tool_call_id: string; content: string };
+
+export interface ToolTurn {
+  content: string;
+  toolCalls: ToolCall[];
+  /** Raw assistant message to append back into the conversation verbatim. */
+  raw: AgentMessage;
+}
+
+/** One tool-calling step: returns the model's text and any tool calls it made. */
+export async function chatWithTools(
+  messages: AgentMessage[],
+  tools: ToolDef[],
+  opts: Omit<AskOptions, "system"> = {},
+): Promise<ToolTurn> {
+  const msg = await callOpenRouter({
+    messages,
+    temperature: opts.temperature ?? 0.3,
+    max_tokens: opts.maxTokens ?? 900,
+    tools: tools.map((t) => ({ type: "function", function: t })),
+    tool_choice: "auto",
+  });
+  const toolCalls: ToolCall[] = (msg.tool_calls ?? [])
+    .filter((c) => c.function?.name)
+    .map((c) => ({ id: c.id, name: c.function.name, arguments: c.function.arguments || "{}" }));
+  return {
+    content: (msg.content ?? "").trim(),
+    toolCalls,
+    raw: { role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls },
+  };
+}
+
+/** Whether an error from the API suggests the model can't do tool-calling. */
+export function isToolUnsupportedError(e: unknown): boolean {
+  return /tool|function[_ ]?call/i.test((e as Error)?.message ?? "");
 }

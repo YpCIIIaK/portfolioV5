@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireOwner } from "@/lib/auth";
-import { aiConfigured, chatAI, type AiMessage } from "@/lib/ai";
+import { aiConfigured } from "@/lib/ai";
+import { runAssistant, buildAssistantSystem } from "@/lib/assistant-agent";
 import { collectContext, todayISO } from "@/lib/aggregate";
 import {
   parseTgReads,
   buildTgContext,
+  parseNotionReads,
+  buildNotionContext,
+  buildNotionAutoContext,
   parseUserTaskCommands,
   parseAiTaskBlocks,
   stripAiTaskBlocks,
@@ -36,30 +40,21 @@ export async function POST(req: Request) {
     const tgSpecs = parseTgReads(userText);
     const tgContext = tgSpecs.length ? await buildTgContext(tgSpecs) : "";
 
+    const notionQueries = parseNotionReads(userText);
+    const notionPageContext = notionQueries.length ? await buildNotionContext(notionQueries) : "";
+    const notionAutoContext = await buildNotionAutoContext(userText, notionQueries);
+
     const context = await collectContext();
-    const extra = [tgContext, userTaskNotes.length ? "СОЗДАННЫЕ ЗАДАЧИ (команды пользователя):\n" + userTaskNotes.join("\n") : ""]
+    const extra = [tgContext, notionPageContext, notionAutoContext, userTaskNotes.length ? "СОЗДАННЫЕ ЗАДАЧИ (команды пользователя):\n" + userTaskNotes.join("\n") : ""]
       .filter(Boolean)
       .join("\n\n");
 
-    const system = `Ты — личный ассистент владельца рабочего кабинета. Сегодня ${todayISO()}.
-Тебе доступна актуальная сводка из его задач, календаря, Bitrix, Notion, Telegram, почты и свежих новостей (GitHub-тренды, тех и AI) — ниже.
-Если пользователь указал @ИмяЧата N или /tg ИмяЧата N — тебе подгружают последние N сообщений этого чата (см. блок TELEGRAM).
-Отвечай на её основе: кратко, по делу, на русском. Если в данных нет ответа — честно скажи, не выдумывай.
-Можешь связывать источники (например, письмо и задачу от того же человека) и подсказывать приоритеты.
+    const system = buildAssistantSystem(todayISO(), context, extra);
 
-Создание задач: если пользователь просит завести задачу — добавь в конец ответа отдельной строкой:
-[[task:high]] Название задачи
-Приоритет: none | low | medium | high. Можно несколько строк. Не дублируй задачи, которые уже созданы командами /task.
+    const result = await runAssistant(system, parsed.data.messages);
+    let answer = result.answer;
 
-=== АКТУАЛЬНЫЕ ДАННЫЕ ===
-${context || "(пока пусто — источники не подключены или нет свежих данных)"}
-${extra ? `\n\n=== ДОПОЛНИТЕЛЬНО ===\n${extra}` : ""}
-=== КОНЕЦ ДАННЫХ ===`;
-
-    const messages: AiMessage[] = [{ role: "system", content: system }, ...parsed.data.messages];
-    const maxTokens = tgContext ? 1400 : 800;
-    let answer = await chatAI(messages, { maxTokens });
-
+    // Fallback for a model that can't call tools: honour [[task:…]] blocks.
     const aiTasks = parseAiTaskBlocks(answer);
     const aiTaskNotes = aiTasks.length ? await createAssistantTasks(aiTasks) : [];
     answer = stripAiTaskBlocks(answer);
@@ -69,7 +64,7 @@ ${extra ? `\n\n=== ДОПОЛНИТЕЛЬНО ===\n${extra}` : ""}
       answer = `${answer.trim()}\n\n---\n${taskNotes.join("\n")}`.trim();
     }
 
-    return NextResponse.json({ answer, tasksCreated: taskNotes.length });
+    return NextResponse.json({ answer, tasksCreated: taskNotes.length, actions: result.actions });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }

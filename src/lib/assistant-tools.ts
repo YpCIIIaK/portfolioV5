@@ -4,6 +4,7 @@
 
 import { supabaseConfigured, sbInsert } from "@/lib/supabase";
 import { telegramConfigured, fetchDialogs, fetchMessageHistory, type TgDialog } from "@/lib/telegram";
+import { notionConnected, searchNotion, pageContent } from "@/lib/notion";
 import type { Priority } from "@/lib/workspace";
 
 const MAX_TG_MESSAGES = 100;
@@ -97,6 +98,98 @@ export async function buildTgContext(specs: TgReadSpec[]): Promise<string> {
       else parts.push(formatMessages(dlg.title, msgs));
     } catch {
       parts.push(`TELEGRAM «${dlg.title}»: не удалось загрузить сообщения`);
+    }
+  }
+
+  return parts.join("\n\n");
+}
+
+/* ---- Notion page reads (/notion) -------------------------------------- */
+
+const MAX_NOTION_PAGES = 5;
+
+/** /notion Название страницы  or  /ноушн Название  (one page per line). */
+export function parseNotionReads(text: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const m of text.matchAll(/(?:^|\n)\s*\/(?:notion|ноушн|ноушен)\s+(.+)/gi)) {
+    const query = m[1].trim();
+    const key = query.toLowerCase();
+    if (query && !seen.has(key)) {
+      seen.add(key);
+      out.push(query);
+    }
+  }
+  return out.slice(0, MAX_NOTION_PAGES);
+}
+
+/** Search each query, read the best-matching page's content for the assistant. */
+export async function buildNotionContext(queries: string[]): Promise<string> {
+  if (!queries.length || !(await notionConnected())) return "";
+  const parts: string[] = [];
+
+  for (const query of queries) {
+    try {
+      const hits = await searchNotion(query, 10);
+      const pages = hits.filter((h) => h.type === "page");
+      if (!pages.length) {
+        parts.push(`NOTION: страница «${query}» не найдена`);
+        continue;
+      }
+      const q = query.toLowerCase();
+      const best =
+        pages.find((p) => p.title.toLowerCase() === q) ??
+        pages.filter((p) => p.title.toLowerCase().includes(q)).sort((a, b) => a.title.length - b.title.length)[0] ??
+        pages[0];
+      const { title, markdown } = await pageContent(best.id);
+      parts.push(
+        markdown
+          ? `NOTION «${title}»:\n${markdown.slice(0, 6000)}`
+          : `NOTION «${title}»: страница пуста`,
+      );
+    } catch (e) {
+      parts.push(`NOTION «${query}»: не удалось прочитать (${(e as Error).message})`);
+    }
+  }
+
+  return parts.join("\n\n");
+}
+
+/** Auto-detect Notion page titles mentioned in the text and read their content.
+ *  Skips titles already requested explicitly via /notion (`exclude`). */
+export async function buildNotionAutoContext(text: string, exclude: string[] = []): Promise<string> {
+  if (!(await notionConnected())) return "";
+  let recent: { id: string; title: string; type: string }[];
+  try {
+    recent = await searchNotion("", 30);
+  } catch {
+    return "";
+  }
+
+  const lower = text.toLowerCase();
+  const skip = new Set(exclude.map((e) => e.toLowerCase()));
+  const seen = new Set<string>();
+  const matched: { id: string; title: string }[] = [];
+
+  for (const p of recent) {
+    const title = p.title.trim();
+    // Ignore very short/placeholder titles — too likely to match by accident.
+    if (p.type !== "page" || title.length < 4 || title === "Без названия") continue;
+    const key = title.toLowerCase();
+    if (skip.has(key) || seen.has(key)) continue;
+    if (lower.includes(key)) {
+      seen.add(key);
+      matched.push({ id: p.id, title });
+    }
+  }
+
+  const parts: string[] = [];
+  for (const p of matched.slice(0, MAX_NOTION_PAGES)) {
+    try {
+      const { title, markdown } = await pageContent(p.id);
+      if (markdown) parts.push(`NOTION «${title}»:\n${markdown.slice(0, 6000)}`);
+    } catch {
+      /* skip unreadable pages silently in auto-mode */
     }
   }
 
