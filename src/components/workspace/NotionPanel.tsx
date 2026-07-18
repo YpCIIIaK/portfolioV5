@@ -39,12 +39,35 @@ export function NotionPanel() {
     }
   }, []);
 
+  // Handle the OAuth callback result (?notion=connected|error|forbidden&reason=…).
+  const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const res = params.get("notion");
+    if (!res) return;
+    const reason = params.get("reason");
+    // Clean the URL and force a fresh status fetch.
+    params.delete("notion"); params.delete("reason");
+    const qs = params.toString();
+    window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    invalidate("notion:status");
+    let cancelled = false;
+    (async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      if (res === "connected") setBanner({ kind: "ok", text: "Notion подключён." });
+      else if (res === "forbidden") setBanner({ kind: "err", text: "Только владелец может подключать Notion." });
+      else setBanner({ kind: "err", text: "Не удалось подключить Notion" + (reason ? `: ${decodeURIComponent(reason)}` : ".") });
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     if (!owner || getCached("notion:status")) return;
     let cancelled = false;
     (async () => { await Promise.resolve(); if (!cancelled) loadStatus(); })();
     return () => { cancelled = true; };
-  }, [owner, loadStatus]);
+  }, [owner, loadStatus, banner]);
 
   if (!owner) {
     return (
@@ -84,6 +107,7 @@ export function NotionPanel() {
         <a href="/api/notion/auth" className="inline-flex items-center gap-2 rounded bg-vsc-accent px-3 py-2 text-[13px] text-white hover:opacity-90">
           <Link2 size={16} /> Подключить Notion
         </a>
+        {banner && <p className={`mt-3 text-[13px] ${banner.kind === "ok" ? "text-vsc-green" : "text-vsc-yellow"}`}>{banner.text}</p>}
         {error && <p className="mt-3 text-[13px] text-vsc-yellow">{error}</p>}
       </div>
     );

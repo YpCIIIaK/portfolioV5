@@ -27,7 +27,9 @@ export async function GET(req: Request) {
     const token = await exchangeCode(code, `${url.origin}/api/notion/callback`);
     await saveIntegration(token);
     return NextResponse.redirect(home + "&notion=connected");
-  } catch {
-    return NextResponse.redirect(home + "&notion=error");
+  } catch (e) {
+    // Surface the reason (e.g. missing ws_integrations table) so the UI can show it.
+    const reason = encodeURIComponent((e as Error).message.slice(0, 200));
+    return NextResponse.redirect(home + "&notion=error&reason=" + reason);
   }
 }
