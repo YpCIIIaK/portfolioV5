@@ -118,6 +118,20 @@ create table if not exists public.ws_integrations (
 );
 alter table public.ws_integrations enable row level security;
 
+-- Assistant bot session ----------------------------------------------
+-- Conversation memory for the Telegram assistant bot: one row per chat.
+-- `messages` is a rolling window of recent {role,content} turns; `summary`
+-- is the compacted long-term memory produced by the /compact command.
+-- Written only by the server (service role).
+create table if not exists public.ws_bot_session (
+  chat_id    text primary key,
+  summary    text not null default '',
+  messages   jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+alter table public.ws_bot_session enable row level security;
+
 -- Visit analytics -----------------------------------------------------
 -- One row per visit beacon; aggregated by the owner-only /api/stats.
 create table if not exists public.ws_visits (
