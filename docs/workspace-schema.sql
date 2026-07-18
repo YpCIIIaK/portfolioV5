@@ -89,6 +89,23 @@ create table if not exists public.ws_guestbook (
   created_at timestamptz not null default now()
 );
 
+-- Integrations (OAuth tokens for third-party services) ----------------
+-- One row per provider ('notion', …). Holds the owner's OAuth access token
+-- and a free-form `config` (e.g. which Notion database backs "tasks").
+-- Written only by the server (service role) after the owner completes OAuth.
+create table if not exists public.ws_integrations (
+  provider       text primary key,      -- 'notion'
+  access_token   text not null,
+  workspace_id   text,
+  workspace_name text,
+  workspace_icon text,
+  bot_id         text,
+  config         jsonb not null default '{}'::jsonb,
+  updated_at     timestamptz not null default now(),
+  created_at     timestamptz not null default now()
+);
+alter table public.ws_integrations enable row level security;
+
 -- Visit analytics -----------------------------------------------------
 -- One row per visit beacon; aggregated by the owner-only /api/stats.
 create table if not exists public.ws_visits (

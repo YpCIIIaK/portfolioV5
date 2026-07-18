@@ -7,7 +7,7 @@ import { DEMO_TASKS, normalizeTask, type Priority, type Task, type TaskStatus } 
 import { priorityRank } from "./wsStyle";
 import { useCollection } from "./useCollection";
 
-export type TaskSource = "workspace" | "bitrix";
+export type TaskSource = "workspace" | "bitrix" | "notion";
 
 export interface UnifiedTask {
   id: string;
@@ -34,6 +34,16 @@ interface BxTask {
   createdDate?: string | null;
   groupName: string | null;
   url: string | null;
+}
+
+interface NtTask {
+  id: string;
+  title: string;
+  done: boolean;
+  due: string | null;
+  priority: Priority;
+  url: string | null;
+  createdAt: string | null;
 }
 
 function bitrixStatusToTaskStatus(statusCode: number): TaskStatus {
@@ -105,12 +115,33 @@ function mapBitrixTask(task: BxTask): UnifiedTask {
   };
 }
 
+function mapNotionTask(task: NtTask): UnifiedTask {
+  const status: TaskStatus = task.done ? "done" : "todo";
+  return {
+    id: `notion:${task.id}`,
+    sourceId: task.id,
+    source: "notion",
+    sourceLabel: "Notion",
+    title: task.title,
+    status,
+    done: task.done,
+    due: task.due,
+    priority: task.priority,
+    createdAt: task.createdAt ?? null,
+    url: task.url,
+    workspaceTask: null,
+    bitrixStatus: null,
+  };
+}
+
 export function useUnifiedTasks() {
   const collection = useCollection<Task>("tasks", DEMO_TASKS);
   const owner = useSession((s) => !!s.user?.owner);
   const [bitrixTasks, setBitrixTasks] = useState<BxTask[]>(() => (owner ? getCached<BxTask[]>("bitrix:tasks") ?? [] : []));
   const [bitrixLoading, setBitrixLoading] = useState(() => owner && !getCached<BxTask[]>("bitrix:tasks"));
   const [bitrixError, setBitrixError] = useState("");
+  const [notionTasks, setNotionTasks] = useState<NtTask[]>(() => (owner ? getCached<NtTask[]>("notion:tasks") ?? [] : []));
+  const [notionLoading, setNotionLoading] = useState(() => owner && !getCached<NtTask[]>("notion:tasks"));
 
   useEffect(() => {
     let cancelled = false;
@@ -151,10 +182,52 @@ export function useUnifiedTasks() {
     };
   }, [owner]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await Promise.resolve();
+      if (!owner) {
+        if (cancelled) return;
+        setNotionTasks([]);
+        setNotionLoading(false);
+        return;
+      }
+      const cached = getCached<NtTask[]>("notion:tasks");
+      if (cached) {
+        if (cancelled) return;
+        setNotionTasks(cached);
+        setNotionLoading(false);
+        return;
+      }
+      setNotionLoading(true);
+      try {
+        const res = await fetch("/api/notion?scope=tasks");
+        const json = await res.json().catch(() => ({}));
+        // Notion may be unconnected (502) — treat as simply "no tasks", not an error banner.
+        const items = res.ok ? ((json.items as NtTask[]) ?? []) : [];
+        if (cancelled) return;
+        setNotionTasks(items);
+        setCached("notion:tasks", items);
+      } catch {
+        if (!cancelled) setNotionTasks([]);
+      } finally {
+        if (!cancelled) setNotionLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [owner]);
+
   const workspaceTasks = useMemo(() => collection.items.map(normalizeTask), [collection.items]);
   const unified = useMemo(
-    () => [...workspaceTasks.map(mapWorkspaceTask), ...bitrixTasks.map(mapBitrixTask)].sort(sortUnifiedTasks),
-    [workspaceTasks, bitrixTasks],
+    () =>
+      [
+        ...workspaceTasks.map(mapWorkspaceTask),
+        ...bitrixTasks.map(mapBitrixTask),
+        ...notionTasks.map(mapNotionTask),
+      ].sort(sortUnifiedTasks),
+    [workspaceTasks, bitrixTasks, notionTasks],
   );
 
   return {
@@ -163,8 +236,10 @@ export function useUnifiedTasks() {
     bitrixTasks,
     bitrixLoading,
     bitrixError,
+    notionTasks,
+    notionLoading,
     unified,
     unifiedOpen: unified.filter((task) => !task.done),
-    loading: collection.loading || bitrixLoading,
+    loading: collection.loading || bitrixLoading || notionLoading,
   };
 }

@@ -49,6 +49,28 @@ GitHub OAuth App с прод-callback `https://твой-домен/api/auth/call
 Без этих переменных вкладка показывает демо-письма. Доступ — только владелец
 (`GET /api/mail/messages` за `requireOwner()`); пароль живёт лишь на сервере.
 
+## Notion (OAuth, опционально)
+
+Вкладка **Notion** ищет и читает страницы, тянет задачи из выбранной базы (они
+попадают в общий список задач и в сводку ассистента) и создаёт страницы/заметки.
+
+1. **Публичная интеграция** — https://www.notion.so/my-integrations → *New integration*,
+   тип **Public**. В настройках OAuth укажи Redirect URI
+   `https://твой-домен/api/notion/callback` (локально `http://localhost:3000/api/notion/callback`).
+2. Скопируй **OAuth client id / secret** → `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET` в `.env`.
+   Нужен настроенный Supabase (токен владельца хранится в таблице `ws_integrations`).
+3. Запусти [docs/workspace-schema.sql](./workspace-schema.sql) заново — он создаст
+   таблицу `ws_integrations` (безопасно для существующих БД).
+4. Открой вкладку **Notion** → **Подключить Notion** → выбери рабочее пространство и
+   страницы, к которым дать доступ. В самом Notion страницу/базу тоже нужно
+   поделить с интеграцией (⋯ → **Connections**), иначе она их не увидит.
+5. Во вкладке **Задачи · базы** отметь базу как источник задач — её строки
+   появятся в общем списке задач.
+
+Токен неистекающий, лежит только на сервере (service-role Supabase). Кнопка
+**Отключить** удаляет строку `ws_integrations` и забывает токен. Доступ ко всем
+`/api/notion/*` — только владелец (`requireOwner()`).
+
 ## Проверка
 
 - `GET /api/auth/me` → `{ "user": null, "configured": true }` после настройки OAuth.

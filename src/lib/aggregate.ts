@@ -12,6 +12,7 @@ import { bitrixConfigured, fetchTasks } from "@/lib/bitrix";
 import { telegramConfigured, fetchDialogs } from "@/lib/telegram";
 import { mailConfigured, fetchInbox } from "@/lib/mail-server";
 import { fetchNews, formatNewsContext } from "@/lib/news";
+import { notionContext } from "@/lib/notion";
 
 interface WsTask { title: string; due: string | null; priority: string; done: boolean }
 interface WsEvent { title: string; date: string; time: string | null }
@@ -110,6 +111,11 @@ async function build(): Promise<string> {
       }
     } catch { /* skip */ }
   }
+
+  try {
+    const nt = await notionContext();
+    if (nt) parts.push(nt);
+  } catch { /* skip */ }
 
   try {
     const news = await fetchNews();
