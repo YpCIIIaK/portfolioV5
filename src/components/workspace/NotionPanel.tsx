@@ -7,7 +7,7 @@ import { useSession } from "@/lib/session";
 import { MiniMarkdown } from "./MiniMarkdown";
 
 interface NotionConfig { tasksDbId?: string; donePropName?: string; duePropName?: string; priorityPropName?: string }
-interface Status { oauthConfigured: boolean; connected: boolean; workspaceName: string | null; workspaceIcon: string | null; config: NotionConfig }
+interface Status { oauthConfigured: boolean; connected: boolean; mode: "token" | "oauth" | null; workspaceName: string | null; workspaceIcon: string | null; config: NotionConfig }
 interface SearchItem { id: string; title: string; url: string | null; type: "page" | "database"; icon: string | null; editedAt: string | null }
 interface Db { id: string; title: string; url: string | null }
 interface PageDoc { title: string; url: string | null; markdown: string }
@@ -59,13 +59,16 @@ export function NotionPanel() {
     return <div className="mx-auto max-w-3xl px-8 py-5 text-[13px] text-vsc-muted">Загрузка Notion…</div>;
   }
 
-  if (!status.oauthConfigured) {
+  // Not configured at all (neither an internal token nor OAuth) and nothing connected.
+  if (!status.connected && !status.oauthConfigured) {
     return (
       <div className="mx-auto max-w-3xl px-8 py-5">
         <h1 className="mb-3 flex items-center gap-2 text-[18px] font-semibold text-vsc-bright"><BookText size={18} /> Notion</h1>
         <p className="text-[13px] leading-relaxed text-vsc-muted">
-          Notion OAuth не настроен. Заполни <code className="rounded bg-vsc-line/60 px-1">NOTION_CLIENT_ID</code> и
-          {" "}<code className="rounded bg-vsc-line/60 px-1">NOTION_CLIENT_SECRET</code> (и Supabase) — см. docs/workspace.md.
+          Notion не настроен. Самый простой путь — вставить внутренний токен интеграции в
+          {" "}<code className="rounded bg-vsc-line/60 px-1">NOTION_TOKEN</code>, либо настроить OAuth
+          {" "}(<code className="rounded bg-vsc-line/60 px-1">NOTION_CLIENT_ID</code> / <code className="rounded bg-vsc-line/60 px-1">NOTION_CLIENT_SECRET</code>).
+          Подробно — в docs/workspace.md.
         </p>
       </div>
     );
@@ -151,9 +154,13 @@ function NotionConnected({ status, tab, setTab, onChange }: { status: Status; ta
           <BookText size={18} /> Notion
           {status.workspaceName && <span className="text-[13px] font-normal text-vsc-muted">· {status.workspaceIcon ?? ""} {status.workspaceName}</span>}
         </h1>
-        <button onClick={disconnect} title="Отключить Notion" className="flex items-center gap-1 rounded p-1.5 text-[12px] text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text">
-          <Unlink size={14} /> Отключить
-        </button>
+        {status.mode === "oauth" ? (
+          <button onClick={disconnect} title="Отключить Notion" className="flex items-center gap-1 rounded p-1.5 text-[12px] text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text">
+            <Unlink size={14} /> Отключить
+          </button>
+        ) : (
+          <span className="text-[11px] text-vsc-muted">по токену (NOTION_TOKEN)</span>
+        )}
       </div>
 
       <div className="mb-4 flex gap-1 border-b border-vsc-line">

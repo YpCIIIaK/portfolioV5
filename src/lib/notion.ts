@@ -1,10 +1,12 @@
 /**
- * Notion integration — OAuth (public integration) + a tiny REST client.
+ * Notion integration — two ways to connect, plus a tiny REST client:
+ *   1) Internal integration token (NOTION_TOKEN) — simplest: paste the token
+ *      from notion.so/my-integrations. Connected immediately, no OAuth.
+ *   2) Public OAuth app (NOTION_CLIENT_ID/SECRET) — the owner clicks "Connect"
+ *      and picks pages; the token is stored in Supabase (`ws_integrations`).
  *
- * Single-owner app: the owner connects their Notion workspace once via OAuth;
- * we persist the (non-expiring) access token in Supabase (`ws_integrations`,
- * provider='notion') with the service-role key, so it never touches the client.
- * Everything here is server-side only.
+ * Either way the integration must be shared with each page/database in Notion
+ * (⋯ → Connections) — that's Notion's access model, not ours. Server-side only.
  */
 
 import { supabaseConfigured, sbSelect, sbInsert, sbDelete } from "@/lib/supabase";
@@ -14,10 +16,22 @@ const API = "https://api.notion.com/v1";
 const NOTION_VERSION = "2022-06-28";
 const CLIENT_ID = process.env.NOTION_CLIENT_ID;
 const CLIENT_SECRET = process.env.NOTION_CLIENT_SECRET;
+const INTERNAL_TOKEN = process.env.NOTION_TOKEN;
 
 /** OAuth app credentials present — the "Connect Notion" button can be shown. */
 export function notionOAuthConfigured(): boolean {
   return !!CLIENT_ID && !!CLIENT_SECRET && supabaseConfigured();
+}
+
+/** Any connection method is available (token or OAuth). */
+export function notionConfigured(): boolean {
+  return !!INTERNAL_TOKEN || notionOAuthConfigured();
+}
+
+/** The token to authenticate calls: internal token wins, else the stored OAuth one. */
+async function getToken(): Promise<string | null> {
+  if (INTERNAL_TOKEN) return INTERNAL_TOKEN;
+  return (await getIntegration())?.access_token ?? null;
 }
 
 /* ---- token storage (ws_integrations) ---------------------------------- */
@@ -55,14 +69,16 @@ async function getIntegration(force = false): Promise<IntegrationRow | null> {
   return row;
 }
 
-/** Owner has completed OAuth and we hold a usable token. */
+/** We hold a usable token (internal or OAuth). */
 export async function notionConnected(): Promise<boolean> {
-  return !!(await getIntegration());
+  return !!(await getToken());
 }
 
 export interface NotionStatus {
   oauthConfigured: boolean;
   connected: boolean;
+  /** "token" = internal NOTION_TOKEN; "oauth" = stored OAuth token. */
+  mode: "token" | "oauth" | null;
   workspaceName: string | null;
   workspaceIcon: string | null;
   config: NotionConfig;
@@ -70,10 +86,12 @@ export interface NotionStatus {
 
 export async function notionStatus(): Promise<NotionStatus> {
   const row = await getIntegration();
+  const connected = !!INTERNAL_TOKEN || !!row;
   return {
     oauthConfigured: notionOAuthConfigured(),
-    connected: !!row,
-    workspaceName: row?.workspace_name ?? null,
+    connected,
+    mode: INTERNAL_TOKEN ? "token" : row ? "oauth" : null,
+    workspaceName: INTERNAL_TOKEN ? "по токену" : row?.workspace_name ?? null,
     workspaceIcon: row?.workspace_icon ?? null,
     config: row?.config ?? {},
   };
@@ -107,15 +125,20 @@ export async function disconnectNotion(): Promise<void> {
 }
 
 export async function updateNotionConfig(patch: NotionConfig): Promise<NotionConfig> {
+  if (!supabaseConfigured()) throw new Error("Настройки Notion хранятся в Supabase — он не настроен");
   const row = await getIntegration(true);
-  if (!row) throw new Error("Notion не подключён");
-  const config = { ...(row.config ?? {}), ...patch };
+  const config = { ...(row?.config ?? {}), ...patch };
   // Drop empty-string overrides so auto-detection kicks back in.
   for (const k of Object.keys(config) as (keyof NotionConfig)[]) {
     if (config[k] === "" || config[k] == null) delete config[k];
   }
-  const { sbUpdate } = await import("@/lib/supabase");
-  await sbUpdate("ws_integrations", "provider=eq.notion", { config, updated_at: new Date().toISOString() });
+  if (row) {
+    const { sbUpdate } = await import("@/lib/supabase");
+    await sbUpdate("ws_integrations", "provider=eq.notion", { config, updated_at: new Date().toISOString() });
+  } else {
+    // Token mode: no OAuth row yet — create one just to hold the config.
+    await sbInsert("ws_integrations", { provider: "notion", access_token: INTERNAL_TOKEN ?? "", config });
+  }
   tokenCache = null;
   return config;
 }
@@ -162,12 +185,12 @@ export async function exchangeCode(code: string, redirectUri: string): Promise<T
 /* ---- authenticated API calls ------------------------------------------ */
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const row = await getIntegration();
-  if (!row) throw new Error("Notion не подключён");
+  const token = await getToken();
+  if (!token) throw new Error("Notion не подключён");
   const res = await fetch(`${API}${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${row.access_token}`,
+      Authorization: `Bearer ${token}`,
       "Notion-Version": NOTION_VERSION,
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
