@@ -18,7 +18,8 @@ import { GuestBanner } from "./GuestBanner";
  * править руками, пересобирать ИИ и сохранять снапшоты состояния (ws_brain).
  */
 
-const CATEGORIES: { key: BrainCategory; label: string; color: string }[] = [
+/** Базовые категории с фиксированными цветами; всё прочее ИИ добавляет сам. */
+const CATEGORIES: { key: string; label: string; color: string }[] = [
   { key: "project", label: "Проекты", color: "#c586c0" },
   { key: "work", label: "Работа", color: "#4fc1ff" },
   { key: "idea", label: "Идеи", color: "#dcdcaa" },
@@ -29,7 +30,18 @@ const CATEGORIES: { key: BrainCategory; label: string; color: string }[] = [
   { key: "other", label: "Прочее", color: "#858585" },
 ];
 
-const catColor = (c: BrainCategory) => CATEGORIES.find((x) => x.key === c)?.color ?? "#858585";
+/** Палитра для категорий, которых нет в базовом списке, — цвет стабилен по имени. */
+const EXTRA_COLORS = ["#d16969", "#b5cea8", "#569cd6", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#e06c75"];
+
+function catColor(c: BrainCategory): string {
+  const base = CATEGORIES.find((x) => x.key === c);
+  if (base) return base.color;
+  let h = 0;
+  for (let i = 0; i < c.length; i++) h = (h * 31 + c.charCodeAt(i)) >>> 0;
+  return EXTRA_COLORS[h % EXTRA_COLORS.length];
+}
+
+const catLabel = (c: BrainCategory) => CATEGORIES.find((x) => x.key === c)?.label ?? c;
 const radius = (importance: number) => 6 + Math.max(1, Math.min(5, importance)) * 3;
 
 /** Внутренние вкладки-источники: panel → id файла в IDE. */
@@ -598,14 +610,16 @@ export function BrainPanel() {
               Пусто. Нажми «Собрать мозг» — ИИ прочитает задачи, заметки, календарь, почту и Notion и построит граф. Или добавь узлы вручную.
             </div>
           )}
-          {/* легенда */}
-          <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap gap-x-3 gap-y-1 rounded bg-black/25 px-2 py-1">
-            {CATEGORIES.map((c) => (
-              <span key={c.key} className="flex items-center gap-1 text-[10.5px] text-vsc-muted">
-                <span className="h-2 w-2 rounded-full" style={{ background: c.color }} /> {c.label}
-              </span>
-            ))}
-          </div>
+          {/* легенда: только категории, реально присутствующие в графе */}
+          {graph.nodes.length > 0 && (
+            <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap gap-x-3 gap-y-1 rounded bg-black/25 px-2 py-1">
+              {[...new Set(graph.nodes.map((n) => n.category))].map((c) => (
+                <span key={c} className="flex items-center gap-1 text-[10.5px] text-vsc-muted">
+                  <span className="h-2 w-2 rounded-full" style={{ background: catColor(c) }} /> {catLabel(c)}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* инспектор узла */}
@@ -627,14 +641,19 @@ export function BrainPanel() {
               className="rounded border border-vsc-line bg-transparent px-2 py-1.5 text-[13px] text-vsc-bright outline-none focus:border-vsc-accent disabled:opacity-60"
             />
             <div className="flex gap-2">
-              <select
+              <input
+                list="brain-categories"
                 value={selected.category}
-                onChange={(e) => patchNode(selected.id, { category: e.target.value as BrainCategory })}
+                onChange={(e) => patchNode(selected.id, { category: e.target.value.trim().toLowerCase().slice(0, 30) || "other" })}
                 disabled={demo}
-                className="flex-1 rounded border border-vsc-line bg-vsc-sidebar px-2 py-1.5 text-[12.5px] text-vsc-text outline-none disabled:opacity-60"
-              >
-                {CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-              </select>
+                placeholder="категория"
+                className="min-w-0 flex-1 rounded border border-vsc-line bg-vsc-sidebar px-2 py-1.5 text-[12.5px] text-vsc-text outline-none focus:border-vsc-accent disabled:opacity-60"
+              />
+              <datalist id="brain-categories">
+                {[...new Set([...CATEGORIES.map((c) => c.key), ...graph.nodes.map((n) => n.category)])].map((c) => (
+                  <option key={c} value={c}>{catLabel(c)}</option>
+                ))}
+              </datalist>
               <label className="flex items-center gap-1.5 text-[12px] text-vsc-muted" title="Важность 1–5">
                 ★
                 <input

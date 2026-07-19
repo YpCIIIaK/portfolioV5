@@ -7,6 +7,7 @@ import { z } from "zod";
  * лежат в ws_brain (CRUD через общий /api/workspace/[kind]).
  */
 
+/** Базовые категории — у них фиксированные цвета в UI. Модель может добавлять свои. */
 export const BRAIN_CATEGORIES = ["work", "project", "idea", "people", "finance", "learn", "life", "other"] as const;
 
 const brainSource = z.object({
@@ -18,7 +19,8 @@ const brainSource = z.object({
 const brainNode = z.object({
   id: z.string().max(64),
   label: z.string().max(200),
-  category: z.enum(BRAIN_CATEGORIES).catch("other"),
+  // Свободная строка: базовые категории + модель может завести свою.
+  category: z.string().max(30).catch("other").default("other"),
   importance: z.number().min(1).max(5).catch(3),
   summary: z.string().max(1000).default(""),
   source: brainSource.nullable().default(null),
@@ -47,7 +49,8 @@ export function buildBrainPrompt(context: string): string {
     "Ниже полный снимок данных пользователя. Выдели сущности (проекты, задачи, люди, идеи, финансы, события, темы) как узлы и осмысленные связи между ними как рёбра.",
     "",
     "Требования:",
-    "- 12–40 узлов. Каждый узел: короткий label, категория из списка work|project|idea|people|finance|learn|life|other, importance 1–5 (5 = критично), summary в 1–2 предложения, source — откуда взято.",
+    "- 12–40 узлов. Каждый узел: короткий label, категория, importance 1–5 (5 = критично), summary в 1–2 предложения, source — откуда взято.",
+    "- Категории: предпочитай базовые work|project|idea|people|finance|learn|life|other. Если сущность явно не влезает — придумай СВОЮ короткую категорию (одно слово латиницей, напр. health, travel) и используй её последовательно для похожих узлов.",
     "- source.panel — одна из: tasks, notes, calendar, mail, telegram, notion, bitrix, projects, subscriptions, news, other; source.ref — заголовок/название исходной записи.",
     "- Рёбра соединяют реально связанные вещи (проект ↔ его задачи, человек ↔ переписка, подписка ↔ инструмент). Не оставляй изолированных узлов, если связь очевидна. label ребра — краткая суть связи.",
     "- id — короткие slug-строки латиницей (n1, n2 … или осмысленные).",
@@ -144,7 +147,8 @@ export function buildBrainAugmentPrompt(shortcuts: string, context: string): str
     "",
     "Требования:",
     "- Верни только новые узлы (0–12 штук). НЕ повторяй и НЕ пересказывай существующие: если сущность уже есть в шорткатах (даже под чуть другим названием) — не добавляй её.",
-    "- Каждый новый узел: короткий label, категория work|project|idea|people|finance|learn|life|other, importance 1–5, summary в 1–2 предложения, source (panel: tasks|notes|calendar|mail|telegram|notion|bitrix|projects|subscriptions|news|other, ref: заголовок записи).",
+    "- Каждый новый узел: короткий label, категория, importance 1–5, summary в 1–2 предложения, source (panel: tasks|notes|calendar|mail|telegram|notion|bitrix|projects|subscriptions|news|other, ref: заголовок записи).",
+    "- Категории: сперва используй те, что уже есть в шорткатах, затем базовые work|project|idea|people|finance|learn|life|other; если ничего не подходит — придумай свою (одно слово латиницей).",
     "- id новых узлов — новые slug-строки (nb1, nb2, …), не совпадающие с существующими id.",
     "- Рёбра соединяют новые узлы с существующими (используй их id из шорткатов) и между собой. Не оставляй новый узел без связей, если связь очевидна.",
     "- Если добавлять нечего — верни {\"nodes\":[],\"edges\":[]}.",

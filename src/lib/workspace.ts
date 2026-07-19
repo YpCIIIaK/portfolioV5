@@ -78,7 +78,8 @@ export type Kind = "notes" | "tasks" | "events" | "projects" | "subscriptions" |
 
 /* ---- Second brain: AI-собранный граф знаний -------------------------- */
 
-export type BrainCategory = "work" | "project" | "idea" | "people" | "finance" | "learn" | "life" | "other";
+/** Базовые категории имеют фиксированные цвета; ИИ может добавлять свои (любая строка). */
+export type BrainCategory = string;
 
 export interface BrainSource {
   panel: string; // tasks | notes | calendar | mail | telegram | notion | bitrix | projects | subscriptions | news | other
