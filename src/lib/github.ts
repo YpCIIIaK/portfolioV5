@@ -96,3 +96,59 @@ export async function listRepos(limit = 20): Promise<RepoBrief[]> {
   const rows = await gh<RepoBrief[]>(`/user/repos?sort=pushed&per_page=${Math.min(Math.max(limit, 1), 100)}&affiliation=owner`);
   return rows;
 }
+
+export interface RepoForImport {
+  name: string;
+  full_name: string;
+  html_url: string;
+  description: string | null;
+  language: string | null;
+  topics: string[];
+  stars: number;
+  private: boolean;
+  fork: boolean;
+  archived: boolean;
+  pushed_at: string;
+}
+
+interface RepoRaw {
+  name: string;
+  full_name: string;
+  html_url: string;
+  description: string | null;
+  language: string | null;
+  topics?: string[];
+  stargazers_count: number;
+  private: boolean;
+  fork: boolean;
+  archived: boolean;
+  pushed_at: string;
+}
+
+/**
+ * Full list of the owner's repos for the "import as project" picker — richer
+ * than listRepos (language, topics, stars) and paginated to cover everything.
+ */
+export async function listReposForImport(): Promise<RepoForImport[]> {
+  const out: RepoForImport[] = [];
+  for (let page = 1; page <= 5; page++) {
+    const rows = await gh<RepoRaw[]>(`/user/repos?sort=pushed&per_page=100&page=${page}&affiliation=owner`);
+    for (const r of rows) {
+      out.push({
+        name: r.name,
+        full_name: r.full_name,
+        html_url: r.html_url,
+        description: r.description,
+        language: r.language,
+        topics: r.topics ?? [],
+        stars: r.stargazers_count,
+        private: r.private,
+        fork: r.fork,
+        archived: r.archived,
+        pushed_at: r.pushed_at,
+      });
+    }
+    if (rows.length < 100) break;
+  }
+  return out;
+}

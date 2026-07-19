@@ -6,6 +6,7 @@ import { useSession } from "@/lib/session";
 import { wsList, wsCreate, wsUpdate, wsDelete, DEMO_PROJECTS, type Project } from "@/lib/workspace";
 import { useTr } from "@/lib/i18n";
 import { GuestBanner } from "./GuestBanner";
+import { GithubImportModal } from "./GithubImportModal";
 
 const EMPTY = { title: "", description: "", repo_url: "", tags: "", is_public: true };
 
@@ -18,7 +19,10 @@ export function ProjectsPanel() {
   const [form, setForm] = useState<typeof EMPTY>(EMPTY);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [error, setError] = useState("");
+
+  const existingUrls = new Set(items.map((p) => p.repo_url).filter(Boolean) as string[]);
 
   /** 401 = протухла сессия владельца: без этого запись молча пропадала. */
   const explain = (e: unknown): string =>
@@ -100,15 +104,31 @@ export function ProjectsPanel() {
         <div className="mb-4 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-[12.5px] text-red-300">{error}</div>
       )}
 
+      {showImport && (
+        <GithubImportModal
+          existingUrls={existingUrls}
+          onClose={() => setShowImport(false)}
+          onImported={(created) => {
+            setItems((xs) => [...created, ...xs]);
+            setShowImport(false);
+          }}
+        />
+      )}
+
       <div className="mb-4 flex items-center justify-between">
         <h1 className="flex items-center gap-2 text-[18px] font-semibold text-vsc-bright">
           <FolderGit2 size={18} /> {tr("Проекты")}
           {demo && <span className="rounded bg-vsc-line px-1.5 py-0.5 text-[11px] font-normal text-vsc-muted">демо</span>}
         </h1>
         {owner && !showForm && (
-          <button onClick={startAdd} className="flex items-center gap-1.5 rounded bg-vsc-accent px-3 py-1.5 text-[12px] text-white hover:opacity-90">
-            <Plus size={14} /> {tr("Добавить")}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[12px] text-vsc-text hover:bg-vsc-hover">
+              <FolderGit2 size={14} /> {tr("Импорт из GitHub")}
+            </button>
+            <button onClick={startAdd} className="flex items-center gap-1.5 rounded bg-vsc-accent px-3 py-1.5 text-[12px] text-white hover:opacity-90">
+              <Plus size={14} /> {tr("Добавить")}
+            </button>
+          </div>
         )}
       </div>
 
