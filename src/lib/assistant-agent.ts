@@ -17,9 +17,11 @@ import {
   type ToolCall,
   type AgentMessage,
 } from "@/lib/ai";
-import { supabaseConfigured, sbSelect, sbInsert, sbUpdate } from "@/lib/supabase";
+import { supabaseConfigured, sbSelect, sbInsert, sbUpdate, sbDelete } from "@/lib/supabase";
 import { notionConnected, searchNotion, pageContent, createPage } from "@/lib/notion";
 import { telegramConfigured, fetchDialogs, fetchMessageHistory } from "@/lib/telegram";
+import { githubConfigured, createRepo, createIssue, listRepos } from "@/lib/github";
+import { webFetch, webSearch } from "@/lib/web";
 import type { Priority } from "@/lib/workspace";
 
 const MAX_STEPS = 5;
@@ -245,6 +247,217 @@ const TOOLS: Tool[] = [
       return `Страница «${title}» создана в «${parent.title}»${res.url ? ` (${res.url})` : ""}.`;
     },
   },
+  {
+    def: {
+      name: "create_github_repo",
+      description: "Создать новый репозиторий на GitHub от имени владельца. По умолчанию приватный, с README.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Имя репозитория (без пробелов)." },
+          description: { type: "string", description: "Описание (опционально)." },
+          private: { type: "boolean", description: "Приватный (по умолчанию true)." },
+        },
+        required: ["name"],
+      },
+    },
+    async run(a) {
+      if (!githubConfigured()) return "GitHub не настроен (нет GITHUB_PAT).";
+      const name = str(a.name);
+      if (!name) return "Не указано имя репозитория.";
+      const repo = await createRepo({
+        name,
+        description: str(a.description),
+        isPrivate: a.private === undefined ? true : !!a.private,
+      });
+      return `Репозиторий создан: ${repo.full_name} (${repo.private ? "приватный" : "публичный"}) — ${repo.html_url}`;
+    },
+  },
+  {
+    def: {
+      name: "create_github_issue",
+      description: "Создать issue в репозитории на GitHub.",
+      parameters: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "Имя репозитория («name» или «owner/name»)." },
+          title: { type: "string" },
+          body: { type: "string", description: "Текст issue (опционально)." },
+        },
+        required: ["repo", "title"],
+      },
+    },
+    async run(a) {
+      if (!githubConfigured()) return "GitHub не настроен (нет GITHUB_PAT).";
+      const repo = str(a.repo);
+      const title = str(a.title);
+      if (!repo || !title) return "Нужны репозиторий и заголовок.";
+      const issue = await createIssue({ repo, title, body: str(a.body) });
+      return `Issue #${issue.number} создан: «${issue.title}» — ${issue.html_url}`;
+    },
+  },
+  {
+    def: {
+      name: "list_github_repos",
+      description: "Показать репозитории владельца (недавно обновлённые сверху).",
+      parameters: {
+        type: "object",
+        properties: { limit: { type: "number", description: "Сколько (по умолчанию 20, макс 100)." } },
+      },
+    },
+    async run(a) {
+      if (!githubConfigured()) return "GitHub не настроен (нет GITHUB_PAT).";
+      const repos = await listRepos(Number(a.limit) || 20);
+      if (!repos.length) return "Репозиториев нет.";
+      return repos
+        .map((r) => `- ${r.full_name}${r.private ? " [приват]" : ""}${r.description ? ` — ${r.description}` : ""}`)
+        .join("\n");
+    },
+  },
+  {
+    def: {
+      name: "web_search",
+      description: "Поиск в интернете. Возвращает список результатов с заголовками, ссылками и сниппетами.",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string", description: "Поисковый запрос." } },
+        required: ["query"],
+      },
+    },
+    async run(a) {
+      const q = str(a.query);
+      if (!q) return "Пустой запрос.";
+      return webSearch(q);
+    },
+  },
+  {
+    def: {
+      name: "web_fetch",
+      description: "Прочитать содержимое веб-страницы по URL как чистый текст.",
+      parameters: {
+        type: "object",
+        properties: { url: { type: "string", description: "Полный http(s) URL." } },
+        required: ["url"],
+      },
+    },
+    async run(a) {
+      const url = str(a.url);
+      if (!url) return "Не указан URL.";
+      return webFetch(url);
+    },
+  },
+  {
+    def: {
+      name: "delete_task",
+      description: "Удалить задачу безвозвратно. Ищет задачу по названию.",
+      parameters: {
+        type: "object",
+        properties: { title: { type: "string" } },
+        required: ["title"],
+      },
+    },
+    async run(a) {
+      const title = str(a.title);
+      if (!supabaseConfigured()) return "Supabase не настроен.";
+      if (!title) return "Не указано название.";
+      const rows = await sbSelect<{ id: string; title: string }>(
+        "ws_tasks",
+        `select=id,title&title=ilike.*${encodeURIComponent(title)}*&limit=2`,
+      );
+      if (!rows.length) return `Задача «${title}» не найдена.`;
+      if (rows.length > 1) return `Нашлось несколько задач по «${title}» — уточни название.`;
+      await sbDelete("ws_tasks", `id=eq.${rows[0].id}`);
+      return `Задача «${rows[0].title}» удалена.`;
+    },
+  },
+  {
+    def: {
+      name: "delete_event",
+      description: "Удалить событие календаря безвозвратно. Ищет событие по названию.",
+      parameters: {
+        type: "object",
+        properties: { title: { type: "string" } },
+        required: ["title"],
+      },
+    },
+    async run(a) {
+      const title = str(a.title);
+      if (!supabaseConfigured()) return "Supabase не настроен.";
+      if (!title) return "Не указано название.";
+      const rows = await sbSelect<{ id: string; title: string }>(
+        "ws_events",
+        `select=id,title&title=ilike.*${encodeURIComponent(title)}*&limit=2`,
+      );
+      if (!rows.length) return `Событие «${title}» не найдено.`;
+      if (rows.length > 1) return `Нашлось несколько событий по «${title}» — уточни название.`;
+      await sbDelete("ws_events", `id=eq.${rows[0].id}`);
+      return `Событие «${rows[0].title}» удалено.`;
+    },
+  },
+  {
+    def: {
+      name: "create_project",
+      description: "Добавить проект в раздел «Проекты».",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          description: { type: "string" },
+          repo_url: { type: "string", description: "Ссылка на репозиторий (опционально)." },
+          tags: { type: "string", description: "Теги через запятую (опционально)." },
+          is_public: { type: "boolean", description: "Публичный (по умолчанию true)." },
+        },
+        required: ["title"],
+      },
+    },
+    async run(a) {
+      const title = str(a.title);
+      if (!supabaseConfigured()) return "Supabase не настроен.";
+      if (!title) return "Пустое название проекта.";
+      await sbInsert("ws_projects", {
+        title: title.slice(0, 500),
+        description: str(a.description),
+        repo_url: str(a.repo_url) || null,
+        tags: str(a.tags),
+        is_public: a.is_public === undefined ? true : !!a.is_public,
+      });
+      return `Проект создан: «${title}».`;
+    },
+  },
+  {
+    def: {
+      name: "create_subscription",
+      description: "Добавить подписку в раздел «Подписки».",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Сервис (Netflix, Claude Pro…)." },
+          price: { type: "number" },
+          currency: { type: "string", description: "Символ валюты: ₽ $ € ₸ (по умолчанию ₽)." },
+          period: { type: "string", enum: ["monthly", "yearly"], description: "Период (по умолчанию monthly)." },
+          tier: { type: "string", description: "Тариф (опционально)." },
+          next_date: { type: "string", description: "Следующее списание YYYY-MM-DD (опционально)." },
+        },
+        required: ["name", "price"],
+      },
+    },
+    async run(a) {
+      const name = str(a.name);
+      if (!supabaseConfigured()) return "Supabase не настроен.";
+      if (!name) return "Не указан сервис.";
+      const period = a.period === "yearly" ? "yearly" : "monthly";
+      await sbInsert("ws_subscriptions", {
+        name: name.slice(0, 500),
+        price: Number(a.price) || 0,
+        currency: str(a.currency) || "₽",
+        period,
+        tier: str(a.tier),
+        description: "",
+        next_date: str(a.next_date) || null,
+      });
+      return `Подписка добавлена: «${name}».`;
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map((t) => [t.def.name, t]));
@@ -258,9 +471,10 @@ export function buildAssistantSystem(today: string, context: string, extra = "")
 Отвечай кратко, по делу, на русском. Если данных не хватает — используй инструменты, не выдумывай.
 
 У тебя есть ИНСТРУМЕНТЫ — вызывай их сам, когда нужно:
-- чтение: search_notion, read_notion_page, read_telegram_chat (для полного текста страниц и истории чатов — в сводке только заголовки);
-- запись: create_task, complete_task, create_event, create_note, create_notion_page.
-Меняй данные (создание/закрытие) только когда пользователь явно об этом просит. После действия коротко подтверди результат.
+- чтение: search_notion, read_notion_page, read_telegram_chat (для полного текста страниц и истории чатов — в сводке только заголовки); web_search, web_fetch (поиск и чтение страниц в интернете); list_github_repos;
+- запись в кабинет: create_task, complete_task, delete_task, create_event, delete_event, create_note, create_notion_page, create_project, create_subscription;
+- GitHub: create_github_repo, create_github_issue.
+Меняй данные, создавай репозитории/issue и удаляй что-либо ТОЛЬКО когда пользователь явно об этом просит. Удаление необратимо — если сомневаешься, переспроси. После действия коротко подтверди результат (для GitHub — дай ссылку).
 
 === АКТУАЛЬНЫЕ ДАННЫЕ ===
 ${context || "(пока пусто — источники не подключены или нет свежих данных)"}
