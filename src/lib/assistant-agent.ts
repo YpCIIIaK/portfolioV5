@@ -635,9 +635,20 @@ export interface AssistantResult {
   actions: string[];
 }
 
+export interface AssistantOptions {
+  /** Called right before a tool runs — для прогресса в долгих операциях. */
+  onToolStart?: (name: string, args: Record<string, unknown>) => Promise<void> | void;
+  /** Called after a tool finishes (ok=false, если инструмент упал). */
+  onToolEnd?: (name: string, ok: boolean) => Promise<void> | void;
+}
+
 /** Run the assistant with tools. Falls back to a plain completion if the model
  *  doesn't support function-calling. */
-export async function runAssistant(system: string, history: { role: "user" | "assistant"; content: string }[]): Promise<AssistantResult> {
+export async function runAssistant(
+  system: string,
+  history: { role: "user" | "assistant"; content: string }[],
+  opts: AssistantOptions = {},
+): Promise<AssistantResult> {
   const messages: AgentMessage[] = [{ role: "system", content: system }, ...history];
   const actions: string[] = [];
 
@@ -649,7 +660,13 @@ export async function runAssistant(system: string, history: { role: "user" | "as
       }
       messages.push(turn.raw);
       for (const call of turn.toolCalls) {
+        if (opts.onToolStart) {
+          let parsed: Record<string, unknown> = {};
+          try { parsed = JSON.parse(call.arguments || "{}"); } catch { /* аргументы разберёт runTool */ }
+          await opts.onToolStart(call.name, parsed);
+        }
         const result = await runTool(call);
+        await opts.onToolEnd?.(call.name, !result.log.startsWith("✗"));
         actions.push(result.log);
         messages.push({ role: "tool", tool_call_id: call.id, content: result.output });
       }
