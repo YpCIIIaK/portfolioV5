@@ -70,7 +70,7 @@ export function ProjectsPanel() {
   if (loading) return <p className="px-8 py-6 text-[13px] text-vsc-muted">{tr("Загрузка проектов…")}</p>;
 
   return (
-    <div className="mx-auto max-w-4xl px-8 py-6">
+    <div className="mx-auto max-w-6xl px-8 py-6">
       {!owner && <GuestBanner what={tr("проекты")} />}
 
       <div className="mb-4 flex items-center justify-between">

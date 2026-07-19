@@ -52,7 +52,7 @@ export function DiagramPanel() {
   }, [readonly, items, setItems]);
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-140px)] max-w-6xl gap-3 px-4 py-4">
+    <div className="flex h-[calc(100vh-140px)] gap-3 px-4 py-4">
       {/* document list */}
       <aside className="flex w-52 shrink-0 flex-col rounded-lg border border-vsc-line bg-vsc-sidebar">
         <div className="flex items-center justify-between px-3 py-2">

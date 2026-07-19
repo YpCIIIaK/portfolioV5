@@ -99,7 +99,7 @@ export function CalendarPanel() {
   const selLabel = selDate.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
 
   return (
-    <div className="mx-auto max-w-5xl px-8 py-4">
+    <div className="mx-auto max-w-7xl px-8 py-4">
       {readonly && <GuestBanner what="календарь" />}
 
       <div className="mb-3 flex items-center gap-2">

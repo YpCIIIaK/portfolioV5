@@ -102,7 +102,7 @@ export function SubscriptionsPanel() {
   const input = "w-full rounded border border-vsc-line bg-vsc-bg px-3 py-2 text-[13px] text-vsc-text outline-none focus:border-vsc-accent";
 
   return (
-    <div className="mx-auto max-w-4xl px-8 py-6">
+    <div className="mx-auto max-w-6xl px-8 py-6">
       {!owner && <GuestBanner what="подписки" />}
 
       <div className="mb-4 flex items-center justify-between">

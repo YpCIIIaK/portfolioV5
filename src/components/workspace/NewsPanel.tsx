@@ -118,7 +118,7 @@ function NewsDetail({ selected, onBack }: { selected: NewsSelection; onBack: () 
   const { kind, item } = selected;
 
   return (
-    <div className="mx-auto max-w-3xl px-8 py-6">
+    <div className="mx-auto max-w-5xl px-8 py-6">
       <button
         type="button"
         onClick={onBack}
@@ -174,7 +174,7 @@ export function NewsPanel() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-8 py-6">
+    <div className="mx-auto max-w-5xl px-8 py-6">
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <h1 className="flex items-center gap-2 text-[22px] font-semibold text-vsc-bright">

@@ -71,7 +71,7 @@ export function NotionPanel() {
 
   if (!owner) {
     return (
-      <div className="mx-auto max-w-3xl px-8 py-5">
+      <div className="mx-auto max-w-5xl px-8 py-5">
         <h1 className="mb-3 flex items-center gap-2 text-[18px] font-semibold text-vsc-bright"><BookText size={18} /> Notion</h1>
         <p className="text-[13px] text-vsc-muted">Интеграция с Notion доступна только владельцу после входа.</p>
       </div>
@@ -79,13 +79,13 @@ export function NotionPanel() {
   }
 
   if (!status) {
-    return <div className="mx-auto max-w-3xl px-8 py-5 text-[13px] text-vsc-muted">Загрузка Notion…</div>;
+    return <div className="mx-auto max-w-5xl px-8 py-5 text-[13px] text-vsc-muted">Загрузка Notion…</div>;
   }
 
   // Not configured at all (neither an internal token nor OAuth) and nothing connected.
   if (!status.connected && !status.oauthConfigured) {
     return (
-      <div className="mx-auto max-w-3xl px-8 py-5">
+      <div className="mx-auto max-w-5xl px-8 py-5">
         <h1 className="mb-3 flex items-center gap-2 text-[18px] font-semibold text-vsc-bright"><BookText size={18} /> Notion</h1>
         <p className="text-[13px] leading-relaxed text-vsc-muted">
           Notion не настроен. Самый простой путь — вставить внутренний токен интеграции в
@@ -99,7 +99,7 @@ export function NotionPanel() {
 
   if (!status.connected) {
     return (
-      <div className="mx-auto max-w-3xl px-8 py-5">
+      <div className="mx-auto max-w-5xl px-8 py-5">
         <h1 className="mb-3 flex items-center gap-2 text-[18px] font-semibold text-vsc-bright"><BookText size={18} /> Notion</h1>
         <p className="mb-4 text-[13px] leading-relaxed text-vsc-muted">
           Подключи рабочее пространство Notion, чтобы искать и читать страницы, вести задачи и создавать заметки прямо отсюда.
@@ -146,7 +146,7 @@ function NotionConnected({ status, tab, setTab, onChange }: { status: Status; ta
 
   if (pageLoading || page) {
     return (
-      <div className="mx-auto max-w-3xl px-8 py-5">
+      <div className="mx-auto max-w-5xl px-8 py-5">
         <button onClick={() => { setPage(null); setPageLoading(false); }} className="mb-4 flex items-center gap-1.5 text-[13px] text-vsc-muted hover:text-vsc-text">
           <ArrowLeft size={15} /> Назад
         </button>
@@ -172,7 +172,7 @@ function NotionConnected({ status, tab, setTab, onChange }: { status: Status; ta
   ];
 
   return (
-    <div className="mx-auto max-w-3xl px-8 py-5">
+    <div className="mx-auto max-w-5xl px-8 py-5">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="flex items-center gap-2 text-[18px] font-semibold text-vsc-bright">
           <BookText size={18} /> Notion

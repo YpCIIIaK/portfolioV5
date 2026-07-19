@@ -115,7 +115,7 @@ export function RepoHealthPanel() {
   if (open) {
     const r = open.latest;
     return (
-      <div className="mx-auto max-w-3xl px-8 py-5">
+      <div className="mx-auto max-w-5xl px-8 py-5">
         <button onClick={() => setOpen(null)} className="mb-4 flex items-center gap-1.5 text-[13px] text-vsc-muted hover:text-vsc-text">
           <ArrowLeft size={15} /> К списку
         </button>
@@ -175,7 +175,7 @@ export function RepoHealthPanel() {
 
   // ---- list view ----
   return (
-    <div className="mx-auto max-w-3xl px-8 py-5">
+    <div className="mx-auto max-w-5xl px-8 py-5">
       <div className="mb-1 flex items-center justify-between">
         <h1 className="flex items-center gap-2 text-[18px] font-semibold text-vsc-bright">
           <HeartPulse size={18} /> Repo Health

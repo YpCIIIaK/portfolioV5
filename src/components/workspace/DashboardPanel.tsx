@@ -431,7 +431,7 @@ export function DashboardPanel() {
   const greeting = hour < 6 ? "Доброй ночи" : hour < 12 ? "Доброе утро" : hour < 18 ? "Добрый день" : "Добрый вечер";
 
   return (
-    <div className="mx-auto max-w-4xl px-8 py-6">
+    <div className="mx-auto max-w-6xl px-8 py-6">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-[32px] font-semibold leading-none text-vsc-bright">{greeting} 👋</h1>
         <TimeWeather />

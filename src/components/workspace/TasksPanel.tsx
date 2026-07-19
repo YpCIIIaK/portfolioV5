@@ -132,7 +132,7 @@ export function TasksPanel() {
   if (loading) return <p className="px-8 py-6 text-[13px] text-vsc-muted">Загрузка задач…</p>;
 
   return (
-    <div className={`mx-auto px-8 py-4 ${view === "board" ? "max-w-5xl" : "max-w-2xl"}`}>
+    <div className={`mx-auto px-8 py-4 ${view === "board" ? "max-w-7xl" : "max-w-3xl"}`}>
       {readonly && <GuestBanner what="задачи" />}
       {error && <p className="mb-3 text-[13px] text-vsc-muted">{error}</p>}
 

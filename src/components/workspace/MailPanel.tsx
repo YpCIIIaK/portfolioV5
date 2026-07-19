@@ -92,7 +92,7 @@ export function MailPanel() {
 
   if (open || reading) {
     return (
-      <div className="mx-auto max-w-3xl px-8 py-5">
+      <div className="mx-auto max-w-5xl px-8 py-5">
         <button
           onClick={() => setOpen(null)}
           className="mb-4 flex items-center gap-1.5 text-[13px] text-vsc-muted hover:text-vsc-text"
@@ -137,7 +137,7 @@ export function MailPanel() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-8 py-5">
+    <div className="mx-auto max-w-5xl px-8 py-5">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="flex items-center gap-2 text-[18px] font-semibold text-vsc-bright">
           <Mail size={18} /> Почта

@@ -238,7 +238,7 @@ export function MusicPanel() {
   const { current, saved, draft, setDraft, error, search, play, playInput, searchTracks, saveCurrent, saveItem, removeSaved } = useYmPlayer();
 
   return (
-    <div className="mx-auto max-w-2xl px-8 py-6">
+    <div className="mx-auto max-w-4xl px-8 py-6">
       <h1 className="mb-1 flex items-center gap-2 text-[22px] font-semibold text-vsc-bright">
         <Music size={20} className="text-vsc-accent" /> Яндекс Музыка
       </h1>

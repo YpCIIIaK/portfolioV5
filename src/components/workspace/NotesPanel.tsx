@@ -81,7 +81,7 @@ export function NotesPanel() {
   if (loading) return <p className="px-8 py-6 text-[13px] text-vsc-muted">Загрузка заметок…</p>;
 
   return (
-    <div className="mx-auto flex h-full max-w-5xl gap-0 px-4">
+    <div className="mx-auto flex h-full max-w-7xl gap-0 px-4">
       {/* page list */}
       <aside className="flex w-56 shrink-0 flex-col border-r border-vsc-line py-4 pr-2">
         <div className="mb-1 flex items-center justify-between px-2">
@@ -130,7 +130,7 @@ export function NotesPanel() {
 
       {/* document */}
       <section className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-2xl px-8 py-6">
+        <div className="mx-auto max-w-3xl px-8 py-6">
           {readonly && <GuestBanner what="заметки" />}
           {error && <p className="mb-3 text-[13px] text-vsc-muted">{error}</p>}
 

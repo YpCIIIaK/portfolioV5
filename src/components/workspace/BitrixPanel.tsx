@@ -127,7 +127,7 @@ export function BitrixPanel() {
 
   if (taskLoading || openTask) {
     return (
-      <div className="mx-auto max-w-3xl px-8 py-5">
+      <div className="mx-auto max-w-5xl px-8 py-5">
         <button
           onClick={() => { setOpenTask(null); setTaskLoading(false); }}
           className="mb-4 flex items-center gap-1.5 text-[13px] text-vsc-muted hover:text-vsc-text"
@@ -188,7 +188,7 @@ export function BitrixPanel() {
 
   if (openChat) {
     return (
-      <div className="mx-auto max-w-3xl px-8 py-5">
+      <div className="mx-auto max-w-5xl px-8 py-5">
         <button
           onClick={() => setOpenChat(null)}
           className="mb-4 flex items-center gap-1.5 text-[13px] text-vsc-muted hover:text-vsc-text"
@@ -224,7 +224,7 @@ export function BitrixPanel() {
   ];
 
   return (
-    <div className="mx-auto max-w-3xl px-8 py-5">
+    <div className="mx-auto max-w-5xl px-8 py-5">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="flex items-center gap-2 text-[18px] font-semibold text-vsc-bright">
           <Briefcase size={18} /> Bitrix24
