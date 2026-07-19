@@ -60,8 +60,11 @@ export function buildBrainPrompt(context: string): string {
   ].join("\n");
 }
 
-/** Достаём JSON из ответа модели (терпим к ```json-ограждениям и болтовне вокруг). */
-export function parseBrainAnswer(raw: string): BrainData {
+/**
+ * Достаём JSON из ответа модели (терпим к ```json-ограждениям и болтовне вокруг).
+ * `knownIds` — id уже существующих узлов: рёбра дельты могут ссылаться на них.
+ */
+export function parseBrainAnswer(raw: string, knownIds?: Set<string>): BrainData {
   let text = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
@@ -71,8 +74,79 @@ export function parseBrainAnswer(raw: string): BrainData {
   if (!parsed.success) throw new Error("модель вернула JSON неожиданной формы");
   // Выкидываем рёбра, ссылающиеся на несуществующие узлы.
   const ids = new Set(parsed.data.nodes.map((n) => n.id));
+  if (knownIds) for (const id of knownIds) ids.add(id);
   return {
     nodes: parsed.data.nodes,
     edges: parsed.data.edges.filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to),
   };
 }
+
+/* ---- инкрементальное дополнение («утренний тик») ---------------------- */
+
+/**
+ * Шорткаты существующего графа: id | label | категория — достаточно, чтобы
+ * модель поняла, что уже есть и с чем связывать, но без полных summary
+ * (экономим контекст: мозг может разрастись).
+ */
+export function buildBrainShortcuts(data: BrainData): string {
+  return data.nodes.map((n) => `${n.id} | ${n.label} | ${n.category}`).join("\n");
+}
+
+/** Промпт дельты: вернуть ТОЛЬКО новые узлы и новые связи (в т.ч. к существующим id). */
+export function buildBrainAugmentPrompt(shortcuts: string, context: string): string {
+  return [
+    "Ты ДОПОЛНЯЕШЬ существующий «второй мозг» — граф знаний по личному рабочему пространству.",
+    "Ниже шорткаты уже существующих узлов (id | label | категория) и свежий снимок данных.",
+    "",
+    "Твоя задача: найти в данных ТОЛЬКО НОВОЕ — сущности, которых ещё нет среди шорткатов, — и связать их с существующими узлами.",
+    "",
+    "Требования:",
+    "- Верни только новые узлы (0–12 штук). НЕ повторяй и НЕ пересказывай существующие: если сущность уже есть в шорткатах (даже под чуть другим названием) — не добавляй её.",
+    "- Каждый новый узел: короткий label, категория work|project|idea|people|finance|learn|life|other, importance 1–5, summary в 1–2 предложения, source (panel: tasks|notes|calendar|mail|telegram|notion|bitrix|projects|subscriptions|news|other, ref: заголовок записи).",
+    "- id новых узлов — новые slug-строки (nb1, nb2, …), не совпадающие с существующими id.",
+    "- Рёбра соединяют новые узлы с существующими (используй их id из шорткатов) и между собой. Не оставляй новый узел без связей, если связь очевидна.",
+    "- Если добавлять нечего — верни {\"nodes\":[],\"edges\":[]}.",
+    "",
+    "Ответь ТОЛЬКО валидным JSON без пояснений:",
+    '{"nodes":[…],"edges":[{"id":"eb1","from":"nb1","to":"<существующий id>","label":"…"}]}',
+    "",
+    "СУЩЕСТВУЮЩИЕ УЗЛЫ (шорткаты):",
+    shortcuts || "(граф пуст)",
+    "",
+    "СВЕЖИЕ ДАННЫЕ:",
+    context || "(источники пусты)",
+  ].join("\n");
+}
+
+/** Вмерживаем дельту: дедуп новых узлов по label, рёбра — по паре from/to. */
+export function mergeBrainDelta(existing: BrainData, delta: BrainData): { data: BrainData; addedNodes: number; addedEdges: number; labels: string[] } {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const byLabel = new Map(existing.nodes.map((n) => [norm(n.label), n.id]));
+  const existingIds = new Set(existing.nodes.map((n) => n.id));
+
+  // Дубликаты по названию не добавляем, но их рёбра переезжают на старый узел.
+  const remap = new Map<string, string>();
+  const freshNodes = delta.nodes.filter((n) => {
+    const dup = byLabel.get(norm(n.label));
+    if (dup) { remap.set(n.id, dup); return false; }
+    if (existingIds.has(n.id)) { remap.set(n.id, n.id); return false; }
+    return true;
+  });
+
+  const allIds = new Set([...existingIds, ...freshNodes.map((n) => n.id)]);
+  const pair = (e: BrainEdgeLike) => [e.from, e.to].sort().join("→");
+  const seen = new Set(existing.edges.map(pair));
+  const freshEdges = delta.edges
+    .map((e) => ({ ...e, from: remap.get(e.from) ?? e.from, to: remap.get(e.to) ?? e.to }))
+    .filter((e) => e.from !== e.to && allIds.has(e.from) && allIds.has(e.to))
+    .filter((e) => { const p = pair(e); if (seen.has(p)) return false; seen.add(p); return true; });
+
+  return {
+    data: { nodes: [...existing.nodes, ...freshNodes], edges: [...existing.edges, ...freshEdges] },
+    addedNodes: freshNodes.length,
+    addedEdges: freshEdges.length,
+    labels: freshNodes.map((n) => n.label),
+  };
+}
+
+interface BrainEdgeLike { from: string; to: string }

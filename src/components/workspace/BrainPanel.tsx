@@ -75,7 +75,8 @@ export function BrainPanel() {
   const [title, setTitle] = useState("Мой мозг");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [linkFrom, setLinkFrom] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"" | "generate" | "save">("");
+  const [busy, setBusy] = useState<"" | "generate" | "augment" | "save">("");
+  const [info, setInfo] = useState("");
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
 
@@ -343,8 +344,37 @@ export function BrainPanel() {
 
   /* ---- действия -------------------------------------------------------- */
 
+  /** Инкремент: сервер дополняет ПОСЛЕДНИЙ снапшот только новым из источников. */
+  const augment = async () => {
+    setBusy("augment"); setError(""); setInfo("");
+    try {
+      const res = await fetch("/api/workspace/brain/augment", { method: "POST" });
+      const text = await res.text();
+      let json: { data?: BrainState; id?: string; added?: number; edges?: number; skipped?: string; error?: string } = {};
+      try { json = JSON.parse(text); } catch { /* оставляем пустым */ }
+      if (!res.ok) {
+        if (res.status === 504 || /timeout|timed out/i.test(text)) throw new Error("Таймаут — попробуй ещё раз.");
+        throw new Error(json.error || `HTTP ${res.status}: ${text.slice(0, 120)}`);
+      }
+      if (json.skipped) { setInfo(json.skipped); return; }
+      if (!json.added && !json.edges) { setInfo("Нового ничего нет — мозг актуален."); return; }
+      if (json.data && json.id) {
+        setGraph(json.data);
+        setSnapshotId(json.id);
+        setSelectedId(null);
+        setDirty(false);
+        setSnapshots((s) => s.map((x) => (x.id === json.id ? { ...x, data: json.data!, updated_at: new Date().toISOString() } : x)));
+      }
+      setInfo(`Дополнено: +${json.added ?? 0} узл., +${json.edges ?? 0} связ.`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  };
+
   const generate = async () => {
-    setBusy("generate"); setError("");
+    setBusy("generate"); setError(""); setInfo("");
     try {
       const res = await fetch("/api/workspace/brain/generate", { method: "POST" });
       // Сервер может ответить не-JSON (например, текст 504 от Vercel при таймауте).
@@ -492,6 +522,15 @@ export function BrainPanel() {
           Собрать мозг
         </button>
         <button
+          onClick={augment}
+          disabled={demo || !owner || busy !== "" || !snapshotId}
+          className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[12.5px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
+          title="ИИ добавит в последний снапшот только новое, не пересобирая весь граф"
+        >
+          {busy === "augment" ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+          Дополнить
+        </button>
+        <button
           onClick={addNode}
           disabled={demo}
           className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[12.5px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
@@ -535,6 +574,7 @@ export function BrainPanel() {
       </div>
 
       {error && <div className="mb-2 rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[12px] text-red-300">{error}</div>}
+      {info && <div className="mb-2 rounded border border-vsc-line bg-vsc-sidebar px-3 py-1.5 text-[12px] text-vsc-muted">{info}</div>}
       {linkFrom && (
         <div className="mb-2 rounded border border-vsc-line bg-vsc-sidebar px-3 py-1.5 text-[12px] text-vsc-muted">
           Режим связи: кликни второй узел, чтобы соединить с «{nodeLabel(linkFrom)}».{" "}

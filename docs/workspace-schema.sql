@@ -224,5 +224,21 @@ alter table public.ws_events add column if not exists repeat text not null defau
 --     $$
 --   );
 --
+-- Morning brain augment (second brain) -----------------------------------
+-- Once a day the AI reads fresh workspace data and ADDS new nodes/edges to
+-- the latest ws_brain snapshot (incremental — existing nodes are passed as
+-- shortcuts only). 04:00 UTC = 09:00 Asia/Almaty.
+--
+--   select cron.schedule(
+--     'ws-brain-augment',
+--     '0 4 * * *',
+--     $$
+--       select net.http_post(
+--         url    := 'https://your-domain/api/workspace/brain/augment',
+--         headers:= '{"x-cron-secret":"YOUR_CRON_SECRET"}'::jsonb
+--       );
+--     $$
+--   );
+--
 -- To change the schedule later: select cron.unschedule('ws-event-reminders');
 -- then re-run cron.schedule(...). Inspect runs: select * from cron.job_run_details;
