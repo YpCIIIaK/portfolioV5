@@ -347,8 +347,16 @@ export function BrainPanel() {
     setBusy("generate"); setError("");
     try {
       const res = await fetch("/api/workspace/brain/generate", { method: "POST" });
-      const json = (await res.json()) as { data?: BrainState; error?: string };
-      if (!res.ok || !json.data) throw new Error(json.error || `HTTP ${res.status}`);
+      // Сервер может ответить не-JSON (например, текст 504 от Vercel при таймауте).
+      const text = await res.text();
+      let json: { data?: BrainState; error?: string } = {};
+      try { json = JSON.parse(text); } catch { /* оставляем пустым */ }
+      if (!res.ok || !json.data) {
+        if (res.status === 504 || /timeout|timed out/i.test(text)) {
+          throw new Error("Сервер не успел за отведённое время (таймаут). Модель думала слишком долго — попробуй ещё раз или поставь модель побыстрее в OPENROUTER_MODEL.");
+        }
+        throw new Error(json.error || `HTTP ${res.status}: ${text.slice(0, 120)}`);
+      }
       bodies.current.clear();
       setGraph(json.data);
       setSelectedId(null);

@@ -21,7 +21,9 @@ export async function POST() {
     return NextResponse.json({ error: "AI не настроен (OPENROUTER_API_KEY)" }, { status: 503 });
   }
   try {
-    const context = await collectContext(true);
+    // Без force: кэшированный контекст (5 мин). Полный пересбор всех источников
+    // (IMAP, Telegram, Notion) плюс долгая генерация не влезают в лимит функции.
+    const context = await collectContext();
     const answer = await askAI(buildBrainPrompt(context), { temperature: 0.4, maxTokens: 3000 });
     const data = parseBrainAnswer(answer);
     if (!data.nodes.length) throw new Error("модель вернула пустой граф");
