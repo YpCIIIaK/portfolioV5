@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { collectContext } from "@/lib/aggregate";
 import { mailConfigured, fetchInbox } from "@/lib/mail-server";
 import { supabaseConfigured, sbSelect } from "@/lib/supabase";
+import { bitrixConfigured, fetchTasks } from "@/lib/bitrix";
+import { telegramConfigured, fetchDialogs } from "@/lib/telegram";
+import { notionConnected, notionStatus, searchNotion, pageContent, fetchNotionTasks } from "@/lib/notion";
 
 /**
  * «Второй мозг» — граф знаний, который ИИ собирает из всего подключённого
@@ -46,37 +48,99 @@ export const brainData = z.object({
 export type BrainData = z.infer<typeof brainData>;
 
 /**
- * Расширенный контекст для мозга: базовый агрегат (задачи, календарь, Notion,
- * Telegram, Bitrix, подписки, проекты) ПЛЮС почта без фильтра «непрочитанное»
- * и заметки с более длинными телами — мозгу нужно видеть больше, чем брифингу.
+ * Максимально полный ЛИЧНЫЙ контекст для мозга — читаем всё, что подключено:
+ * задачи (вкл. сделанные), календарь (прошлое и будущее), заметки целиком,
+ * проекты, подписки, Bitrix, все диалоги Telegram, почту без фильтров и весь
+ * доступный Notion (список страниц + содержимое свежих + задачи из базы).
+ * Новости / тренды GitHub / музыка сюда НЕ входят — это не личные данные.
  */
 export async function collectBrainContext(): Promise<{ context: string; sources: string[] }> {
   const parts: string[] = [];
   const sources: string[] = [];
-
-  const base = await collectContext();
-  if (base) { parts.push(base); sources.push("агрегат (задачи/календарь/Notion/Telegram/подписки/проекты)"); }
-
-  if (mailConfigured()) {
-    try {
-      const mail = await fetchInbox(60);
-      const recent = mail.slice(0, 40);
-      if (recent.length) {
-        parts.push("ПОЧТА (последние письма, включая прочитанные):\n" + recent.map((m) => `- ${m.from}: ${m.subject}`).join("\n"));
-        sources.push(`почта (${recent.length})`);
-      }
-    } catch { /* skip */ }
-  }
+  const add = (title: string, body: string, src: string) => {
+    if (body) { parts.push(`${title}:\n${body}`); sources.push(src); }
+  };
 
   if (supabaseConfigured()) {
     try {
-      const notes = await sbSelect<{ title: string; body: string }>("ws_notes", "select=title,body&order=updated_at.desc&limit=30");
-      if (notes.length) {
-        parts.push("ЗАМЕТКИ (полные превью):\n" + notes.map((n) => `- ${n.title}: ${n.body.replace(/\s+/g, " ").slice(0, 300)}`).join("\n"));
-        sources.push(`заметки (${notes.length})`);
-      }
+      const tasks = await sbSelect<{ title: string; due: string | null; priority: string; done: boolean }>(
+        "ws_tasks", "select=title,due,priority,done&order=created_at.desc&limit=100",
+      );
+      add("ЗАДАЧИ (все, включая сделанные)", tasks.map((t) => `- ${t.done ? "[x]" : "[ ]"} ${t.title}${t.due ? ` (до ${t.due})` : ""}${t.priority !== "none" ? ` [${t.priority}]` : ""}`).join("\n"), `задачи (${tasks.length})`);
+    } catch { /* skip */ }
+    try {
+      const from = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
+      const events = await sbSelect<{ title: string; date: string; time: string | null; note: string | null }>(
+        "ws_events", `select=title,date,time,note&date=gte.${from}&order=date.asc&limit=100`,
+      );
+      add("КАЛЕНДАРЬ (последние 60 дней и будущее)", events.map((e) => `- ${e.date}${e.time ? ` ${e.time}` : ""} — ${e.title}${e.note ? ` (${e.note.replace(/\s+/g, " ").slice(0, 80)})` : ""}`).join("\n"), `события (${events.length})`);
+    } catch { /* skip */ }
+    try {
+      const notes = await sbSelect<{ title: string; body: string; priority: string }>(
+        "ws_notes", "select=title,body,priority&order=updated_at.desc&limit=50",
+      );
+      add("ЗАМЕТКИ (полные)", notes.map((n) => `- ${n.title}${n.priority !== "none" ? ` [${n.priority}]` : ""}: ${n.body.replace(/\s+/g, " ").slice(0, 600)}`).join("\n"), `заметки (${notes.length})`);
+    } catch { /* skip */ }
+    try {
+      const projects = await sbSelect<{ title: string; description: string; tags: string; repo_url: string | null }>(
+        "ws_projects", "select=title,description,tags,repo_url&order=created_at.desc&limit=30",
+      );
+      add("ПРОЕКТЫ", projects.map((p) => `- ${p.title}${p.tags ? ` (${p.tags})` : ""}: ${p.description.replace(/\s+/g, " ").slice(0, 300)}${p.repo_url ? ` — ${p.repo_url}` : ""}`).join("\n"), `проекты (${projects.length})`);
+    } catch { /* skip */ }
+    try {
+      const subs = await sbSelect<{ name: string; price: number; currency: string; period: string; tier: string; next_date: string | null }>(
+        "ws_subscriptions", "select=name,price,currency,period,tier,next_date&order=created_at.desc&limit=30",
+      );
+      add("ПОДПИСКИ", subs.map((s) => `- ${s.name}${s.tier ? ` (${s.tier})` : ""}: ${s.price}${s.currency}/${s.period}${s.next_date ? `, списание ${s.next_date}` : ""}`).join("\n"), `подписки (${subs.length})`);
     } catch { /* skip */ }
   }
+
+  if (bitrixConfigured()) {
+    try {
+      const bx = await fetchTasks(50);
+      add("BITRIX ЗАДАЧИ", bx.map((t) => `- ${t.title} (${t.status}${t.deadline ? `, до ${t.deadline}` : ""})`).join("\n"), `Bitrix (${bx.length})`);
+    } catch { /* skip */ }
+  }
+
+  if (telegramConfigured()) {
+    try {
+      const dialogs = await fetchDialogs(60);
+      add("TELEGRAM (все недавние диалоги)", dialogs.map((d) => `- ${d.unread ? "● " : ""}${d.title}: ${d.lastMessage.replace(/\s+/g, " ").slice(0, 120)}`).join("\n"), `Telegram (${dialogs.length})`);
+    } catch { /* skip */ }
+  }
+
+  if (mailConfigured()) {
+    try {
+      const mail = await fetchInbox(120);
+      const recent = mail.slice(0, 80);
+      add("ПОЧТА (последние письма, включая прочитанные)", recent.map((m) => `- ${m.unread ? "● " : ""}${m.from}: ${m.subject}`).join("\n"), `почта (${recent.length})`);
+    } catch { /* skip */ }
+  }
+
+  try {
+    if (await notionConnected()) {
+      const pages = await searchNotion("", 50);
+      add("NOTION (все доступные страницы)", pages.map((p) => `- ${p.title}${p.type === "database" ? " [база]" : ""}`).join("\n"), `Notion-страницы (${pages.length})`);
+      // Содержимое свежих страниц — чтобы мозг знал, о чём они, а не только названия.
+      const toRead = pages.filter((p) => p.type !== "database").slice(0, 10);
+      const contents: string[] = [];
+      for (const p of toRead) {
+        try {
+          const c = await pageContent(p.id, 60);
+          const text = c.markdown.replace(/\s+/g, " ").slice(0, 600);
+          if (text) contents.push(`### ${c.title}\n${text}`);
+        } catch { /* skip page */ }
+      }
+      add("NOTION (содержимое свежих страниц)", contents.join("\n\n"), `Notion-контент (${contents.length})`);
+      const status = await notionStatus();
+      if (status.config.tasksDbId) {
+        try {
+          const tasks = await fetchNotionTasks(status.config, 50);
+          add("NOTION ЗАДАЧИ", tasks.map((t) => `- ${t.done ? "[x]" : "[ ]"} ${t.title}${t.due ? ` (до ${t.due})` : ""}`).join("\n"), `Notion-задачи (${tasks.length})`);
+        } catch { /* skip */ }
+      }
+    }
+  } catch { /* skip */ }
 
   return { context: parts.join("\n\n"), sources };
 }
