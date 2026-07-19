@@ -70,7 +70,15 @@ export function parseBrainAnswer(raw: string, knownIds?: Set<string>): BrainData
   const end = text.lastIndexOf("}");
   if (start === -1 || end <= start) throw new Error("модель не вернула JSON");
   text = text.slice(start, end + 1);
-  const parsed = brainData.safeParse(JSON.parse(text));
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // Модель упёрлась в max_tokens и JSON обрезан — чиним: отсекаем до последнего
+    // целого элемента массива и закрываем оставшиеся скобки.
+    json = JSON.parse(repairTruncatedJson(text));
+  }
+  const parsed = brainData.safeParse(json);
   if (!parsed.success) throw new Error("модель вернула JSON неожиданной формы");
   // Выкидываем рёбра, ссылающиеся на несуществующие узлы.
   const ids = new Set(parsed.data.nodes.map((n) => n.id));
@@ -79,6 +87,40 @@ export function parseBrainAnswer(raw: string, knownIds?: Set<string>): BrainData
     nodes: parsed.data.nodes,
     edges: parsed.data.edges.filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to),
   };
+}
+
+/**
+ * Чиним обрезанный JSON: сканируем со стеком скобок (учитывая строки и экранирование),
+ * запоминаем последнюю позицию, где закрылся элемент массива, отсекаем там и
+ * дозакрываем всё, что осталось открытым.
+ */
+function repairTruncatedJson(text: string): string {
+  const stack: string[] = [];
+  let inStr = false;
+  let esc = false;
+  let lastGood = -1;
+  let lastGoodStack: string[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "{" || c === "[") stack.push(c);
+    else if (c === "}" || c === "]") {
+      stack.pop();
+      if (stack[stack.length - 1] === "[") {
+        lastGood = i;
+        lastGoodStack = [...stack];
+      }
+    }
+  }
+  if (lastGood === -1) throw new Error("модель вернула нечитаемый JSON");
+  const closers = lastGoodStack.reverse().map((c) => (c === "{" ? "}" : "]")).join("");
+  return text.slice(0, lastGood + 1) + closers;
 }
 
 /* ---- инкрементальное дополнение («утренний тик») ---------------------- */

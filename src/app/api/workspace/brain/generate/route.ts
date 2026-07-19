@@ -25,7 +25,7 @@ export async function POST() {
     // Без force: кэшированный контекст (5 мин). Полный пересбор всех источников
     // (IMAP, Telegram, Notion) плюс долгая генерация не влезают в лимит функции.
     const context = await collectContext();
-    const answer = await askAI(buildBrainPrompt(context), { temperature: 0.4, maxTokens: 3000 });
+    const answer = await askAI(buildBrainPrompt(context), { temperature: 0.4, maxTokens: 6000 });
     const data = parseBrainAnswer(answer);
     if (!data.nodes.length) throw new Error("модель вернула пустой граф");
     return NextResponse.json({ data });

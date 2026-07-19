@@ -53,7 +53,7 @@ async function run(req: Request) {
   try {
     const context = await collectContext();
     const prompt = buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context);
-    const answer = await askAI(prompt, { temperature: 0.3, maxTokens: 1600 });
+    const answer = await askAI(prompt, { temperature: 0.3, maxTokens: 3000 });
     const knownIds = new Set(snapshot.data.nodes.map((n) => n.id));
     const delta = parseBrainAnswer(answer, knownIds);
 
