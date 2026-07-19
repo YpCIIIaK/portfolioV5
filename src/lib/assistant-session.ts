@@ -23,7 +23,7 @@ export interface Session {
 }
 
 /** How many recent turns to keep verbatim before old ones are dropped. */
-const WINDOW = 16;
+export const WINDOW = 16;
 
 const EMPTY: Session = { summary: "", messages: [] };
 

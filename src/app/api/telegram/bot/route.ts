@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { aiConfigured } from "@/lib/ai";
 import { runAssistant, buildAssistantSystem } from "@/lib/assistant-agent";
-import { getSession, saveSession, clearSession, compactSession } from "@/lib/assistant-session";
+import { getSession, saveSession, clearSession, compactSession, WINDOW } from "@/lib/assistant-session";
 import { collectContext, todayISO } from "@/lib/aggregate";
 import { sendTelegram } from "@/lib/notify";
 
@@ -72,13 +72,14 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true });
 }
 
-type Command = "new" | "compact" | "help";
+type Command = "new" | "compact" | "help" | "status";
 
 /** Recognize a leading slash-command (Russian and English aliases). */
 function matchCommand(text: string): Command | null {
   const word = text.split(/\s+/)[0].toLowerCase().replace(/@.*$/, ""); // strip @botname
   if (["/new", "/reset", "/новая", "/новый", "/сброс"].includes(word)) return "new";
   if (["/compact", "/компакт", "/сжать"].includes(word)) return "compact";
+  if (["/status", "/статус", "/стат"].includes(word)) return "status";
   if (["/help", "/start", "/старт", "/помощь"].includes(word)) return "help";
   return null;
 }
@@ -87,13 +88,18 @@ const HELP = [
   "Команды:",
   "/new — новая сессия (забыть контекст)",
   "/compact — сжать историю в память и очистить окно",
+  "/status — статус сессии (сообщения, память, размер контекста)",
   "/help — эта справка",
   "",
   "Обычным сообщением — вопрос ассистенту. Он помнит диалог в рамках сессии и умеет читать Notion/Telegram и заводить задачи, события, заметки.",
 ].join("\n");
 
+/** ≈ токены: грубая оценка по символам (~4 симв./токен). */
+const approxTokens = (chars: number) => Math.round(chars / 4);
+
 async function runCommand(cmd: Command, chatId: string): Promise<string> {
   if (cmd === "help") return HELP;
+  if (cmd === "status") return statusReport(chatId);
   if (cmd === "new") {
     await clearSession(chatId);
     return "Начал новую сессию — контекст очищен.";
@@ -102,4 +108,29 @@ async function runCommand(cmd: Command, chatId: string): Promise<string> {
   const { compacted, summary } = await compactSession(chatId);
   if (!compacted) return "Нечего сжимать — история пуста.";
   return `История сжата в память:\n\n${summary}`;
+}
+
+/** Human-readable snapshot of the current session's footprint. */
+async function statusReport(chatId: string): Promise<string> {
+  const session = await getSession(chatId);
+  const msgs = session.messages;
+  const users = msgs.filter((m) => m.role === "user").length;
+  const assistants = msgs.filter((m) => m.role === "assistant").length;
+
+  const msgChars = msgs.reduce((n, m) => n + m.content.length, 0);
+  const summaryChars = session.summary.length;
+  const totalChars = msgChars + summaryChars;
+
+  return [
+    "📊 Статус сессии",
+    "",
+    `💬 Сообщений в окне: ${msgs.length} (ты: ${users}, ассистент: ${assistants})`,
+    `📦 Окно контекста: ${msgs.length}/${WINDOW} реплик`,
+    `🧠 Сжатая память: ${summaryChars ? `${summaryChars} симв.` : "пусто"}`,
+    `📏 Размер контекста: ~${approxTokens(totalChars)} токенов (${totalChars} симв.)`,
+    "",
+    msgs.length >= WINDOW
+      ? "⚠️ Окно заполнено — старые реплики вытесняются. /compact сожмёт историю в память."
+      : "Команды: /compact — сжать, /new — начать заново.",
+  ].join("\n");
 }
