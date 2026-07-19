@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { askAI } from "@/lib/ai";
 import { mailConfigured, fetchInbox } from "@/lib/mail-server";
-import { supabaseConfigured, sbSelect } from "@/lib/supabase";
+import { supabaseConfigured, sbSelect, sbInsert, sbUpdate } from "@/lib/supabase";
 import { bitrixConfigured, fetchTasks } from "@/lib/bitrix";
 import { telegramConfigured, fetchDialogs } from "@/lib/telegram";
 import { notionConnected, notionStatus, searchNotion, pageContent, fetchNotionTasks } from "@/lib/notion";
@@ -313,3 +314,109 @@ export function mergeBrainDelta(existing: BrainData, delta: BrainData): { data: 
 }
 
 interface BrainEdgeLike { from: string; to: string }
+
+/* ---- высокоуровневые операции (роуты + инструменты ассистента) -------- */
+
+export interface BrainSnapshotRow { id: string; title: string; data: BrainData; updated_at: string }
+
+/** Последний снапшот мозга или null. */
+export async function latestBrainSnapshot(): Promise<BrainSnapshotRow | null> {
+  const rows = await sbSelect<BrainSnapshotRow>("ws_brain", "select=*&order=updated_at.desc&limit=1");
+  return rows[0] ?? null;
+}
+
+/** Полная генерация графа из всех источников (без сохранения). */
+export async function generateBrainData(): Promise<{ data: BrainData; sources: string[] }> {
+  const { context, sources } = await collectBrainContext();
+  const answer = await askAI(buildBrainPrompt(context), { temperature: 0.4, maxTokens: 6000 });
+  let data = parseBrainAnswer(answer);
+  if (!data.nodes.length) throw new Error("модель вернула пустой граф");
+
+  // Модель поскупилась на связи — досвязываем отдельным коротким запросом.
+  if (data.nodes.length >= 4 && data.edges.length < data.nodes.length / 2) {
+    try {
+      const extra = await askAI(buildEdgesPrompt(buildBrainShortcuts(data)), { temperature: 0.3, maxTokens: 2000 });
+      const delta = parseBrainAnswer(extra, new Set(data.nodes.map((n) => n.id)));
+      data = mergeBrainDelta(data, { nodes: [], edges: delta.edges }).data;
+    } catch { /* граф без части связей лучше, чем ошибка */ }
+  }
+  return { data, sources };
+}
+
+/** Полный пересбор с сохранением НОВЫМ снапшотом (не трогая старые). */
+export async function rebuildBrainSnapshot(titleSuffix = ""): Promise<{ title: string; nodes: number; edges: number }> {
+  const { data } = await generateBrainData();
+  const title = `Мозг ${new Date().toLocaleDateString("ru-RU")}${titleSuffix ? ` ${titleSuffix}` : ""}`;
+  await sbInsert("ws_brain", { title, data });
+  return { title, nodes: data.nodes.length, edges: data.edges.length };
+}
+
+export interface AugmentResult {
+  skipped?: string;
+  id?: string;
+  title?: string;
+  added: number;
+  edges: number;
+  labels: string[];
+  data?: BrainData;
+}
+
+/** Инкремент: дополнить последний снапшот только новым из источников. */
+export async function augmentLatestBrain(): Promise<AugmentResult> {
+  const snapshot = await latestBrainSnapshot();
+  if (!snapshot || !snapshot.data.nodes.length) {
+    return { skipped: "нет снапшота — сначала собери мозг полностью", added: 0, edges: 0, labels: [] };
+  }
+  const { context } = await collectBrainContext();
+  const answer = await askAI(buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context), { temperature: 0.3, maxTokens: 3000 });
+  const delta = parseBrainAnswer(answer, new Set(snapshot.data.nodes.map((n) => n.id)));
+  const { data, addedNodes, addedEdges, labels } = mergeBrainDelta(snapshot.data, delta);
+  if (addedNodes || addedEdges) {
+    await sbUpdate("ws_brain", `id=eq.${encodeURIComponent(snapshot.id)}`, { data, updated_at: new Date().toISOString() });
+  }
+  return { id: snapshot.id, title: snapshot.title, added: addedNodes, edges: addedEdges, labels, data };
+}
+
+/**
+ * Детализация: углубить одну категорию (или тему) последнего снапшота —
+ * модель видит её узлы С summary, остальной граф шорткатами, и добавляет
+ * под-узлы с конкретикой из данных.
+ */
+export async function expandBrainCategory(category: string): Promise<AugmentResult> {
+  const snapshot = await latestBrainSnapshot();
+  if (!snapshot || !snapshot.data.nodes.length) {
+    return { skipped: "нет снапшота — сначала собери мозг полностью", added: 0, edges: 0, labels: [] };
+  }
+  const cat = category.trim().toLowerCase();
+  const targets = snapshot.data.nodes.filter(
+    (n) => n.category.toLowerCase() === cat || n.label.toLowerCase().includes(cat),
+  );
+  if (!targets.length) {
+    return { skipped: `в мозге нет узлов категории/темы «${category}»`, added: 0, edges: 0, labels: [] };
+  }
+  const { context } = await collectBrainContext();
+  const prompt = [
+    `Ты ДЕТАЛИЗИРУЕШЬ часть «второго мозга» — узлы категории/темы «${category}».`,
+    "",
+    "УЗЛЫ ДЛЯ ДЕТАЛИЗАЦИИ (id | label | summary):",
+    targets.map((n) => `${n.id} | ${n.label} | ${n.summary}`).join("\n"),
+    "",
+    "ОСТАЛЬНОЙ ГРАФ (шорткаты id | label | категория):",
+    buildBrainShortcuts(snapshot.data),
+    "",
+    "Добавь 3–15 НОВЫХ узлов-деталей: конкретные подзадачи, факты, люди, документы, суммы, даты из данных ниже, относящиеся к этим узлам. Свяжи каждый новый узел рёбрами с детализируемыми (и при необходимости между собой).",
+    "Категории новых узлов — та же или уточнённая; id — новые slug (nd1, nd2…). НЕ дублируй существующее.",
+    "",
+    'Ответь ТОЛЬКО валидным JSON: {"nodes":[…],"edges":[…]}',
+    "",
+    "ДАННЫЕ:",
+    context,
+  ].join("\n");
+  const answer = await askAI(prompt, { temperature: 0.3, maxTokens: 3000 });
+  const delta = parseBrainAnswer(answer, new Set(snapshot.data.nodes.map((n) => n.id)));
+  const { data, addedNodes, addedEdges, labels } = mergeBrainDelta(snapshot.data, delta);
+  if (addedNodes || addedEdges) {
+    await sbUpdate("ws_brain", `id=eq.${encodeURIComponent(snapshot.id)}`, { data, updated_at: new Date().toISOString() });
+  }
+  return { id: snapshot.id, title: snapshot.title, added: addedNodes, edges: addedEdges, labels, data };
+}

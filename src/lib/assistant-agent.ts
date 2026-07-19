@@ -22,6 +22,7 @@ import { notionConnected, searchNotion, pageContent, createPage } from "@/lib/no
 import { telegramConfigured, fetchDialogs, fetchMessageHistory } from "@/lib/telegram";
 import { githubConfigured, createRepo, createIssue, listRepos } from "@/lib/github";
 import { webFetch, webSearch } from "@/lib/web";
+import { rebuildBrainSnapshot, augmentLatestBrain, expandBrainCategory } from "@/lib/brain";
 import type { Priority } from "@/lib/workspace";
 
 const MAX_STEPS = 5;
@@ -458,6 +459,119 @@ const TOOLS: Tool[] = [
       return `Подписка добавлена: «${name}».`;
     },
   },
+  {
+    def: {
+      name: "rebuild_brain",
+      description: "Полностью пересобрать «второй мозг» (граф знаний): прочитать все источники и сохранить НОВЫМ снапшотом, старые остаются. Долгая операция.",
+      parameters: { type: "object", properties: {} },
+    },
+    async run() {
+      if (!supabaseConfigured()) return "Supabase не настроен.";
+      const r = await rebuildBrainSnapshot("(ассистент)");
+      return `Мозг пересобран и сохранён снапшотом «${r.title}»: ${r.nodes} узлов, ${r.edges} связей.`;
+    },
+  },
+  {
+    def: {
+      name: "augment_brain",
+      description: "Дополнить последний снапшот «второго мозга» только новым из источников (инкремент, существующие узлы не пересобираются).",
+      parameters: { type: "object", properties: {} },
+    },
+    async run() {
+      if (!supabaseConfigured()) return "Supabase не настроен.";
+      const r = await augmentLatestBrain();
+      if (r.skipped) return `Пропущено: ${r.skipped}.`;
+      if (!r.added && !r.edges) return "Нового ничего нет — мозг актуален.";
+      return `«${r.title}» дополнен: +${r.added} узл., +${r.edges} связ.${r.labels.length ? ` Новое: ${r.labels.join(", ")}.` : ""}`;
+    },
+  },
+  {
+    def: {
+      name: "expand_brain_category",
+      description: "Детализировать часть «второго мозга»: углубить узлы указанной категории или темы (добавить под-узлы с конкретикой из данных).",
+      parameters: {
+        type: "object",
+        properties: {
+          category: { type: "string", description: "Категория (work, project, finance, …) или тема/название узла." },
+        },
+        required: ["category"],
+      },
+    },
+    async run(a) {
+      if (!supabaseConfigured()) return "Supabase не настроен.";
+      const category = str(a.category);
+      if (!category) return "Не указана категория или тема.";
+      const r = await expandBrainCategory(category);
+      if (r.skipped) return `Пропущено: ${r.skipped}.`;
+      if (!r.added && !r.edges) return `По «${category}» деталей не нашлось.`;
+      return `«${category}» детализирована: +${r.added} узл., +${r.edges} связ.${r.labels.length ? ` Новое: ${r.labels.join(", ")}.` : ""}`;
+    },
+  },
+  {
+    def: {
+      name: "create_diagram",
+      description: "Создать блочную диаграмму (блоки и стрелки) в разделе «Диаграммы». Раскладка блоков по сетке автоматическая.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Название диаграммы." },
+          nodes: {
+            type: "array",
+            description: "Блоки диаграммы.",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string", description: "Короткий id (b1, b2…)." },
+                text: { type: "string", description: "Текст блока." },
+              },
+              required: ["id", "text"],
+            },
+          },
+          edges: {
+            type: "array",
+            description: "Стрелки между блоками (по id).",
+            items: {
+              type: "object",
+              properties: {
+                from: { type: "string" },
+                to: { type: "string" },
+                label: { type: "string", description: "Подпись стрелки (опционально)." },
+              },
+              required: ["from", "to"],
+            },
+          },
+        },
+        required: ["title", "nodes"],
+      },
+    },
+    async run(a) {
+      if (!supabaseConfigured()) return "Supabase не настроен.";
+      const title = str(a.title);
+      const rawNodes = Array.isArray(a.nodes) ? (a.nodes as { id?: unknown; text?: unknown }[]) : [];
+      const rawEdges = Array.isArray(a.edges) ? (a.edges as { from?: unknown; to?: unknown; label?: unknown }[]) : [];
+      if (!title || !rawNodes.length) return "Нужны название и хотя бы один блок.";
+
+      // Сетка: слева направо, ряды по √n — редактор диаграмм дальше даст двигать руками.
+      const W = 170, H = 60, GX = 230, GY = 130;
+      const cols = Math.max(1, Math.ceil(Math.sqrt(rawNodes.length)));
+      const nodes = rawNodes.slice(0, 60).map((n, i) => ({
+        id: str(n.id) || `b${i + 1}`,
+        x: 60 + (i % cols) * GX,
+        y: 60 + Math.floor(i / cols) * GY,
+        w: W, h: H,
+        text: str(n.text).slice(0, 500),
+        shape: "round", fill: "", stroke: "", textColor: "",
+      }));
+      const ids = new Set(nodes.map((n) => n.id));
+      const edges = rawEdges
+        .filter((e) => ids.has(str(e.from)) && ids.has(str(e.to)) && str(e.from) !== str(e.to))
+        .slice(0, 120)
+        .map((e, i) => ({ id: `e${i + 1}`, from: str(e.from), to: str(e.to), label: str(e.label) || undefined, arrow: true }));
+
+      await sbInsert("ws_diagrams", { title: title.slice(0, 200), data: { nodes, edges } });
+      return `Диаграмма «${title}» создана: ${nodes.length} блоков, ${edges.length} стрелок. Открой вкладку «Диаграммы».`;
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map((t) => [t.def.name, t]));
@@ -473,7 +587,9 @@ export function buildAssistantSystem(today: string, context: string, extra = "")
 У тебя есть ИНСТРУМЕНТЫ — вызывай их сам, когда нужно:
 - чтение: search_notion, read_notion_page, read_telegram_chat (для полного текста страниц и истории чатов — в сводке только заголовки); web_search, web_fetch (поиск и чтение страниц в интернете); list_github_repos;
 - запись в кабинет: create_task, complete_task, delete_task, create_event, delete_event, create_note, create_notion_page, create_project, create_subscription;
-- GitHub: create_github_repo, create_github_issue.
+- GitHub: create_github_repo, create_github_issue;
+- «второй мозг» (граф знаний): rebuild_brain (полный пересбор новым снапшотом), augment_brain (дополнить только новым), expand_brain_category (детализировать категорию/тему);
+- диаграммы: create_diagram (блочная схема: блоки + стрелки) — используй, когда просят нарисовать схему/процесс/архитектуру.
 Меняй данные, создавай репозитории/issue и удаляй что-либо ТОЛЬКО когда пользователь явно об этом просит. Удаление необратимо — если сомневаешься, переспроси. После действия коротко подтверди результат (для GitHub — дай ссылку).
 
 === АКТУАЛЬНЫЕ ДАННЫЕ ===

@@ -18,6 +18,13 @@ export function ProjectsPanel() {
   const [form, setForm] = useState<typeof EMPTY>(EMPTY);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [error, setError] = useState("");
+
+  /** 401 = протухла сессия владельца: без этого запись молча пропадала. */
+  const explain = (e: unknown): string =>
+    (e as Error).message === "401"
+      ? "Сессия истекла — войди через GitHub заново, иначе изменения не сохраняются."
+      : `Не удалось сохранить (${(e as Error).message}). Проверь соединение и попробуй ещё раз.`;
 
   useEffect(() => {
     let alive = true;
@@ -45,26 +52,43 @@ export function ProjectsPanel() {
   const save = async () => {
     if (!form.title.trim()) return;
     const payload = { ...form, repo_url: form.repo_url.trim() || null };
-    if (editingId) {
-      const updated = await wsUpdate<Project>("projects", editingId, payload);
-      setItems((xs) => xs.map((x) => (x.id === editingId ? updated : x)));
-    } else {
-      const created = await wsCreate<Project>("projects", payload);
-      setItems((xs) => [created, ...xs]);
+    setError("");
+    try {
+      if (editingId) {
+        const updated = await wsUpdate<Project>("projects", editingId, payload);
+        setItems((xs) => xs.map((x) => (x.id === editingId ? updated : x)));
+      } else {
+        const created = await wsCreate<Project>("projects", payload);
+        setItems((xs) => [created, ...xs]);
+      }
+      setShowForm(false);
+      setForm(EMPTY);
+      setEditingId(null);
+    } catch (e) {
+      setError(explain(e));
     }
-    setShowForm(false);
-    setForm(EMPTY);
-    setEditingId(null);
   };
 
   const remove = async (id: string) => {
+    setError("");
+    const prev = items;
     setItems((xs) => xs.filter((x) => x.id !== id));
-    await wsDelete("projects", id);
+    try {
+      await wsDelete("projects", id);
+    } catch (e) {
+      setItems(prev); // удаление не прошло — возвращаем карточку
+      setError(explain(e));
+    }
   };
 
   const toggleVisibility = async (p: Project) => {
-    const updated = await wsUpdate<Project>("projects", p.id, { is_public: !p.is_public });
-    setItems((xs) => xs.map((x) => (x.id === p.id ? updated : x)));
+    setError("");
+    try {
+      const updated = await wsUpdate<Project>("projects", p.id, { is_public: !p.is_public });
+      setItems((xs) => xs.map((x) => (x.id === p.id ? updated : x)));
+    } catch (e) {
+      setError(explain(e));
+    }
   };
 
   if (loading) return <p className="px-8 py-6 text-[13px] text-vsc-muted">{tr("Загрузка проектов…")}</p>;
@@ -72,6 +96,9 @@ export function ProjectsPanel() {
   return (
     <div className="mx-auto max-w-6xl px-8 py-6">
       {!owner && <GuestBanner what={tr("проекты")} />}
+      {error && (
+        <div className="mb-4 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-[12.5px] text-red-300">{error}</div>
+      )}
 
       <div className="mb-4 flex items-center justify-between">
         <h1 className="flex items-center gap-2 text-[18px] font-semibold text-vsc-bright">

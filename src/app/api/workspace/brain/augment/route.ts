@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireOwner } from "@/lib/auth";
-import { aiConfigured, askAI } from "@/lib/ai";
-import { supabaseConfigured, sbSelect, sbUpdate } from "@/lib/supabase";
+import { aiConfigured } from "@/lib/ai";
+import { supabaseConfigured } from "@/lib/supabase";
 import { notifyOwner } from "@/lib/notify";
-import { buildBrainShortcuts, buildBrainAugmentPrompt, parseBrainAnswer, mergeBrainDelta, collectBrainContext, type BrainData } from "@/lib/brain";
+import { augmentLatestBrain } from "@/lib/brain";
 
 export const runtime = "nodejs";
 // Холодный сбор контекста + генерация — как у полного билда мозга.
@@ -19,8 +19,6 @@ export const maxDuration = 300;
  * Auth как у /api/workspace/cron: x-cron-secret / ?secret= для планировщика
  * (pg_cron, см. docs/workspace-schema.sql) или owner-сессия для ручного запуска.
  */
-
-interface BrainRow { id: string; title: string; data: BrainData; updated_at: string }
 
 async function authorized(req: Request): Promise<boolean> {
   const secret = process.env.CRON_SECRET;
@@ -43,37 +41,18 @@ async function run(req: Request) {
     return NextResponse.json({ error: "AI не настроен (OPENROUTER_API_KEY)" }, { status: 503 });
   }
 
-  const rows = await sbSelect<BrainRow>("ws_brain", "select=*&order=updated_at.desc&limit=1");
-  const snapshot = rows[0];
-  if (!snapshot || !snapshot.data.nodes.length) {
-    return NextResponse.json({ ok: true, skipped: "нет снапшота — сначала собери мозг полностью" });
-  }
-
   try {
-    const { context } = await collectBrainContext();
-    const prompt = buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context);
-    const answer = await askAI(prompt, { temperature: 0.3, maxTokens: 3000 });
-    const knownIds = new Set(snapshot.data.nodes.map((n) => n.id));
-    const delta = parseBrainAnswer(answer, knownIds);
+    const r = await augmentLatestBrain();
+    if (r.skipped) return NextResponse.json({ ok: true, skipped: r.skipped });
 
-    const { data, addedNodes, addedEdges, labels } = mergeBrainDelta(snapshot.data, delta);
-    if (!addedNodes && !addedEdges) {
-      return NextResponse.json({ ok: true, id: snapshot.id, added: 0, edges: 0 });
-    }
-
-    await sbUpdate("ws_brain", `id=eq.${encodeURIComponent(snapshot.id)}`, {
-      data,
-      updated_at: new Date().toISOString(),
-    });
-
-    if (addedNodes) {
+    if (r.added) {
       await notifyOwner(
-        `🧠 Мозг дополнен: +${addedNodes}`,
-        [`🧠 «${snapshot.title}» дополнен: +${addedNodes} узл., +${addedEdges} связ.`, "", ...labels.map((l) => `• ${l}`)].join("\n"),
+        `🧠 Мозг дополнен: +${r.added}`,
+        [`🧠 «${r.title}» дополнен: +${r.added} узл., +${r.edges} связ.`, "", ...r.labels.map((l) => `• ${l}`)].join("\n"),
       ).catch(() => { /* уведомление — не повод ронять тик */ });
     }
 
-    return NextResponse.json({ ok: true, id: snapshot.id, added: addedNodes, edges: addedEdges, labels, data });
+    return NextResponse.json({ ok: true, id: r.id, added: r.added, edges: r.edges, labels: r.labels, data: r.data });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }
