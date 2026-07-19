@@ -1,42 +1,95 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
-import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, FolderGit2, Blocks, Briefcase, Send, CreditCard, Sparkles, Newspaper, Music, BookText, Shapes, HeartPulse, Frame } from "lucide-react";
+import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, FolderGit2, Blocks, Briefcase, Send, CreditCard, Sparkles, Newspaper, Music, BookText, Shapes, HeartPulse, Frame, ChevronRight, ChevronDown } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
 
-const FEATURES = [
-  { id: "workspace/dashboard.tsx", label: "Главная", Icon: LayoutDashboard },
-  { id: "workspace/assistant.tsx", label: "Ассистент", Icon: Sparkles },
-  { id: "workspace/news.tsx", label: "Новости", Icon: Newspaper },
-  { id: "workspace/music.tsx", label: "Музыка", Icon: Music },
-  { id: "workspace/notes.md", label: "Заметки", Icon: StickyNote },
-  { id: "workspace/diagrams.tsx", label: "Диаграммы", Icon: Shapes },
-  { id: "workspace/calendar.tsx", label: "Календарь", Icon: CalendarDays },
-  { id: "workspace/tasks.todo", label: "Задачи", Icon: ListTodo },
-  { id: "workspace/mail.tsx", label: "Почта", Icon: Mail },
-  { id: "workspace/bitrix.tsx", label: "Bitrix24", Icon: Briefcase },
-  { id: "workspace/notion.tsx", label: "Notion", Icon: BookText },
-  { id: "workspace/telegram.tsx", label: "Telegram", Icon: Send },
-  { id: "workspace/subscriptions.tsx", label: "Подписки", Icon: CreditCard },
-  { id: "workspace/projects.tsx", label: "Проекты", Icon: FolderGit2 },
+type Item = { id: string; label: string; Icon: typeof LayoutDashboard };
+
+const GROUPS: { key: string; title: string; items: Item[] }[] = [
+  {
+    key: "main",
+    title: "Обзор",
+    items: [
+      { id: "workspace/dashboard.tsx", label: "Главная", Icon: LayoutDashboard },
+      { id: "workspace/assistant.tsx", label: "Ассистент", Icon: Sparkles },
+    ],
+  },
+  {
+    key: "productivity",
+    title: "Продуктивность",
+    items: [
+      { id: "workspace/notes.md", label: "Заметки", Icon: StickyNote },
+      { id: "workspace/tasks.todo", label: "Задачи", Icon: ListTodo },
+      { id: "workspace/calendar.tsx", label: "Календарь", Icon: CalendarDays },
+      { id: "workspace/diagrams.tsx", label: "Диаграммы", Icon: Shapes },
+      { id: "workspace/projects.tsx", label: "Проекты", Icon: FolderGit2 },
+    ],
+  },
+  {
+    key: "integrations",
+    title: "Интеграции",
+    items: [
+      { id: "workspace/mail.tsx", label: "Почта", Icon: Mail },
+      { id: "workspace/telegram.tsx", label: "Telegram", Icon: Send },
+      { id: "workspace/notion.tsx", label: "Notion", Icon: BookText },
+      { id: "workspace/bitrix.tsx", label: "Bitrix24", Icon: Briefcase },
+      { id: "workspace/subscriptions.tsx", label: "Подписки", Icon: CreditCard },
+    ],
+  },
+  {
+    key: "media",
+    title: "Медиа",
+    items: [
+      { id: "workspace/news.tsx", label: "Новости", Icon: Newspaper },
+      { id: "workspace/music.tsx", label: "Музыка", Icon: Music },
+    ],
+  },
+  {
+    key: "tools",
+    title: "Инструменты",
+    items: [
+      { id: "tools/repo-health.tsx", label: "Repo Health", Icon: HeartPulse },
+      { id: "tools/figma.tsx", label: "Figma → Code", Icon: Frame },
+    ],
+  },
 ];
 
-// Self-hosted / semi-local tools: heavy work runs elsewhere, the workspace
-// only drives them and shows results.
-const TOOLS = [
-  { id: "tools/repo-health.tsx", label: "Repo Health", Icon: HeartPulse },
-  { id: "tools/figma.tsx", label: "Figma → Code", Icon: Frame },
-];
+const COLLAPSE_KEY = "ws-sidebar-collapsed";
+
+function loadCollapsed(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
 
 export function WorkspacePanel() {
   const { user, configured, loaded, refresh, logout } = useSession();
   const openFile = useEditor((s) => s.openFile);
+  const activeFile = useEditor((s) => s.activeFile);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!loaded) refresh();
   }, [loaded, refresh]);
+
+  useEffect(() => {
+    setCollapsed(loadCollapsed());
+  }, []);
+
+  const toggleGroup = (key: string) => {
+    setCollapsed((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -79,29 +132,42 @@ export function WorkspacePanel() {
       </div>
 
       {/* feature launcher */}
-      <div className="px-2 py-2">
-        {FEATURES.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            onClick={() => openFile(id)}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] text-vsc-text hover:bg-vsc-hover"
-          >
-            <Icon size={15} className="text-vsc-muted" /> {label}
-          </button>
-        ))}
-
-        <div className="px-2 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-vsc-muted">
-          Инструменты
-        </div>
-        {TOOLS.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            onClick={() => openFile(id)}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] text-vsc-text hover:bg-vsc-hover"
-          >
-            <Icon size={15} className="text-vsc-muted" /> {label}
-          </button>
-        ))}
+      <div className="px-2 py-1">
+        {GROUPS.map(({ key, title, items }) => {
+          const isCollapsed = !!collapsed[key];
+          const hasActive = items.some((i) => i.id === activeFile);
+          return (
+            <div key={key} className="mb-0.5">
+              <button
+                onClick={() => toggleGroup(key)}
+                className="flex w-full items-center gap-1 rounded px-2 py-1 text-left text-[11px] font-medium uppercase tracking-wide text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"
+              >
+                {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                {title}
+                {isCollapsed && hasActive && (
+                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-vsc-accent" />
+                )}
+              </button>
+              {!isCollapsed &&
+                items.map(({ id, label, Icon }) => {
+                  const active = id === activeFile;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => openFile(id)}
+                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 pl-6 text-left text-[13px] ${
+                        active
+                          ? "bg-vsc-hover text-vsc-bright"
+                          : "text-vsc-text hover:bg-vsc-hover"
+                      }`}
+                    >
+                      <Icon size={15} className={active ? "text-vsc-accent" : "text-vsc-muted"} /> {label}
+                    </button>
+                  );
+                })}
+            </div>
+          );
+        })}
       </div>
 
       <p className="mt-auto px-4 py-3 text-[11px] leading-relaxed text-vsc-muted">
