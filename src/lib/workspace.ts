@@ -74,7 +74,48 @@ export interface Subscription {
   created_at: string;
 }
 
-export type Kind = "notes" | "tasks" | "events" | "projects" | "subscriptions" | "diagrams";
+export type Kind = "notes" | "tasks" | "events" | "projects" | "subscriptions" | "diagrams" | "brain";
+
+/* ---- Second brain: AI-собранный граф знаний -------------------------- */
+
+export type BrainCategory = "work" | "project" | "idea" | "people" | "finance" | "learn" | "life" | "other";
+
+export interface BrainSource {
+  panel: string; // tasks | notes | calendar | mail | telegram | notion | bitrix | projects | subscriptions | news | other
+  ref: string;   // человекочитаемый указатель: заголовок задачи/письма/страницы
+  url?: string | null;
+}
+
+export interface BrainNode {
+  id: string;
+  label: string;
+  category: BrainCategory;
+  importance: number; // 1..5
+  summary: string;
+  source: BrainSource | null;
+  x?: number;
+  y?: number;
+}
+
+export interface BrainEdge {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
+}
+
+export interface BrainState {
+  nodes: BrainNode[];
+  edges: BrainEdge[];
+}
+
+export interface BrainSnapshot {
+  id: string;
+  title: string;
+  data: BrainState;
+  updated_at: string;
+  created_at: string;
+}
 
 /** Currency symbols offered in the subscriptions form. */
 export const CURRENCIES = ["₽", "₸", "$", "€"];
@@ -148,6 +189,35 @@ export const DEMO_SUBSCRIPTIONS: Subscription[] = [
   { id: "demo-2", name: "Spotify", price: 169, currency: "₽", period: "monthly", tier: "Individual", description: "", next_date: isoDay(5), created_at: new Date().toISOString() },
   { id: "demo-3", name: "GitHub Copilot", price: 100, currency: "$", period: "yearly", tier: "", description: "Годовая подписка", next_date: isoDay(120), created_at: new Date().toISOString() },
 ];
+
+/** Демо-граф «второго мозга» для гостей — показывает, как это выглядит. */
+export const DEMO_BRAIN: BrainState = {
+  nodes: [
+    { id: "b1", label: "Портфолио-IDE", category: "project", importance: 5, summary: "Главный пет-проект: сайт-портфолио в виде VS Code с личным кабинетом.", source: { panel: "projects", ref: "portfolioV5" } },
+    { id: "b2", label: "Repo Anti-Rot", category: "project", importance: 4, summary: "Монитор «гниения» репозиториев: 16 сканеров, score A–F.", source: { panel: "projects", ref: "Repo Anti-Rot" } },
+    { id: "b3", label: "Запушить новый проект", category: "work", importance: 4, summary: "Открытая задача с дедлайном завтра.", source: { panel: "tasks", ref: "Запушить новый проект на GitHub" } },
+    { id: "b4", label: "Рекрутеры", category: "people", importance: 4, summary: "Несколько писем от рекрутеров ждут ответа.", source: { panel: "mail", ref: "Ответить на письма рекрутеров" } },
+    { id: "b5", label: "Резюме", category: "work", importance: 3, summary: "Обновить резюме под свежие проекты.", source: { panel: "tasks", ref: "Обновить резюме" } },
+    { id: "b6", label: "Claude Pro", category: "finance", importance: 3, summary: "Подписка $20/мес — основной AI-инструмент.", source: { panel: "subscriptions", ref: "Claude Pro" } },
+    { id: "b7", label: "AI-агенты", category: "learn", importance: 4, summary: "Изучение tool-calling, мульти-агентных пайплайнов и RAG.", source: { panel: "notes", ref: "Прочитать" } },
+    { id: "b8", label: "Hephaestus", category: "project", importance: 3, summary: "Мульти-модельная арена агентов поверх OpenRouter.", source: { panel: "projects", ref: "Hephaestus" } },
+    { id: "b9", label: "Созвон по проекту", category: "work", importance: 3, summary: "Сегодня в 15:00.", source: { panel: "calendar", ref: "Созвон по проекту" } },
+    { id: "b10", label: "Спортзал", category: "life", importance: 2, summary: "Завтра 19:30 — держать режим.", source: { panel: "calendar", ref: "Спортзал" } },
+    { id: "b11", label: "Идея: второй мозг", category: "idea", importance: 5, summary: "ИИ читает всё и строит живой граф знаний со связями. Ты смотришь на него прямо сейчас.", source: { panel: "notes", ref: "Идеи для портфолио" } },
+  ],
+  edges: [
+    { id: "be1", from: "b1", to: "b3", label: "задача проекта" },
+    { id: "be2", from: "b1", to: "b11", label: "фича" },
+    { id: "be3", from: "b1", to: "b2", label: "встроен Repo Health" },
+    { id: "be4", from: "b4", to: "b5", label: "нужно резюме" },
+    { id: "be5", from: "b4", to: "b1", label: "показать портфолио" },
+    { id: "be6", from: "b6", to: "b7", label: "инструмент обучения" },
+    { id: "be7", from: "b7", to: "b8", label: "практика" },
+    { id: "be8", from: "b7", to: "b11", label: "основа идеи" },
+    { id: "be9", from: "b9", to: "b1", label: "обсуждение" },
+    { id: "be10", from: "b8", to: "b1", label: "в портфолио" },
+  ],
+};
 
 interface ApiList<T> { items: T[] }
 interface ApiOne<T> { item: T }

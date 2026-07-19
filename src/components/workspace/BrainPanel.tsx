@@ -1,0 +1,658 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2 } from "lucide-react";
+import { useSession } from "@/lib/session";
+import { useEditor } from "@/lib/store";
+import {
+  wsList, wsCreate, wsUpdate, wsDelete,
+  DEMO_BRAIN,
+  type BrainState, type BrainNode, type BrainEdge, type BrainSnapshot, type BrainCategory,
+} from "@/lib/workspace";
+import { GuestBanner } from "./GuestBanner";
+
+/**
+ * «Второй мозг» — граф знаний, собранный ИИ из всего воркспейса (задачи,
+ * заметки, календарь, почта, Telegram, Notion, …). Плавающие точки-узлы с
+ * категорией/важностью и связями; каждый узел помнит источник. Граф можно
+ * править руками, пересобирать ИИ и сохранять снапшоты состояния (ws_brain).
+ */
+
+const CATEGORIES: { key: BrainCategory; label: string; color: string }[] = [
+  { key: "project", label: "Проекты", color: "#c586c0" },
+  { key: "work", label: "Работа", color: "#4fc1ff" },
+  { key: "idea", label: "Идеи", color: "#dcdcaa" },
+  { key: "people", label: "Люди", color: "#4ec9b0" },
+  { key: "finance", label: "Финансы", color: "#ce9178" },
+  { key: "learn", label: "Обучение", color: "#9cdcfe" },
+  { key: "life", label: "Жизнь", color: "#6a9955" },
+  { key: "other", label: "Прочее", color: "#858585" },
+];
+
+const catColor = (c: BrainCategory) => CATEGORIES.find((x) => x.key === c)?.color ?? "#858585";
+const radius = (importance: number) => 6 + Math.max(1, Math.min(5, importance)) * 3;
+
+/** Внутренние вкладки-источники: panel → id файла в IDE. */
+const SOURCE_FILE: Record<string, string> = {
+  tasks: "workspace/tasks.todo",
+  notes: "workspace/notes.md",
+  calendar: "workspace/calendar.tsx",
+  mail: "workspace/mail.tsx",
+  telegram: "workspace/telegram.tsx",
+  notion: "workspace/notion.tsx",
+  bitrix: "workspace/bitrix.tsx",
+  projects: "workspace/projects.tsx",
+  subscriptions: "workspace/subscriptions.tsx",
+  news: "workspace/news.tsx",
+};
+
+/* ---- физика: позиции/скорости живут вне React, в ref ------------------ */
+
+interface Body { x: number; y: number; vx: number; vy: number; phase: number }
+
+type Bodies = Map<string, Body>;
+
+function seedBody(i: number, total: number, w: number, h: number, node: BrainNode): Body {
+  // Стартуем по кругу (или с сохранённых координат), дальше разруливает физика.
+  const angle = (i / Math.max(1, total)) * Math.PI * 2;
+  const r = Math.min(w, h) * 0.3;
+  return {
+    x: node.x ?? w / 2 + Math.cos(angle) * r,
+    y: node.y ?? h / 2 + Math.sin(angle) * r,
+    vx: 0, vy: 0,
+    phase: Math.random() * Math.PI * 2,
+  };
+}
+
+export function BrainPanel() {
+  const owner = useSession((s) => !!s.user?.owner);
+  const openFile = useEditor((s) => s.openFile);
+
+  const [graph, setGraph] = useState<BrainState>(DEMO_BRAIN);
+  const [demo, setDemo] = useState(true);
+  const [snapshots, setSnapshots] = useState<BrainSnapshot[]>([]);
+  const [snapshotId, setSnapshotId] = useState<string>(""); // текущий загруженный снапшот
+  const [title, setTitle] = useState("Мой мозг");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [linkFrom, setLinkFrom] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"" | "generate" | "save">("");
+  const [error, setError] = useState("");
+  const [dirty, setDirty] = useState(false);
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const bodies = useRef<Bodies>(new Map());
+  const graphRef = useRef(graph);
+  graphRef.current = graph;
+  const view = useRef({ ox: 0, oy: 0, scale: 1 });
+  const pointer = useRef({ dragId: null as string | null, panning: false, lastX: 0, lastY: 0, moved: false });
+  const hoverRef = useRef<string | null>(null);
+  const selectedRef = useRef(selectedId);
+  selectedRef.current = selectedId;
+  const linkFromRef = useRef(linkFrom);
+  linkFromRef.current = linkFrom;
+
+  /* ---- загрузка ------------------------------------------------------- */
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const rows = await wsList<BrainSnapshot>("brain");
+        if (!alive) return;
+        setSnapshots(rows);
+        setDemo(false);
+        if (rows.length) {
+          setGraph(rows[0].data);
+          setSnapshotId(rows[0].id);
+          setTitle(rows[0].title);
+        } else {
+          setGraph({ nodes: [], edges: [] });
+        }
+      } catch {
+        if (alive) { setGraph(DEMO_BRAIN); setDemo(true); }
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  /* ---- симуляция + отрисовка ------------------------------------------ */
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let w = 0, h = 0;
+    const resize = () => {
+      const dpr = window.devicePixelRatio || 1;
+      w = wrap.clientWidth; h = wrap.clientHeight;
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(wrap);
+
+    let raf = 0;
+    let t = 0;
+    const tick = () => {
+      const g = graphRef.current;
+      const map = bodies.current;
+
+      // Синхронизируем тела с узлами (новые — засеять, удалённые — убрать).
+      g.nodes.forEach((n, i) => {
+        if (!map.has(n.id)) map.set(n.id, seedBody(i, g.nodes.length, w, h, n));
+      });
+      for (const id of [...map.keys()]) {
+        if (!g.nodes.some((n) => n.id === id)) map.delete(id);
+      }
+
+      // Силы: отталкивание всех от всех, пружины по рёбрам, центр, дрейф.
+      const arr = g.nodes.map((n) => ({ n, b: map.get(n.id)! }));
+      for (let i = 0; i < arr.length; i++) {
+        for (let j = i + 1; j < arr.length; j++) {
+          const a = arr[i].b, b = arr[j].b;
+          const dx = a.x - b.x, dy = a.y - b.y;
+          const d2 = Math.max(80, dx * dx + dy * dy);
+          const f = 2600 / d2;
+          const d = Math.sqrt(d2);
+          a.vx += (dx / d) * f; a.vy += (dy / d) * f;
+          b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+        }
+      }
+      for (const e of g.edges) {
+        const a = map.get(e.from), b = map.get(e.to);
+        if (!a || !b) continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+        const f = (d - 130) * 0.004;
+        a.vx += (dx / d) * f; a.vy += (dy / d) * f;
+        b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+      }
+      t += 0.016;
+      for (const { n, b } of arr) {
+        // Мягкое притяжение к центру + лёгкое «дыхание», чтобы граф плыл.
+        b.vx += (w / 2 - b.x) * 0.0008 + Math.cos(t * 0.6 + b.phase) * 0.02;
+        b.vy += (h / 2 - b.y) * 0.0008 + Math.sin(t * 0.5 + b.phase) * 0.02;
+        if (pointer.current.dragId !== n.id) {
+          b.vx *= 0.86; b.vy *= 0.86;
+          b.x += b.vx; b.y += b.vy;
+        } else {
+          b.vx = 0; b.vy = 0;
+        }
+      }
+
+      // Отрисовка.
+      const { ox, oy, scale } = view.current;
+      ctx.clearRect(0, 0, w, h);
+      ctx.save();
+      ctx.translate(ox, oy);
+      ctx.scale(scale, scale);
+
+      const sel = selectedRef.current;
+      const hover = hoverRef.current;
+      const neighbors = new Set<string>();
+      if (sel) {
+        neighbors.add(sel);
+        for (const e of g.edges) {
+          if (e.from === sel) neighbors.add(e.to);
+          if (e.to === sel) neighbors.add(e.from);
+        }
+      }
+
+      for (const e of g.edges) {
+        const a = map.get(e.from), b = map.get(e.to);
+        if (!a || !b) continue;
+        const active = sel && (e.from === sel || e.to === sel);
+        ctx.strokeStyle = active ? "rgba(79,193,255,0.75)" : "rgba(140,140,150,0.25)";
+        ctx.lineWidth = active ? 1.6 : 1;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        if (active && e.label) {
+          ctx.fillStyle = "rgba(200,200,210,0.85)";
+          ctx.font = "10px system-ui, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(e.label, (a.x + b.x) / 2, (a.y + b.y) / 2 - 4);
+        }
+      }
+
+      for (const { n, b } of arr) {
+        const r = radius(n.importance);
+        const dim = sel ? !neighbors.has(n.id) : false;
+        const color = catColor(n.category);
+        ctx.globalAlpha = dim ? 0.25 : 1;
+        // Свечение важных узлов.
+        if (n.importance >= 4 && !dim) {
+          const glow = ctx.createRadialGradient(b.x, b.y, r * 0.4, b.x, b.y, r * 2.4);
+          glow.addColorStop(0, color + "55");
+          glow.addColorStop(1, "transparent");
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, r * 2.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        if (n.id === sel || n.id === hover || n.id === linkFromRef.current) {
+          ctx.strokeStyle = n.id === linkFromRef.current ? "#dcdcaa" : "#ffffff";
+          ctx.lineWidth = 1.6;
+          ctx.stroke();
+        }
+        ctx.fillStyle = dim ? "rgba(200,200,210,0.4)" : "rgba(225,225,235,0.95)";
+        ctx.font = `${n.importance >= 4 ? "600 " : ""}11px system-ui, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.fillText(n.label.slice(0, 32), b.x, b.y + r + 13);
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  }, []);
+
+  /* ---- указатель: drag / pan / zoom / select --------------------------- */
+
+  const toWorld = useCallback((clientX: number, clientY: number) => {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const { ox, oy, scale } = view.current;
+    return { x: (clientX - rect.left - ox) / scale, y: (clientY - rect.top - oy) / scale };
+  }, []);
+
+  const nodeAt = useCallback((wx: number, wy: number): string | null => {
+    const g = graphRef.current;
+    for (let i = g.nodes.length - 1; i >= 0; i--) {
+      const n = g.nodes[i];
+      const b = bodies.current.get(n.id);
+      if (!b) continue;
+      const r = radius(n.importance) + 4;
+      if ((b.x - wx) ** 2 + (b.y - wy) ** 2 <= r * r) return n.id;
+    }
+    return null;
+  }, []);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    (e.target as Element).setPointerCapture(e.pointerId);
+    const { x, y } = toWorld(e.clientX, e.clientY);
+    const id = nodeAt(x, y);
+    pointer.current = { dragId: id, panning: !id, lastX: e.clientX, lastY: e.clientY, moved: false };
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const p = pointer.current;
+    const dx = e.clientX - p.lastX, dy = e.clientY - p.lastY;
+    if (p.dragId) {
+      const b = bodies.current.get(p.dragId);
+      if (b) { b.x += dx / view.current.scale; b.y += dy / view.current.scale; }
+      if (Math.abs(dx) + Math.abs(dy) > 1) p.moved = true;
+    } else if (p.panning) {
+      view.current.ox += dx; view.current.oy += dy;
+      if (Math.abs(dx) + Math.abs(dy) > 1) p.moved = true;
+    } else {
+      const { x, y } = toWorld(e.clientX, e.clientY);
+      hoverRef.current = nodeAt(x, y);
+    }
+    p.lastX = e.clientX; p.lastY = e.clientY;
+  };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    const p = pointer.current;
+    if (!p.moved) {
+      const { x, y } = toWorld(e.clientX, e.clientY);
+      const id = nodeAt(x, y);
+      if (id && linkFromRef.current && id !== linkFromRef.current) {
+        // Режим связывания: второй клик создаёт ребро.
+        const from = linkFromRef.current;
+        setGraph((g) => ({
+          ...g,
+          edges: g.edges.some((ed) => (ed.from === from && ed.to === id) || (ed.from === id && ed.to === from))
+            ? g.edges
+            : [...g.edges, { id: `e${Date.now()}`, from, to: id }],
+        }));
+        setDirty(true);
+        setLinkFrom(null);
+      } else {
+        setSelectedId(id);
+        if (!id) setLinkFrom(null);
+      }
+    }
+    pointer.current = { dragId: null, panning: false, lastX: 0, lastY: 0, moved: false };
+  };
+
+  const onWheel = (e: React.WheelEvent) => {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const v = view.current;
+    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    const next = Math.min(2.5, Math.max(0.35, v.scale * factor));
+    // Зум к курсору: точка под мышью остаётся на месте.
+    v.ox = mx - ((mx - v.ox) / v.scale) * next;
+    v.oy = my - ((my - v.oy) / v.scale) * next;
+    v.scale = next;
+  };
+
+  /* ---- действия -------------------------------------------------------- */
+
+  const generate = async () => {
+    setBusy("generate"); setError("");
+    try {
+      const res = await fetch("/api/workspace/brain/generate", { method: "POST" });
+      const json = (await res.json()) as { data?: BrainState; error?: string };
+      if (!res.ok || !json.data) throw new Error(json.error || `HTTP ${res.status}`);
+      bodies.current.clear();
+      setGraph(json.data);
+      setSelectedId(null);
+      setDirty(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const saveSnapshot = async () => {
+    setBusy("save"); setError("");
+    try {
+      // Впечатываем текущие координаты, чтобы снапшот восстанавливался как был.
+      const withPos: BrainState = {
+        ...graphRef.current,
+        nodes: graphRef.current.nodes.map((n) => {
+          const b = bodies.current.get(n.id);
+          return b ? { ...n, x: Math.round(b.x), y: Math.round(b.y) } : n;
+        }),
+      };
+      if (snapshotId) {
+        const row = await wsUpdate<BrainSnapshot>("brain", snapshotId, { title, data: withPos });
+        setSnapshots((s) => s.map((x) => (x.id === row.id ? row : x)));
+      } else {
+        const row = await wsCreate<BrainSnapshot>("brain", { title, data: withPos });
+        setSnapshots((s) => [row, ...s]);
+        setSnapshotId(row.id);
+      }
+      setDirty(false);
+    } catch (e) {
+      setError(`Не удалось сохранить: ${(e as Error).message}`);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const loadSnapshot = (id: string) => {
+    if (id === "new") {
+      bodies.current.clear();
+      setGraph({ nodes: [], edges: [] });
+      setSnapshotId("");
+      setTitle("Мой мозг");
+      setSelectedId(null);
+      setDirty(false);
+      return;
+    }
+    const row = snapshots.find((s) => s.id === id);
+    if (!row) return;
+    bodies.current.clear();
+    setGraph(row.data);
+    setSnapshotId(row.id);
+    setTitle(row.title);
+    setSelectedId(null);
+    setDirty(false);
+  };
+
+  const deleteSnapshot = async () => {
+    if (!snapshotId) return;
+    try {
+      await wsDelete("brain", snapshotId);
+      setSnapshots((s) => s.filter((x) => x.id !== snapshotId));
+      loadSnapshot("new");
+    } catch (e) {
+      setError(`Не удалось удалить: ${(e as Error).message}`);
+    }
+  };
+
+  const addNode = () => {
+    const id = `n${Date.now()}`;
+    setGraph((g) => ({
+      ...g,
+      nodes: [...g.nodes, { id, label: "Новый узел", category: "other", importance: 3, summary: "", source: null }],
+    }));
+    setSelectedId(id);
+    setDirty(true);
+  };
+
+  const patchNode = (id: string, patch: Partial<BrainNode>) => {
+    setGraph((g) => ({ ...g, nodes: g.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) }));
+    setDirty(true);
+  };
+
+  const deleteNode = (id: string) => {
+    setGraph((g) => ({
+      nodes: g.nodes.filter((n) => n.id !== id),
+      edges: g.edges.filter((e) => e.from !== id && e.to !== id),
+    }));
+    setSelectedId(null);
+    setDirty(true);
+  };
+
+  const deleteEdge = (id: string) => {
+    setGraph((g) => ({ ...g, edges: g.edges.filter((e) => e.id !== id) }));
+    setDirty(true);
+  };
+
+  const openSource = (n: BrainNode) => {
+    if (!n.source) return;
+    if (n.source.url) { window.open(n.source.url, "_blank", "noopener"); return; }
+    const file = SOURCE_FILE[n.source.panel];
+    if (file) openFile(file);
+  };
+
+  const selected = selectedId ? graph.nodes.find((n) => n.id === selectedId) ?? null : null;
+  const selectedEdges = selected
+    ? graph.edges.filter((e) => e.from === selected.id || e.to === selected.id)
+    : [];
+  const nodeLabel = (id: string) => graph.nodes.find((n) => n.id === id)?.label ?? id;
+
+  return (
+    <div className="flex h-[calc(100vh-120px)] flex-col px-4 pb-4">
+      <div className="flex items-center gap-2 py-3">
+        <Brain size={18} className="text-vsc-accent" />
+        <h1 className="text-[15px] font-semibold text-vsc-bright">Второй мозг</h1>
+        <span className="text-[12px] text-vsc-muted">
+          {graph.nodes.length} узлов · {graph.edges.length} связей{dirty ? " · не сохранено" : ""}
+        </span>
+      </div>
+
+      {demo && <GuestBanner what="граф знаний" />}
+
+      {/* toolbar */}
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <button
+          onClick={generate}
+          disabled={demo || !owner || busy !== ""}
+          className="flex items-center gap-1.5 rounded bg-vsc-accent px-3 py-1.5 text-[12.5px] text-white hover:opacity-90 disabled:opacity-40"
+          title="ИИ прочитает все источники и соберёт граф заново"
+        >
+          {busy === "generate" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+          Собрать мозг
+        </button>
+        <button
+          onClick={addNode}
+          disabled={demo}
+          className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[12.5px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
+        >
+          <Plus size={14} /> Узел
+        </button>
+        <div className="mx-1 h-5 w-px bg-vsc-line" />
+        <input
+          value={title}
+          onChange={(e) => { setTitle(e.target.value); setDirty(true); }}
+          disabled={demo}
+          className="w-40 rounded border border-vsc-line bg-transparent px-2 py-1.5 text-[12.5px] text-vsc-text outline-none focus:border-vsc-accent disabled:opacity-40"
+          placeholder="Название снапшота"
+        />
+        <button
+          onClick={saveSnapshot}
+          disabled={demo || busy !== ""}
+          className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[12.5px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
+        >
+          {busy === "save" ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+          Сохранить
+        </button>
+        <select
+          value={snapshotId || "new"}
+          onChange={(e) => loadSnapshot(e.target.value)}
+          disabled={demo}
+          className="rounded border border-vsc-line bg-vsc-sidebar px-2 py-1.5 text-[12.5px] text-vsc-text outline-none disabled:opacity-40"
+        >
+          <option value="new">— новый граф —</option>
+          {snapshots.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.title} · {new Date(s.updated_at).toLocaleDateString("ru-RU")}
+            </option>
+          ))}
+        </select>
+        {snapshotId && !demo && (
+          <button onClick={deleteSnapshot} title="Удалить снапшот" className="rounded p-1.5 text-vsc-muted hover:bg-vsc-hover hover:text-red-400">
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
+
+      {error && <div className="mb-2 rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[12px] text-red-300">{error}</div>}
+      {linkFrom && (
+        <div className="mb-2 rounded border border-vsc-line bg-vsc-sidebar px-3 py-1.5 text-[12px] text-vsc-muted">
+          Режим связи: кликни второй узел, чтобы соединить с «{nodeLabel(linkFrom)}».{" "}
+          <button onClick={() => setLinkFrom(null)} className="text-vsc-accent hover:underline">Отмена</button>
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1 gap-3">
+        {/* граф */}
+        <div ref={wrapRef} className="relative min-w-0 flex-1 overflow-hidden rounded border border-vsc-line bg-vsc-sidebar/40">
+          <canvas
+            ref={canvasRef}
+            className="block cursor-grab touch-none active:cursor-grabbing"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onWheel={onWheel}
+          />
+          {!graph.nodes.length && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-8 text-center text-[13px] text-vsc-muted">
+              Пусто. Нажми «Собрать мозг» — ИИ прочитает задачи, заметки, календарь, почту и Notion и построит граф. Или добавь узлы вручную.
+            </div>
+          )}
+          {/* легенда */}
+          <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap gap-x-3 gap-y-1 rounded bg-black/25 px-2 py-1">
+            {CATEGORIES.map((c) => (
+              <span key={c.key} className="flex items-center gap-1 text-[10.5px] text-vsc-muted">
+                <span className="h-2 w-2 rounded-full" style={{ background: c.color }} /> {c.label}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* инспектор узла */}
+        {selected && (
+          <div className="flex w-72 shrink-0 flex-col gap-2.5 overflow-y-auto rounded border border-vsc-line bg-vsc-sidebar p-3">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-[12px] text-vsc-muted">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: catColor(selected.category) }} />
+                Узел
+              </span>
+              <button onClick={() => setSelectedId(null)} className="rounded p-1 text-vsc-muted hover:bg-vsc-hover">
+                <X size={14} />
+              </button>
+            </div>
+            <input
+              value={selected.label}
+              onChange={(e) => patchNode(selected.id, { label: e.target.value })}
+              disabled={demo}
+              className="rounded border border-vsc-line bg-transparent px-2 py-1.5 text-[13px] text-vsc-bright outline-none focus:border-vsc-accent disabled:opacity-60"
+            />
+            <div className="flex gap-2">
+              <select
+                value={selected.category}
+                onChange={(e) => patchNode(selected.id, { category: e.target.value as BrainCategory })}
+                disabled={demo}
+                className="flex-1 rounded border border-vsc-line bg-vsc-sidebar px-2 py-1.5 text-[12.5px] text-vsc-text outline-none disabled:opacity-60"
+              >
+                {CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+              </select>
+              <label className="flex items-center gap-1.5 text-[12px] text-vsc-muted" title="Важность 1–5">
+                ★
+                <input
+                  type="range" min={1} max={5} step={1}
+                  value={selected.importance}
+                  onChange={(e) => patchNode(selected.id, { importance: Number(e.target.value) })}
+                  disabled={demo}
+                  className="w-16 accent-(--vsc-accent,#4fc1ff)"
+                />
+                {selected.importance}
+              </label>
+            </div>
+            <textarea
+              value={selected.summary}
+              onChange={(e) => patchNode(selected.id, { summary: e.target.value })}
+              disabled={demo}
+              rows={4}
+              placeholder="Суть узла…"
+              className="resize-none rounded border border-vsc-line bg-transparent px-2 py-1.5 text-[12.5px] leading-relaxed text-vsc-text outline-none focus:border-vsc-accent disabled:opacity-60"
+            />
+            {selected.source && (selected.source.url || SOURCE_FILE[selected.source.panel]) && (
+              <button
+                onClick={() => openSource(selected)}
+                className="flex items-center gap-1.5 rounded border border-vsc-line px-2 py-1.5 text-left text-[12px] text-vsc-accent hover:bg-vsc-hover"
+              >
+                <ExternalLink size={13} className="shrink-0" />
+                <span className="truncate">Источник: {selected.source.ref || selected.source.panel}</span>
+              </button>
+            )}
+            <div>
+              <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-vsc-muted">Связи ({selectedEdges.length})</div>
+              {selectedEdges.map((e) => {
+                const otherId = e.from === selected.id ? e.to : e.from;
+                return (
+                  <div key={e.id} className="group flex items-center gap-1.5 rounded px-1 py-0.5 text-[12px] text-vsc-text hover:bg-vsc-hover">
+                    <button onClick={() => setSelectedId(otherId)} className="min-w-0 flex-1 truncate text-left hover:text-vsc-accent">
+                      {nodeLabel(otherId)}{e.label ? ` — ${e.label}` : ""}
+                    </button>
+                    {!demo && (
+                      <button onClick={() => deleteEdge(e.id)} className="rounded p-0.5 text-vsc-muted opacity-0 hover:text-red-400 group-hover:opacity-100">
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {!demo && (
+                <button
+                  onClick={() => setLinkFrom(selected.id)}
+                  className="mt-1 flex items-center gap-1.5 rounded border border-dashed border-vsc-line px-2 py-1 text-[12px] text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"
+                >
+                  <Link2 size={12} /> Связать с…
+                </button>
+              )}
+            </div>
+            {!demo && (
+              <button
+                onClick={() => deleteNode(selected.id)}
+                className="mt-auto flex items-center gap-1.5 rounded border border-red-500/40 px-2 py-1.5 text-[12px] text-red-400 hover:bg-red-500/10"
+              >
+                <Trash2 size={13} /> Удалить узел
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

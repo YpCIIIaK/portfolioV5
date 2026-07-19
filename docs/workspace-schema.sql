@@ -101,6 +101,18 @@ create table if not exists public.ws_diagrams (
 );
 alter table public.ws_diagrams enable row level security;
 
+-- Second brain (AI knowledge graph) -----------------------------------
+-- Each row is one saved snapshot of the graph; `data` holds { nodes, edges }
+-- with categories/importance/sources. Owner-only (gated in the API).
+create table if not exists public.ws_brain (
+  id         uuid primary key default gen_random_uuid(),
+  title      text not null default 'Снапшот мозга',
+  data       jsonb not null default '{"nodes":[],"edges":[]}'::jsonb,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+alter table public.ws_brain enable row level security;
+
 -- Integrations (OAuth tokens for third-party services) ----------------
 -- One row per provider ('notion', …). Holds the owner's OAuth access token
 -- and a free-form `config` (e.g. which Notion database backs "tasks").

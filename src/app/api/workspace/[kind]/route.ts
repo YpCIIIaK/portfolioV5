@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireOwner, getSession } from "@/lib/auth";
 import { invalidateContext } from "@/lib/aggregate";
 import { supabaseConfigured, sbSelect, sbInsert, sbUpdate, sbDelete } from "@/lib/supabase";
+import { brainData } from "@/lib/brain";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,7 @@ export const runtime = "nodejs";
  * is gated behind requireOwner().
  */
 
-type Kind = "notes" | "tasks" | "events" | "projects" | "subscriptions" | "diagrams";
+type Kind = "notes" | "tasks" | "events" | "projects" | "subscriptions" | "diagrams" | "brain";
 
 const TABLE: Record<Kind, string> = {
   notes: "ws_notes",
@@ -21,6 +22,7 @@ const TABLE: Record<Kind, string> = {
   projects: "ws_projects",
   subscriptions: "ws_subscriptions",
   diagrams: "ws_diagrams",
+  brain: "ws_brain",
 };
 
 const ORDER: Record<Kind, string> = {
@@ -30,6 +32,7 @@ const ORDER: Record<Kind, string> = {
   projects: "order=created_at.desc",
   subscriptions: "order=created_at.desc",
   diagrams: "order=updated_at.desc",
+  brain: "order=updated_at.desc",
 };
 
 const priority = z.enum(["none", "low", "medium", "high"]);
@@ -68,6 +71,7 @@ const CREATE: Record<Kind, z.ZodTypeAny> = {
   projects: z.object({ title: z.string().min(1).max(200), description: z.string().max(4000).default(""), repo_url: z.string().max(500).nullable().default(null), tags: z.string().max(500).default(""), is_public: z.boolean().default(true) }),
   subscriptions: z.object({ name: z.string().min(1).max(200), price: z.number().min(0).max(1e9).default(0), currency: z.string().max(8).default("₽"), period: subPeriod.default("monthly"), tier: z.string().max(100).default(""), description: z.string().max(2000).default(""), next_date: z.string().nullable().default(null) }),
   diagrams: z.object({ title: z.string().max(200).default("Новая диаграмма"), data: diagramData.default({ nodes: [], edges: [] }) }),
+  brain: z.object({ title: z.string().max(200).default("Снапшот мозга"), data: brainData.default({ nodes: [], edges: [] }) }),
 };
 
 const UPDATE: Record<Kind, z.ZodTypeAny> = {
@@ -77,10 +81,11 @@ const UPDATE: Record<Kind, z.ZodTypeAny> = {
   projects: z.object({ title: z.string().min(1).max(200).optional(), description: z.string().max(4000).optional(), repo_url: z.string().max(500).nullable().optional(), tags: z.string().max(500).optional(), is_public: z.boolean().optional() }),
   subscriptions: z.object({ name: z.string().min(1).max(200).optional(), price: z.number().min(0).max(1e9).optional(), currency: z.string().max(8).optional(), period: subPeriod.optional(), tier: z.string().max(100).optional(), description: z.string().max(2000).optional(), next_date: z.string().nullable().optional() }),
   diagrams: z.object({ title: z.string().max(200).optional(), data: diagramData.optional() }),
+  brain: z.object({ title: z.string().max(200).optional(), data: brainData.optional() }),
 };
 
 function parseKind(raw: string): Kind | null {
-  return raw === "notes" || raw === "tasks" || raw === "events" || raw === "projects" || raw === "subscriptions" || raw === "diagrams" ? raw : null;
+  return raw === "notes" || raw === "tasks" || raw === "events" || raw === "projects" || raw === "subscriptions" || raw === "diagrams" || raw === "brain" ? raw : null;
 }
 
 async function guard(kindRaw: string): Promise<{ kind: Kind } | NextResponse> {
@@ -136,7 +141,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const parsed = UPDATE[g.kind].safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid body" }, { status: 400 });
   const patch = { ...(parsed.data as Record<string, unknown>) };
-  if (g.kind === "notes" || g.kind === "diagrams") patch.updated_at = new Date().toISOString();
+  if (g.kind === "notes" || g.kind === "diagrams" || g.kind === "brain") patch.updated_at = new Date().toISOString();
   // Keep the kanban status and the legacy done flag consistent whichever one arrives.
   if (g.kind === "tasks") {
     if ("status" in patch && !("done" in patch)) patch.done = patch.status === "done";
