@@ -9,13 +9,23 @@
 
 const API = "https://api.github.com";
 
+/**
+ * Токен для записи/чтения от имени владельца: предпочитаем GITHUB_PAT (обычно с
+ * полным scope `repo`), но если его нет — используем уже существующий
+ * GITHUB_TOKEN. У GITHUB_TOKEN обычно scope `public_repo` — импорт публичных
+ * репозиториев работает, а приватные и создание репо/issue потребуют `repo`.
+ */
+function token(): string | undefined {
+  return process.env.GITHUB_PAT || process.env.GITHUB_TOKEN;
+}
+
 export function githubConfigured(): boolean {
-  return !!process.env.GITHUB_PAT;
+  return !!token();
 }
 
 function headers(): Record<string, string> {
   return {
-    Authorization: `Bearer ${process.env.GITHUB_PAT}`,
+    Authorization: `Bearer ${token()}`,
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     "Content-Type": "application/json",
