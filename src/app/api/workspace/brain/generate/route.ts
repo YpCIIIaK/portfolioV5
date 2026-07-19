@@ -5,8 +5,9 @@ import { collectContext } from "@/lib/aggregate";
 import { buildBrainPrompt, parseBrainAnswer } from "@/lib/brain";
 
 export const runtime = "nodejs";
-// Свежий сбор контекста + большая генерация — даём модели время.
-export const maxDuration = 60;
+// Холодная функция собирает контекст с нуля (IMAP + Telegram + Notion — десятки
+// секунд) и только потом зовёт модель. 60с не хватает — берём максимум Fluid.
+export const maxDuration = 300;
 
 /**
  * «Собрать мозг»: ИИ читает весь агрегированный контекст воркспейса и
