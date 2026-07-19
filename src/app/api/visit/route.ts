@@ -48,6 +48,7 @@ export async function POST(req: Request) {
     .map((f) => `  • ${f.file} — ${fmtDuration(f.ms)}`)
     .join("\n");
 
+  // Plain-text version — used for email / webhook / dev log.
   const text = [
     "👀 Кто-то смотрит твоё портфолио",
     "",
@@ -64,6 +65,26 @@ export async function POST(req: Request) {
     .filter(Boolean)
     .join("\n");
 
+  // Telegram version — a visit is low-priority, so we send it *silently* and
+  // tuck the details under a spoiler. On the phone only the headline shows;
+  // the rest reveals with a tap ("прочитать по кнопке").
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const details = [
+    `📍 Откуда: ${geo.label}${geo.ip ? ` (${geo.ip})` : ""}`,
+    `⏱️ Провёл на сайте: ${dur}`,
+    body.referrer ? `🔗 Источник: ${body.referrer}` : "🔗 Источник: прямой заход",
+    body.tz ? `🕒 Таймзона: ${body.tz}` : "",
+    body.screen ? `🖥️ Экран: ${body.screen}` : "",
+    body.ua ? `🧭 Устройство: ${body.ua}` : "",
+    "",
+    "📂 Смотрел файлы:",
+    top || "  (не открывал файлы)",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const tgHtml = `👀 Кто-то смотрит твоё портфолио\n\n<tg-spoiler>${esc(details)}</tg-spoiler>`;
+
   // 0) Telegram bot (preferred) — fires independently of email/webhook.
   const tgToken = process.env.TELEGRAM_BOT_TOKEN;
   const tgChat = process.env.TELEGRAM_CHAT_ID;
@@ -74,8 +95,10 @@ export async function POST(req: Request) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: tgChat,
-          text,
+          text: tgHtml,
+          parse_mode: "HTML",
           disable_web_page_preview: true,
+          disable_notification: true, // low-priority: no sound/vibration
         }),
       });
     } catch (err) {

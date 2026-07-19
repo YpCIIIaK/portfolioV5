@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   try {
     const command = matchCommand(text);
     if (command) {
-      await sendTelegram(await runCommand(command, chatId));
+      await sendTelegram(await runCommand(command, chatId), "markdown");
       return NextResponse.json({ ok: true });
     }
 
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
       summary: session.summary,
       messages: [...history, { role: "assistant", content: answer }],
     });
-    await sendTelegram(answer.slice(0, 4000));
+    await sendTelegram(answer.slice(0, 4000), "markdown");
   } catch (e) {
     await sendTelegram(`Ошибка: ${(e as Error).message}`);
   }
