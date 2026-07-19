@@ -342,6 +342,59 @@ export async function latestBrainSnapshot(): Promise<BrainSnapshotRow | null> {
   return rows[0] ?? null;
 }
 
+/** Текстовый обзор последнего снапшота — для ассистента и краткой сводки. */
+export async function brainOverview(topN = 15): Promise<string> {
+  const snapshot = await latestBrainSnapshot();
+  if (!snapshot || !snapshot.data.nodes.length) return "";
+  const { nodes, edges } = snapshot.data;
+
+  const byCategory = new Map<string, number>();
+  for (const n of nodes) byCategory.set(n.category, (byCategory.get(n.category) ?? 0) + 1);
+  const degree = new Map<string, number>();
+  for (const e of edges) {
+    degree.set(e.from, (degree.get(e.from) ?? 0) + 1);
+    degree.set(e.to, (degree.get(e.to) ?? 0) + 1);
+  }
+
+  const top = [...nodes]
+    .sort((a, b) => b.importance - a.importance || (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0))
+    .slice(0, topN);
+
+  return [
+    `Снапшот «${snapshot.title}» (обновлён ${snapshot.updated_at.slice(0, 10)}): ${nodes.length} узлов, ${edges.length} связей.`,
+    `Категории: ${[...byCategory.entries()].sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c} (${n})`).join(", ")}.`,
+    "Ключевые узлы:",
+    ...top.map((n) => `- ${n.label} [${n.category}, важность ${n.importance}, связей ${degree.get(n.id) ?? 0}]${n.summary ? `: ${n.summary}` : ""}`),
+  ].join("\n");
+}
+
+/** Найти узлы мозга по запросу и вернуть их с соседями. */
+export async function searchBrain(query: string, limit = 10): Promise<string> {
+  const snapshot = await latestBrainSnapshot();
+  if (!snapshot || !snapshot.data.nodes.length) return "Мозг ещё не собран.";
+  const { nodes, edges } = snapshot.data;
+  const q = query.trim().toLowerCase();
+  const hits = nodes.filter(
+    (n) => n.label.toLowerCase().includes(q) || n.summary.toLowerCase().includes(q) || n.category.toLowerCase().includes(q),
+  ).slice(0, limit);
+  if (!hits.length) return `В мозге ничего не найдено по «${query}».`;
+
+  const label = (id: string) => nodes.find((n) => n.id === id)?.label ?? id;
+  return hits
+    .map((n) => {
+      const links = edges
+        .filter((e) => e.from === n.id || e.to === n.id)
+        .map((e) => `${label(e.from === n.id ? e.to : e.from)}${e.label ? ` (${e.label})` : ""}`);
+      return [
+        `• ${n.label} [${n.category}, важность ${n.importance}]`,
+        n.summary ? `  ${n.summary}` : "",
+        n.source ? `  источник: ${n.source.panel}${n.source.ref ? ` — ${n.source.ref}` : ""}` : "",
+        links.length ? `  связан с: ${links.join("; ")}` : "  (связей нет)",
+      ].filter(Boolean).join("\n");
+    })
+    .join("\n\n");
+}
+
 /** Полная генерация графа из всех источников (без сохранения). */
 export async function generateBrainData(): Promise<{ data: BrainData; sources: string[] }> {
   const { context, sources } = await collectBrainContext();

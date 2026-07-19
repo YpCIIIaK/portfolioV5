@@ -19,6 +19,7 @@ interface WsEvent { title: string; date: string; time: string | null }
 interface WsNote { title: string; body: string; priority: string; updated_at: string }
 interface WsProject { title: string; description: string; tags: string; is_public: boolean; repo_url: string | null }
 interface WsSubscription { name: string; price: number; currency: string; period: string; tier: string; next_date: string | null }
+interface WsBrain { title: string; data: { nodes: { label: string; category: string; importance: number }[]; edges: unknown[] }; updated_at: string }
 
 const TTL = 5 * 60 * 1000; // 5 min
 let cache: { at: number; text: string } | null = null;
@@ -66,6 +67,18 @@ async function build(): Promise<string> {
             subscriptions
               .map((s) => `- ${s.name}${s.tier ? ` (${s.tier})` : ""}: ${s.price}${s.currency}/${s.period}${s.next_date ? `, следующее списание ${s.next_date}` : ""}`)
               .join("\n"),
+        );
+      }
+    } catch { /* skip */ }
+    try {
+      // Компактно: сам граф не тянем в контекст — у ассистента есть read_brain/search_brain.
+      const brains = await sbSelect<WsBrain>("ws_brain", "select=title,data,updated_at&order=updated_at.desc&limit=1");
+      const b = brains[0];
+      if (b?.data?.nodes?.length) {
+        const top = [...b.data.nodes].sort((x, y) => y.importance - x.importance).slice(0, 8).map((n) => n.label);
+        parts.push(
+          `ВТОРОЙ МОЗГ: снапшот «${b.title}» (обновлён ${b.updated_at.slice(0, 10)}) — ${b.data.nodes.length} узлов, ${b.data.edges?.length ?? 0} связей.\n` +
+            `Ключевое: ${top.join(", ")}.\n(Подробности — инструментами read_brain / search_brain.)`,
         );
       }
     } catch { /* skip */ }

@@ -22,7 +22,7 @@ import { notionConnected, searchNotion, pageContent, createPage } from "@/lib/no
 import { telegramConfigured, fetchDialogs, fetchMessageHistory } from "@/lib/telegram";
 import { githubConfigured, createRepo, createIssue, listRepos } from "@/lib/github";
 import { webFetch, webSearch } from "@/lib/web";
-import { rebuildBrainSnapshot, augmentLatestBrain, expandBrainCategory } from "@/lib/brain";
+import { rebuildBrainSnapshot, augmentLatestBrain, expandBrainCategory, brainOverview, searchBrain } from "@/lib/brain";
 import type { Priority } from "@/lib/workspace";
 
 const MAX_STEPS = 5;
@@ -461,6 +461,35 @@ const TOOLS: Tool[] = [
   },
   {
     def: {
+      name: "read_brain",
+      description: "Прочитать текущий «второй мозг» (граф знаний): сколько узлов и связей, какие категории, ключевые узлы с сутью. Вызывай ПЕРЕД тем, как рассуждать о мозге или предлагать его пересобрать.",
+      parameters: { type: "object", properties: {} },
+    },
+    async run() {
+      if (!supabaseConfigured()) return "Supabase не настроен.";
+      const text = await brainOverview();
+      return text || "Мозг ещё не собран — снапшотов нет.";
+    },
+  },
+  {
+    def: {
+      name: "search_brain",
+      description: "Найти в «мозге» узлы по теме/названию и посмотреть их суть, источник и с чем они связаны.",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string", description: "Тема, название узла или категория." } },
+        required: ["query"],
+      },
+    },
+    async run(a) {
+      if (!supabaseConfigured()) return "Supabase не настроен.";
+      const q = str(a.query);
+      if (!q) return "Пустой запрос.";
+      return searchBrain(q);
+    },
+  },
+  {
+    def: {
       name: "rebuild_brain",
       description: "Полностью пересобрать «второй мозг» (граф знаний): прочитать все источники и сохранить НОВЫМ снапшотом, старые остаются. Долгая операция.",
       parameters: { type: "object", properties: {} },
@@ -588,7 +617,7 @@ export function buildAssistantSystem(today: string, context: string, extra = "")
 - чтение: search_notion, read_notion_page, read_telegram_chat (для полного текста страниц и истории чатов — в сводке только заголовки); web_search, web_fetch (поиск и чтение страниц в интернете); list_github_repos;
 - запись в кабинет: create_task, complete_task, delete_task, create_event, delete_event, create_note, create_notion_page, create_project, create_subscription;
 - GitHub: create_github_repo, create_github_issue;
-- «второй мозг» (граф знаний): rebuild_brain (полный пересбор новым снапшотом), augment_brain (дополнить только новым), expand_brain_category (детализировать категорию/тему);
+- «второй мозг» (граф знаний): read_brain (что уже в мозге — ВСЕГДА вызывай первым, если речь о мозге), search_brain (найти узлы по теме и их связи), rebuild_brain (полный пересбор новым снапшотом), augment_brain (дополнить только новым), expand_brain_category (детализировать категорию/тему);
 - диаграммы: create_diagram (блочная схема: блоки + стрелки) — используй, когда просят нарисовать схему/процесс/архитектуру.
 Меняй данные, создавай репозитории/issue и удаляй что-либо ТОЛЬКО когда пользователь явно об этом просит. Удаление необратимо — если сомневаешься, переспроси. После действия коротко подтверди результат (для GitHub — дай ссылку).
 
