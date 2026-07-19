@@ -403,6 +403,10 @@ export function BrainPanel() {
       setGraph(json.data);
       setSelectedId(null);
       setDirty(true);
+      // Свежая сборка — это НОВЫЙ мозг: отвязываемся от снапшота, чтобы
+      // «Сохранить» создал новую запись, а старые остались для сравнения.
+      setSnapshotId("");
+      setTitle(`Мозг ${new Date().toLocaleDateString("ru-RU")}`);
       if (json.sources?.length) setInfo(`Прочитано: ${json.sources.join(", ")}.`);
     } catch (e) {
       setError((e as Error).message);
@@ -411,7 +415,7 @@ export function BrainPanel() {
     }
   };
 
-  const saveSnapshot = async () => {
+  const saveSnapshot = async (asNew = false) => {
     setBusy("save"); setError("");
     try {
       // Впечатываем текущие координаты, чтобы снапшот восстанавливался как был.
@@ -422,7 +426,7 @@ export function BrainPanel() {
           return b ? { ...n, x: Math.round(b.x), y: Math.round(b.y) } : n;
         }),
       };
-      if (snapshotId) {
+      if (snapshotId && !asNew) {
         const row = await wsUpdate<BrainSnapshot>("brain", snapshotId, { title, data: withPos });
         setSnapshots((s) => s.map((x) => (x.id === row.id ? row : x)));
       } else {
@@ -559,13 +563,24 @@ export function BrainPanel() {
           placeholder="Название снапшота"
         />
         <button
-          onClick={saveSnapshot}
+          onClick={() => saveSnapshot()}
           disabled={demo || busy !== ""}
           className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[12.5px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
+          title={snapshotId ? "Обновить текущий снапшот" : "Сохранить как новый снапшот"}
         >
           {busy === "save" ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
           Сохранить
         </button>
+        {snapshotId && !demo && (
+          <button
+            onClick={() => saveSnapshot(true)}
+            disabled={busy !== ""}
+            className="rounded border border-vsc-line px-2.5 py-1.5 text-[12.5px] text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text disabled:opacity-40"
+            title="Сохранить копией, не трогая текущий снапшот"
+          >
+            Как новый
+          </button>
+        )}
         <select
           value={snapshotId || "new"}
           onChange={(e) => loadSnapshot(e.target.value)}
