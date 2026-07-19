@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2, Search } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
 import {
@@ -91,6 +91,7 @@ export function BrainPanel() {
   const [info, setInfo] = useState("");
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [search, setSearch] = useState("");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -104,6 +105,18 @@ export function BrainPanel() {
   selectedRef.current = selectedId;
   const linkFromRef = useRef(linkFrom);
   linkFromRef.current = linkFrom;
+
+  // Поиск: узлы, попавшие под запрос (по названию, сути, категории). null = поиск неактивен.
+  const matched = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return null;
+    return graph.nodes.filter(
+      (n) => n.label.toLowerCase().includes(q) || n.summary.toLowerCase().includes(q) || n.category.toLowerCase().includes(q),
+    );
+  }, [search, graph]);
+  const matchedIds = useMemo(() => (matched ? new Set(matched.map((n) => n.id)) : null), [matched]);
+  const searchRef = useRef<Set<string> | null>(null);
+  searchRef.current = matchedIds;
 
   /* ---- загрузка ------------------------------------------------------- */
 
@@ -237,9 +250,12 @@ export function BrainPanel() {
         }
       }
 
+      const matches = searchRef.current;
       for (const { n, b } of arr) {
         const r = radius(n.importance);
-        const dim = sel ? !neighbors.has(n.id) : false;
+        // Поиск важнее выделения: гасим всё, что не совпало; иначе — обычная логика соседей.
+        const dim = matches ? !matches.has(n.id) : sel ? !neighbors.has(n.id) : false;
+        const hit = matches?.has(n.id) ?? false;
         const color = catColor(n.category);
         ctx.globalAlpha = dim ? 0.25 : 1;
         // Свечение важных узлов.
@@ -256,9 +272,9 @@ export function BrainPanel() {
         ctx.beginPath();
         ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
         ctx.fill();
-        if (n.id === sel || n.id === hover || n.id === linkFromRef.current) {
-          ctx.strokeStyle = n.id === linkFromRef.current ? "#dcdcaa" : "#ffffff";
-          ctx.lineWidth = 1.6;
+        if (hit || n.id === sel || n.id === hover || n.id === linkFromRef.current) {
+          ctx.strokeStyle = n.id === linkFromRef.current ? "#dcdcaa" : hit ? "#4fc1ff" : "#ffffff";
+          ctx.lineWidth = hit ? 2.2 : 1.6;
           ctx.stroke();
         }
         ctx.fillStyle = dim ? "rgba(200,200,210,0.4)" : "rgba(225,225,235,0.95)";
@@ -515,6 +531,18 @@ export function BrainPanel() {
     : [];
   const nodeLabel = (id: string) => graph.nodes.find((n) => n.id === id)?.label ?? id;
 
+  /** Навести камеру на узел (центрировать) и выделить его. */
+  const focusNode = (id: string) => {
+    const b = bodies.current.get(id);
+    const wrap = wrapRef.current;
+    if (b && wrap) {
+      const { scale } = view.current;
+      view.current.ox = wrap.clientWidth / 2 - b.x * scale;
+      view.current.oy = wrap.clientHeight / 2 - b.y * scale;
+    }
+    setSelectedId(id);
+  };
+
   return (
     <div className="flex h-[calc(100vh-120px)] flex-col px-4 pb-4">
       <div className="flex items-center gap-2 py-3">
@@ -523,6 +551,36 @@ export function BrainPanel() {
         <span className="text-[12px] text-vsc-muted">
           {graph.nodes.length} узлов · {graph.edges.length} связей{dirty ? " · не сохранено" : ""}
         </span>
+        <div className="relative ml-auto w-64">
+          <Search size={13} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-vsc-muted" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Поиск по узлам…"
+            className="w-full rounded border border-vsc-line bg-vsc-sidebar py-1.5 pl-7 pr-7 text-[12.5px] text-vsc-text outline-none focus:border-vsc-accent"
+          />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-vsc-muted hover:text-vsc-text">
+              <X size={13} />
+            </button>
+          )}
+          {matched && (
+            <div className="absolute right-0 top-full z-10 mt-1 max-h-64 w-72 overflow-y-auto rounded border border-vsc-line bg-vsc-bg py-1 shadow-xl">
+              <div className="px-3 py-1 text-[11px] text-vsc-muted">Найдено: {matched.length}</div>
+              {matched.slice(0, 40).map((n) => (
+                <button
+                  key={n.id}
+                  onClick={() => focusNode(n.id)}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-vsc-text hover:bg-vsc-hover"
+                >
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: catColor(n.category) }} />
+                  <span className="truncate">{n.label}</span>
+                </button>
+              ))}
+              {!matched.length && <div className="px-3 py-2 text-[12px] text-vsc-muted">Ничего не найдено.</div>}
+            </div>
+          )}
+        </div>
       </div>
 
       {demo && <GuestBanner what="граф знаний" />}

@@ -23,21 +23,23 @@ const brainSource = z.object({
 });
 
 const brainNode = z.object({
-  id: z.string().max(64),
-  label: z.string().max(200),
+  id: z.string().min(1).max(64),
+  label: z.string().min(1).max(200),
   // Свободная строка: базовые категории + модель может завести свою.
   category: z.string().max(30).catch("other").default("other"),
-  importance: z.number().min(1).max(5).catch(3),
-  summary: z.string().max(1000).default(""),
-  source: brainSource.nullable().default(null),
+  // coerce: модель иногда шлёт importance строкой ("4").
+  importance: z.coerce.number().catch(3).transform((n) => Math.min(5, Math.max(1, Math.round(n) || 3))),
+  summary: z.string().max(1000).catch("").default(""),
+  source: brainSource.nullable().catch(null).default(null),
   x: z.number().optional(),
   y: z.number().optional(),
 }).passthrough();
 
 const brainEdge = z.object({
-  id: z.string().max(64),
-  from: z.string().max(64),
-  to: z.string().max(64),
+  // id необязателен — модель часто его опускает; проставим сами после разбора.
+  id: z.string().max(64).optional(),
+  from: z.string().min(1).max(64),
+  to: z.string().min(1).max(64),
   label: z.string().max(200).optional(),
 }).passthrough();
 
@@ -185,15 +187,30 @@ export function parseBrainAnswer(raw: string, knownIds?: Set<string>): BrainData
     // целого элемента массива и закрываем оставшиеся скобки.
     json = JSON.parse(repairTruncatedJson(text));
   }
-  const parsed = brainData.safeParse(json);
-  if (!parsed.success) throw new Error("модель вернула JSON неожиданной формы");
-  // Выкидываем рёбра, ссылающиеся на несуществующие узлы.
-  const ids = new Set(parsed.data.nodes.map((n) => n.id));
+
+  // Терпимо: разбираем поэлементно и выкидываем битые узлы/рёбра, а не весь ответ.
+  const obj = json as { nodes?: unknown; edges?: unknown };
+  const rawNodes = Array.isArray(obj?.nodes) ? obj.nodes : [];
+  const rawEdges = Array.isArray(obj?.edges) ? obj.edges : [];
+
+  const nodes = rawNodes
+    .map((n) => brainNode.safeParse(n))
+    .flatMap((r) => (r.success ? [r.data] : []))
+    .slice(0, 300);
+  if (!nodes.length && rawNodes.length) throw new Error("модель вернула узлы без обязательных полей (id/label)");
+
+  const ids = new Set(nodes.map((n) => n.id));
   if (knownIds) for (const id of knownIds) ids.add(id);
-  return {
-    nodes: parsed.data.nodes,
-    edges: parsed.data.edges.filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to),
-  };
+
+  let auto = 0;
+  const edges = rawEdges
+    .map((e) => brainEdge.safeParse(e))
+    .flatMap((r) => (r.success ? [r.data] : []))
+    .filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to)
+    .map((e) => ({ ...e, id: e.id || `e${++auto}` }))
+    .slice(0, 600);
+
+  return { nodes, edges };
 }
 
 /**
