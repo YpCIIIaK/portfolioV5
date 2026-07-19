@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireOwner } from "@/lib/auth";
 import { aiConfigured, askAI } from "@/lib/ai";
-import { collectContext } from "@/lib/aggregate";
-import { buildBrainPrompt, parseBrainAnswer } from "@/lib/brain";
+import { buildBrainPrompt, buildEdgesPrompt, buildBrainShortcuts, parseBrainAnswer, mergeBrainDelta, collectBrainContext } from "@/lib/brain";
 
 export const runtime = "nodejs";
 // Холодная функция собирает контекст с нуля (IMAP + Telegram + Notion — десятки
@@ -22,13 +21,21 @@ export async function POST() {
     return NextResponse.json({ error: "AI не настроен (OPENROUTER_API_KEY)" }, { status: 503 });
   }
   try {
-    // Без force: кэшированный контекст (5 мин). Полный пересбор всех источников
-    // (IMAP, Telegram, Notion) плюс долгая генерация не влезают в лимит функции.
-    const context = await collectContext();
+    const { context, sources } = await collectBrainContext();
     const answer = await askAI(buildBrainPrompt(context), { temperature: 0.4, maxTokens: 6000 });
-    const data = parseBrainAnswer(answer);
+    let data = parseBrainAnswer(answer);
     if (!data.nodes.length) throw new Error("модель вернула пустой граф");
-    return NextResponse.json({ data });
+
+    // Модель поскупилась на связи — досвязываем отдельным коротким запросом.
+    if (data.nodes.length >= 4 && data.edges.length < data.nodes.length / 2) {
+      try {
+        const extra = await askAI(buildEdgesPrompt(buildBrainShortcuts(data)), { temperature: 0.3, maxTokens: 2000 });
+        const delta = parseBrainAnswer(extra, new Set(data.nodes.map((n) => n.id)));
+        data = mergeBrainDelta(data, { nodes: [], edges: delta.edges }).data;
+      } catch { /* граф без части связей лучше, чем ошибка */ }
+    }
+
+    return NextResponse.json({ data, sources });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }

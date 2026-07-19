@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireOwner } from "@/lib/auth";
 import { aiConfigured, askAI } from "@/lib/ai";
-import { collectContext } from "@/lib/aggregate";
 import { supabaseConfigured, sbSelect, sbUpdate } from "@/lib/supabase";
 import { notifyOwner } from "@/lib/notify";
-import { buildBrainShortcuts, buildBrainAugmentPrompt, parseBrainAnswer, mergeBrainDelta, type BrainData } from "@/lib/brain";
+import { buildBrainShortcuts, buildBrainAugmentPrompt, parseBrainAnswer, mergeBrainDelta, collectBrainContext, type BrainData } from "@/lib/brain";
 
 export const runtime = "nodejs";
 // Холодный сбор контекста + генерация — как у полного билда мозга.
@@ -51,7 +50,7 @@ async function run(req: Request) {
   }
 
   try {
-    const context = await collectContext();
+    const { context } = await collectBrainContext();
     const prompt = buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context);
     const answer = await askAI(prompt, { temperature: 0.3, maxTokens: 3000 });
     const knownIds = new Set(snapshot.data.nodes.map((n) => n.id));

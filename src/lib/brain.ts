@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { collectContext } from "@/lib/aggregate";
+import { mailConfigured, fetchInbox } from "@/lib/mail-server";
+import { supabaseConfigured, sbSelect } from "@/lib/supabase";
 
 /**
  * «Второй мозг» — граф знаний, который ИИ собирает из всего подключённого
@@ -42,6 +45,42 @@ export const brainData = z.object({
 
 export type BrainData = z.infer<typeof brainData>;
 
+/**
+ * Расширенный контекст для мозга: базовый агрегат (задачи, календарь, Notion,
+ * Telegram, Bitrix, подписки, проекты) ПЛЮС почта без фильтра «непрочитанное»
+ * и заметки с более длинными телами — мозгу нужно видеть больше, чем брифингу.
+ */
+export async function collectBrainContext(): Promise<{ context: string; sources: string[] }> {
+  const parts: string[] = [];
+  const sources: string[] = [];
+
+  const base = await collectContext();
+  if (base) { parts.push(base); sources.push("агрегат (задачи/календарь/Notion/Telegram/подписки/проекты)"); }
+
+  if (mailConfigured()) {
+    try {
+      const mail = await fetchInbox(60);
+      const recent = mail.slice(0, 40);
+      if (recent.length) {
+        parts.push("ПОЧТА (последние письма, включая прочитанные):\n" + recent.map((m) => `- ${m.from}: ${m.subject}`).join("\n"));
+        sources.push(`почта (${recent.length})`);
+      }
+    } catch { /* skip */ }
+  }
+
+  if (supabaseConfigured()) {
+    try {
+      const notes = await sbSelect<{ title: string; body: string }>("ws_notes", "select=title,body&order=updated_at.desc&limit=30");
+      if (notes.length) {
+        parts.push("ЗАМЕТКИ (полные превью):\n" + notes.map((n) => `- ${n.title}: ${n.body.replace(/\s+/g, " ").slice(0, 300)}`).join("\n"));
+        sources.push(`заметки (${notes.length})`);
+      }
+    } catch { /* skip */ }
+  }
+
+  return { context: parts.join("\n\n"), sources };
+}
+
 /** Строгий промпт: модель должна вернуть ТОЛЬКО JSON графа. */
 export function buildBrainPrompt(context: string): string {
   return [
@@ -52,7 +91,7 @@ export function buildBrainPrompt(context: string): string {
     "- 12–40 узлов. Каждый узел: короткий label, категория, importance 1–5 (5 = критично), summary в 1–2 предложения, source — откуда взято.",
     "- Категории: предпочитай базовые work|project|idea|people|finance|learn|life|other. Если сущность явно не влезает — придумай СВОЮ короткую категорию (одно слово латиницей, напр. health, travel) и используй её последовательно для похожих узлов.",
     "- source.panel — одна из: tasks, notes, calendar, mail, telegram, notion, bitrix, projects, subscriptions, news, other; source.ref — заголовок/название исходной записи.",
-    "- Рёбра соединяют реально связанные вещи (проект ↔ его задачи, человек ↔ переписка, подписка ↔ инструмент). Не оставляй изолированных узлов, если связь очевидна. label ребра — краткая суть связи.",
+    "- РЁБРА ОБЯЗАТЕЛЬНЫ: примерно 1–2 ребра на узел (проект ↔ его задачи, человек ↔ переписка, подписка ↔ инструмент, тема ↔ заметка). Пустой массив edges — это ошибка. Не оставляй изолированных узлов. label ребра — краткая суть связи.",
     "- id — короткие slug-строки латиницей (n1, n2 … или осмысленные).",
     "",
     "Ответь ТОЛЬКО валидным JSON без пояснений и markdown-ограждений, вида:",
@@ -161,6 +200,20 @@ export function buildBrainAugmentPrompt(shortcuts: string, context: string): str
     "",
     "СВЕЖИЕ ДАННЫЕ:",
     context || "(источники пусты)",
+  ].join("\n");
+}
+
+/** Промпт «только рёбра»: если модель вернула граф без связей — досвязываем вторым запросом. */
+export function buildEdgesPrompt(shortcuts: string): string {
+  return [
+    "Вот узлы графа знаний (id | label | категория). Придумай осмысленные связи между ними.",
+    "Верни примерно 1–2 ребра на узел; изолированных узлов быть не должно, если связь логична.",
+    "",
+    "Ответь ТОЛЬКО валидным JSON без пояснений:",
+    '{"edges":[{"id":"e1","from":"<id>","to":"<id>","label":"краткая суть связи"}]}',
+    "",
+    "УЗЛЫ:",
+    shortcuts,
   ].join("\n");
 }
 

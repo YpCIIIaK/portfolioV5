@@ -391,7 +391,7 @@ export function BrainPanel() {
       const res = await fetch("/api/workspace/brain/generate", { method: "POST" });
       // Сервер может ответить не-JSON (например, текст 504 от Vercel при таймауте).
       const text = await res.text();
-      let json: { data?: BrainState; error?: string } = {};
+      let json: { data?: BrainState; sources?: string[]; error?: string } = {};
       try { json = JSON.parse(text); } catch { /* оставляем пустым */ }
       if (!res.ok || !json.data) {
         if (res.status === 504 || /timeout|timed out/i.test(text)) {
@@ -403,6 +403,7 @@ export function BrainPanel() {
       setGraph(json.data);
       setSelectedId(null);
       setDirty(true);
+      if (json.sources?.length) setInfo(`Прочитано: ${json.sources.join(", ")}.`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
