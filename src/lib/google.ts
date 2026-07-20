@@ -1,0 +1,486 @@
+/**
+ * Google Drive integration — OAuth + a thin Drive v3 REST client.
+ *
+ * Drive stays the storage: we never copy file bodies into Supabase. What we do
+ * keep is an *index* (`ws_drive_index`) — id, name, mime, modifiedTime, md5 —
+ * because without it there's no way to tell what changed, plus a short text
+ * excerpt so the assistant/brain has something to read without re-downloading
+ * every file on every prompt.
+ *
+ * Incremental sync uses Drive's changes feed: we store a `startPageToken` per
+ * source and only pull the delta. Server-side only (service-role Supabase).
+ */
+
+import { supabaseConfigured, sbSelect, sbInsert, sbUpdate, sbDelete } from "@/lib/supabase";
+
+const OAUTH = "https://oauth2.googleapis.com";
+const API = "https://www.googleapis.com/drive/v3";
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+
+/** Read-only across the whole Drive — needed to walk a folder the owner picks. */
+const SCOPES = ["https://www.googleapis.com/auth/drive.readonly"];
+
+export const FOLDER_MIME = "application/vnd.google-apps.folder";
+
+export function googleConfigured(): boolean {
+  return !!CLIENT_ID && !!CLIENT_SECRET && supabaseConfigured();
+}
+
+/* ---- token storage (ws_integrations, provider='google') ----------------- */
+
+interface GoogleRow {
+  access_token: string;
+  refresh_token: string | null;
+  expires_at: string | null;
+  workspace_name: string | null; // the Google account email
+  workspace_icon: string | null; // avatar
+  config: Record<string, unknown> | null;
+}
+
+let cache: { at: number; row: GoogleRow | null } | null = null;
+const CACHE_TTL = 30 * 1000;
+
+async function getRow(force = false): Promise<GoogleRow | null> {
+  if (!supabaseConfigured()) return null;
+  if (!force && cache && Date.now() - cache.at < CACHE_TTL) return cache.row;
+  const rows = await sbSelect<GoogleRow>(
+    "ws_integrations",
+    "select=access_token,refresh_token,expires_at,workspace_name,workspace_icon,config&provider=eq.google&limit=1",
+  );
+  const row = rows[0] ?? null;
+  cache = { at: Date.now(), row };
+  return row;
+}
+
+export interface GoogleStatus {
+  configured: boolean;
+  connected: boolean;
+  account: string | null;
+  avatar: string | null;
+}
+
+export async function googleStatus(): Promise<GoogleStatus> {
+  const row = await getRow();
+  return {
+    configured: googleConfigured(),
+    connected: !!row,
+    account: row?.workspace_name ?? null,
+    avatar: row?.workspace_icon ?? null,
+  };
+}
+
+export async function disconnectGoogle(): Promise<void> {
+  await sbDelete("ws_integrations", "provider=eq.google");
+  await sbDelete("ws_drive_sources", "id=not.is.null");
+  await sbDelete("ws_drive_index", "id=not.is.null");
+  cache = null;
+}
+
+/* ---- OAuth -------------------------------------------------------------- */
+
+export function googleAuthorizeUrl(redirectUri: string, state: string): string {
+  const u = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  u.searchParams.set("client_id", CLIENT_ID!);
+  u.searchParams.set("redirect_uri", redirectUri);
+  u.searchParams.set("response_type", "code");
+  u.searchParams.set("scope", [...SCOPES, "openid", "email", "profile"].join(" "));
+  u.searchParams.set("state", state);
+  // Without BOTH of these Google withholds the refresh token and the whole
+  // integration dies after the first hour.
+  u.searchParams.set("access_type", "offline");
+  u.searchParams.set("prompt", "consent");
+  return u.toString();
+}
+
+interface TokenResponse {
+  access_token: string;
+  refresh_token?: string;
+  expires_in: number;
+  error?: string;
+  error_description?: string;
+}
+
+async function tokenRequest(body: Record<string, string>): Promise<TokenResponse> {
+  const res = await fetch(`${OAUTH}/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: CLIENT_ID!, client_secret: CLIENT_SECRET!, ...body }),
+    cache: "no-store",
+  });
+  const json = (await res.json().catch(() => ({}))) as TokenResponse;
+  if (!res.ok || !json.access_token) {
+    throw new Error(json.error_description || json.error || `Google OAuth HTTP ${res.status}`);
+  }
+  return json;
+}
+
+/** Exchange the callback `code`, fetch the account identity, and persist. */
+export async function exchangeGoogleCode(code: string, redirectUri: string): Promise<void> {
+  const token = await tokenRequest({ code, redirect_uri: redirectUri, grant_type: "authorization_code" });
+  if (!token.refresh_token) {
+    throw new Error("Google не вернул refresh_token — отзови доступ в myaccount.google.com/permissions и подключись заново");
+  }
+
+  const me = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+    headers: { Authorization: `Bearer ${token.access_token}` },
+    cache: "no-store",
+  })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+
+  // Single row per provider: delete then insert (portable upsert), same as Notion.
+  await sbDelete("ws_integrations", "provider=eq.google");
+  await sbInsert("ws_integrations", {
+    provider: "google",
+    access_token: token.access_token,
+    refresh_token: token.refresh_token,
+    expires_at: new Date(Date.now() + token.expires_in * 1000).toISOString(),
+    workspace_name: me?.email ?? null,
+    workspace_icon: me?.picture ?? null,
+    config: {},
+  });
+  cache = null;
+}
+
+/** A valid access token, refreshed in place when it's within a minute of expiry. */
+async function getAccessToken(): Promise<string> {
+  const row = await getRow();
+  if (!row) throw new Error("Google Drive не подключён");
+
+  const expiresAt = row.expires_at ? Date.parse(row.expires_at) : 0;
+  if (expiresAt - Date.now() > 60_000) return row.access_token;
+  if (!row.refresh_token) throw new Error("Нет refresh_token — переподключи Google Drive");
+
+  const token = await tokenRequest({ refresh_token: row.refresh_token, grant_type: "refresh_token" });
+  await sbUpdate("ws_integrations", "provider=eq.google", {
+    access_token: token.access_token,
+    expires_at: new Date(Date.now() + token.expires_in * 1000).toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  cache = null;
+  return token.access_token;
+}
+
+/* ---- Drive API calls ---------------------------------------------------- */
+
+async function drive<T>(path: string): Promise<T> {
+  const token = await getAccessToken();
+  const res = await fetch(`${API}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Drive HTTP ${res.status}: ${detail.slice(0, 200)}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime?: string;
+  md5Checksum?: string;
+  size?: string;
+  parents?: string[];
+  webViewLink?: string;
+  trashed?: boolean;
+}
+
+const FILE_FIELDS = "id,name,mimeType,modifiedTime,md5Checksum,size,parents,webViewLink,trashed";
+
+/** Folders the owner can pick from. `parent` scopes to one level; omit for all. */
+export async function listFolders(parent?: string): Promise<DriveFile[]> {
+  const clauses = [`mimeType='${FOLDER_MIME}'`, "trashed=false"];
+  if (parent) clauses.push(`'${parent.replace(/'/g, "\\'")}' in parents`);
+  const q = encodeURIComponent(clauses.join(" and "));
+  const data = await drive<{ files: DriveFile[] }>(
+    `/files?q=${q}&fields=files(id,name,parents)&pageSize=200&orderBy=name` +
+      `&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+  );
+  return data.files ?? [];
+}
+
+/** Every non-folder file under `folderId`. With `recursive` it walks subfolders
+ *  breadth-first — Drive's `in parents` only matches direct children, so the
+ *  recursion is on us; without it only the folder's own files are indexed. */
+export async function listFilesRecursive(
+  folderId: string,
+  maxFiles = 500,
+  recursive = true,
+): Promise<DriveFile[]> {
+  const out: DriveFile[] = [];
+  const queue = [folderId];
+  const seen = new Set<string>();
+
+  while (queue.length && out.length < maxFiles) {
+    const current = queue.shift()!;
+    if (seen.has(current)) continue; // shortcuts can make the tree a cycle
+    seen.add(current);
+
+    let pageToken: string | undefined;
+    do {
+      const q = encodeURIComponent(`'${current.replace(/'/g, "\\'")}' in parents and trashed=false`);
+      const data: { files: DriveFile[]; nextPageToken?: string } = await drive(
+        `/files?q=${q}&fields=nextPageToken,files(${FILE_FIELDS})&pageSize=200` +
+          `&supportsAllDrives=true&includeItemsFromAllDrives=true` +
+          (pageToken ? `&pageToken=${pageToken}` : ""),
+      );
+      for (const f of data.files ?? []) {
+        if (f.mimeType === FOLDER_MIME) { if (recursive) queue.push(f.id); }
+        else if (out.length < maxFiles) out.push(f);
+      }
+      pageToken = data.nextPageToken;
+    } while (pageToken && out.length < maxFiles);
+  }
+  return out;
+}
+
+/** Token marking "now" in the changes feed — stored so the next sync is a delta. */
+export async function getStartPageToken(): Promise<string> {
+  const data = await drive<{ startPageToken: string }>(
+    "/changes/startPageToken?supportsAllDrives=true",
+  );
+  return data.startPageToken;
+}
+
+export interface DriveChange {
+  fileId: string;
+  removed?: boolean;
+  file?: DriveFile;
+}
+
+/** Drain the changes feed from `pageToken`; returns changes + the next token. */
+export async function listChanges(pageToken: string): Promise<{ changes: DriveChange[]; nextToken: string }> {
+  const changes: DriveChange[] = [];
+  let token: string | undefined = pageToken;
+  let newStartPageToken = pageToken;
+
+  while (token) {
+    const data: {
+      changes: DriveChange[];
+      nextPageToken?: string;
+      newStartPageToken?: string;
+    } = await drive(
+      `/changes?pageToken=${token}&fields=nextPageToken,newStartPageToken,changes(fileId,removed,file(${FILE_FIELDS}))` +
+        `&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+    );
+    changes.push(...(data.changes ?? []));
+    if (data.newStartPageToken) newStartPageToken = data.newStartPageToken;
+    token = data.nextPageToken;
+  }
+  return { changes, nextToken: newStartPageToken };
+}
+
+/* ---- reading file text -------------------------------------------------- */
+
+/** Google-native types have no binary body — they must be exported instead. */
+const EXPORT_AS: Record<string, string> = {
+  "application/vnd.google-apps.document": "text/plain",
+  "application/vnd.google-apps.presentation": "text/plain",
+  "application/vnd.google-apps.spreadsheet": "text/csv",
+};
+
+const READABLE = /^(text\/|application\/(json|xml|javascript|x-yaml))/;
+
+export function isReadable(mimeType: string): boolean {
+  return mimeType in EXPORT_AS || READABLE.test(mimeType);
+}
+
+/** Plain text of a file, capped. Returns "" for binaries we can't read. */
+export async function fileText(file: DriveFile, maxChars = 20_000): Promise<string> {
+  if (!isReadable(file.mimeType)) return "";
+  const token = await getAccessToken();
+  const exportMime = EXPORT_AS[file.mimeType];
+  const url = exportMime
+    ? `${API}/files/${file.id}/export?mimeType=${encodeURIComponent(exportMime)}`
+    : `${API}/files/${file.id}?alt=media&supportsAllDrives=true`;
+
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!res.ok) return "";
+  const text = await res.text();
+  // Drive exports are UTF-8 with a BOM; it would otherwise poison the first token.
+  return text.replace(/^﻿/, "").slice(0, maxChars);
+}
+
+/* ---- sources & index (Supabase) ----------------------------------------- */
+
+export interface DriveSource {
+  id: string;
+  folder_id: string;
+  name: string;
+  recursive: boolean;
+  page_token: string | null;
+  status: string; // ok | revoked
+  last_sync_at: string | null;
+  file_count: number;
+}
+
+export async function listSources(): Promise<DriveSource[]> {
+  if (!supabaseConfigured()) return [];
+  return sbSelect<DriveSource>("ws_drive_sources", "select=*&order=created_at.asc");
+}
+
+export async function addSource(folderId: string, name: string, recursive = true): Promise<DriveSource> {
+  const existing = await sbSelect<DriveSource>(
+    "ws_drive_sources",
+    `select=id&folder_id=eq.${encodeURIComponent(folderId)}&limit=1`,
+  );
+  if (existing.length) throw new Error("Эта папка уже подключена");
+  return sbInsert<DriveSource>("ws_drive_sources", { folder_id: folderId, name, recursive });
+}
+
+export async function removeSource(id: string): Promise<void> {
+  await sbDelete("ws_drive_index", `source_id=eq.${id}`);
+  await sbDelete("ws_drive_sources", `id=eq.${id}`);
+}
+
+export interface DriveIndexRow {
+  id: string;
+  source_id: string;
+  file_id: string;
+  name: string;
+  mime_type: string;
+  modified_time: string | null;
+  md5: string | null;
+  web_view_link: string | null;
+  excerpt: string;
+}
+
+/**
+ * Sync one source. First run walks the folder; later runs replay the changes
+ * feed and only touch what moved. File bodies stay on Drive — we store an
+ * excerpt (and only for text-ish files) so the assistant has something to read.
+ */
+export async function syncSource(source: DriveSource): Promise<{ added: number; updated: number; removed: number }> {
+  const stats = { added: 0, updated: 0, removed: 0 };
+
+  const indexed = await sbSelect<DriveIndexRow>(
+    "ws_drive_index",
+    `select=id,file_id,md5,modified_time&source_id=eq.${source.id}`,
+  );
+  const byFileId = new Map(indexed.map((r) => [r.file_id, r]));
+
+  let files: DriveFile[];
+  let nextToken: string;
+
+  if (!source.page_token) {
+    // Cold start: full walk, and pin a token so the next run is incremental.
+    nextToken = await getStartPageToken();
+    files = await listFilesRecursive(source.folder_id, 500, source.recursive);
+  } else {
+    const { changes, nextToken: t } = await listChanges(source.page_token);
+    nextToken = t;
+    files = [];
+    for (const change of changes) {
+      const known = byFileId.get(change.fileId);
+      if (change.removed || change.file?.trashed) {
+        if (known) {
+          await sbDelete("ws_drive_index", `id=eq.${known.id}`);
+          stats.removed++;
+        }
+        continue;
+      }
+      // The feed covers the whole Drive; keep only files under this source.
+      if (change.file && (known || change.file.parents?.includes(source.folder_id))) {
+        files.push(change.file);
+      }
+    }
+  }
+
+  for (const file of files) {
+    if (file.mimeType === FOLDER_MIME) continue;
+    const known = byFileId.get(file.id);
+    const unchanged =
+      known &&
+      ((file.md5Checksum && known.md5 === file.md5Checksum) ||
+        (!file.md5Checksum && known.modified_time === file.modifiedTime));
+    if (unchanged) continue;
+
+    const excerpt = await fileText(file, 4000).catch(() => "");
+    const row = {
+      source_id: source.id,
+      file_id: file.id,
+      name: file.name,
+      mime_type: file.mimeType,
+      modified_time: file.modifiedTime ?? null,
+      md5: file.md5Checksum ?? null,
+      size: file.size ? Number(file.size) : null,
+      web_view_link: file.webViewLink ?? null,
+      excerpt,
+      synced_at: new Date().toISOString(),
+    };
+
+    if (known) {
+      await sbUpdate("ws_drive_index", `id=eq.${known.id}`, row);
+      stats.updated++;
+    } else {
+      await sbInsert("ws_drive_index", row);
+      stats.added++;
+    }
+  }
+
+  const total = await sbSelect<{ id: string }>("ws_drive_index", `select=id&source_id=eq.${source.id}`);
+  await sbUpdate("ws_drive_sources", `id=eq.${source.id}`, {
+    page_token: nextToken,
+    last_sync_at: new Date().toISOString(),
+    file_count: total.length,
+    status: "ok",
+  });
+
+  return stats;
+}
+
+/** Sync every source; a dead one is marked instead of failing the whole run. */
+export async function syncAll(): Promise<Record<string, unknown>[]> {
+  const sources = await listSources();
+  const results: Record<string, unknown>[] = [];
+  for (const s of sources) {
+    try {
+      results.push({ source: s.name, ...(await syncSource(s)) });
+    } catch (e) {
+      const message = (e as Error).message;
+      // 404/403 usually means the folder was unshared or deleted — flag it so
+      // the index doesn't silently rot.
+      if (/40[34]/.test(message)) {
+        await sbUpdate("ws_drive_sources", `id=eq.${s.id}`, { status: "revoked" });
+      }
+      results.push({ source: s.name, error: message });
+    }
+  }
+  return results;
+}
+
+/* ---- search & assistant context ----------------------------------------- */
+
+export async function searchDrive(query: string, limit = 20): Promise<DriveIndexRow[]> {
+  if (!supabaseConfigured() || !query.trim()) return [];
+  const q = encodeURIComponent(`%${query.trim()}%`);
+  return sbSelect<DriveIndexRow>(
+    "ws_drive_index",
+    `select=id,source_id,file_id,name,mime_type,modified_time,web_view_link,excerpt` +
+      `&or=(name.ilike.${q},excerpt.ilike.${q})&order=modified_time.desc&limit=${limit}`,
+  );
+}
+
+/** Compact snapshot for the AI aggregator — filenames only, like notionContext. */
+export async function driveContext(): Promise<string> {
+  if (!supabaseConfigured()) return "";
+  try {
+    const sources = await listSources();
+    if (!sources.length) return "";
+    const recent = await sbSelect<DriveIndexRow>(
+      "ws_drive_index",
+      "select=name,mime_type,modified_time&order=modified_time.desc&limit=20",
+    );
+    if (!recent.length) return "";
+    return (
+      `GOOGLE DRIVE (папки: ${sources.map((s) => s.name).join(", ")}):\n` +
+      recent.map((f) => `- ${f.name}`).join("\n")
+    );
+  } catch {
+    return "";
+  }
+}

@@ -163,6 +163,56 @@ create table if not exists public.ws_integrations (
 );
 alter table public.ws_integrations enable row level security;
 
+-- Google Drive: token columns on ws_integrations ----------------------
+-- Google (unlike Notion) hands out short-lived access tokens, so the row also
+-- carries the refresh token and an expiry the server refreshes against.
+alter table public.ws_integrations add column if not exists refresh_token text;
+alter table public.ws_integrations add column if not exists expires_at timestamptz;
+
+-- Google Drive sources (picked folders) --------------------------------
+-- One row per folder the owner attached. Drive remains the storage — this is
+-- only "which folders do we watch". `page_token` is Drive's changes-feed
+-- cursor: null means "never synced", so the next run does a full walk.
+-- `status` flips to 'revoked' when Drive answers 403/404 (folder unshared or
+-- deleted), so a rotting index is visible instead of silent.
+create table if not exists public.ws_drive_sources (
+  id           uuid primary key default gen_random_uuid(),
+  folder_id    text not null unique,   -- Drive folder id
+  name         text not null,
+  recursive    boolean not null default true,
+  page_token   text,
+  status       text not null default 'ok',   -- ok | revoked
+  file_count   integer not null default 0,
+  last_sync_at timestamptz,
+  created_at   timestamptz not null default now()
+);
+alter table public.ws_drive_sources enable row level security;
+
+-- Google Drive index (metadata + excerpt, NOT the files) ----------------
+-- Deliberately not a copy of Drive: we keep what's needed to detect change
+-- (`md5`, `modified_time`) and a short text `excerpt` so the assistant and the
+-- brain can read something without re-downloading. Binary files get an empty
+-- excerpt — only their metadata is indexed. Bodies are always fetched live
+-- from Drive via `web_view_link` / the API.
+create table if not exists public.ws_drive_index (
+  id            uuid primary key default gen_random_uuid(),
+  source_id     uuid not null references public.ws_drive_sources(id) on delete cascade,
+  file_id       text not null,
+  name          text not null,
+  mime_type     text not null default '',
+  modified_time timestamptz,
+  md5           text,
+  size          bigint,
+  web_view_link text,
+  excerpt       text not null default '',
+  synced_at     timestamptz not null default now()
+);
+create unique index if not exists ws_drive_index_file_idx
+  on public.ws_drive_index (source_id, file_id);
+create index if not exists ws_drive_index_modified_idx
+  on public.ws_drive_index (modified_time desc);
+alter table public.ws_drive_index enable row level security;
+
 -- Assistant bot session ----------------------------------------------
 -- Conversation memory for the Telegram assistant bot: one row per chat.
 -- `messages` is a rolling window of recent {role,content} turns; `summary`
@@ -268,6 +318,21 @@ alter table public.ws_events add column if not exists repeat text not null defau
 --     $$
 --       select net.http_post(
 --         url    := 'https://your-domain/api/workspace/brain/augment',
+--         headers:= '{"x-cron-secret":"YOUR_CRON_SECRET"}'::jsonb
+--       );
+--     $$
+--   );
+--
+-- Google Drive re-index ---------------------------------------------------
+-- Replays Drive's changes feed for every attached folder. After the first sync
+-- a quiet hour costs one API call per source, so hourly is cheap.
+--
+--   select cron.schedule(
+--     'ws-drive-sync',
+--     '0 * * * *',
+--     $$
+--       select net.http_post(
+--         url    := 'https://your-domain/api/google/sync',
 --         headers:= '{"x-cron-secret":"YOUR_CRON_SECRET"}'::jsonb
 --       );
 --     $$

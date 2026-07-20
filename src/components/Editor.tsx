@@ -31,6 +31,7 @@ import { AssistantPanel } from "./workspace/AssistantPanel";
 import { NewsPanel } from "./workspace/NewsPanel";
 import { MusicPanel } from "./workspace/MusicPanel";
 import { NotionPanel } from "./workspace/NotionPanel";
+import { DrivePanel } from "./workspace/DrivePanel";
 import { DiagramPanel } from "./workspace/DiagramPanel";
 import { BrainPanel } from "./workspace/BrainPanel";
 import { WorkflowsPanel } from "./workspace/WorkflowsPanel";
@@ -117,6 +118,7 @@ export function Editor() {
           {file.id === "workspace/news.tsx" && <NewsPanel />}
           {file.id === "workspace/music.tsx" && <MusicPanel />}
           {file.id === "workspace/notion.tsx" && <NotionPanel />}
+          {file.id === "workspace/drive.tsx" && <DrivePanel />}
           {file.id === "workspace/diagrams.tsx" && <DiagramPanel />}
           {file.id === "workspace/brain.tsx" && <BrainPanel />}
           {file.id === "workspace/workflows.tsx" && <WorkflowsPanel />}
