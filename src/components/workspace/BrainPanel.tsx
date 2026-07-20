@@ -42,7 +42,47 @@ function catColor(c: BrainCategory): string {
 }
 
 const catLabel = (c: BrainCategory) => CATEGORIES.find((x) => x.key === c)?.label ?? c;
-const radius = (importance: number) => 6 + Math.max(1, Math.min(5, importance)) * 3;
+
+/* ---- вес узла --------------------------------------------------------- */
+
+/**
+ * Вес 0..1 — насколько узел «тяжёлый». Считается на лету из importance И
+ * связности: узел, к которому сходится полграфа, весит больше одинокого с той
+ * же важностью. Нормализация РАНГОВАЯ, а не по абсолютной шкале: если модель
+ * наставила всем 4 (а она это любит), ранги всё равно разведут узлы по весу —
+ * поэтому старые снапшоты чинятся без миграции данных.
+ */
+function computeWeights(nodes: BrainNode[], edges: BrainEdge[]): Map<string, number> {
+  const degree = new Map<string, number>();
+  for (const e of edges) {
+    degree.set(e.from, (degree.get(e.from) ?? 0) + 1);
+    degree.set(e.to, (degree.get(e.to) ?? 0) + 1);
+  }
+  // Связность в log-шкале: 0→1 связь заметна, 8→9 уже почти нет.
+  const score = nodes.map((n) => ({
+    id: n.id,
+    s: Math.max(1, Math.min(5, n.importance)) + Math.log1p(degree.get(n.id) ?? 0) * 1.7,
+  }));
+
+  const out = new Map<string, number>();
+  if (!score.length) return out;
+  const sorted = [...score].sort((a, b) => a.s - b.s);
+  // Одинаковый score → одинаковый ранг, иначе узлы одной важности дрожали бы.
+  const rankOf = new Map<number, number>();
+  sorted.forEach((x, i) => { if (!rankOf.has(x.s)) rankOf.set(x.s, i); });
+  const last = Math.max(1, sorted.length - 1);
+  for (const x of score) {
+    const rank = rankOf.get(x.s)! / last;
+    // Смешиваем ранг с абсолютом: ранг даёт контраст даже в плоском графе,
+    // абсолют не даёт «повысить» откровенный мусор в маленьком графе.
+    out.set(x.id, rank * 0.65 + Math.min(1, (x.s - 1) / 6) * 0.35);
+  }
+  return out;
+}
+
+const radius = (w: number) => 3.5 + w * 11;
+/** Ниже этого веса узел — фон: гасим и прячем подпись, чтобы не забивал холст. */
+const NOISE = 0.28;
 
 /** Внутренние вкладки-источники: panel → id файла в IDE. */
 const SOURCE_FILE: Record<string, string> = {
@@ -98,6 +138,10 @@ export function BrainPanel() {
   const bodies = useRef<Bodies>(new Map());
   const graphRef = useRef(graph);
   graphRef.current = graph;
+  // Веса пересчитываем только при смене графа — в кадре анимации это дорого.
+  const weights = useMemo(() => computeWeights(graph.nodes, graph.edges), [graph]);
+  const weightsRef = useRef(weights);
+  weightsRef.current = weights;
   const view = useRef({ ox: 0, oy: 0, scale: 1 });
   const pointer = useRef({ dragId: null as string | null, panning: false, lastX: 0, lastY: 0, moved: false });
   const hoverRef = useRef<string | null>(null);
@@ -179,18 +223,39 @@ export function BrainPanel() {
         if (!g.nodes.some((n) => n.id === id)) map.delete(id);
       }
 
-      // Силы: отталкивание всех от всех, пружины по рёбрам, центр, дрейф.
-      const arr = g.nodes.map((n) => ({ n, b: map.get(n.id)! }));
+      // Силы: отталкивание всех от всех, пружины по рёбрам, кластеры, центр, дрейф.
+      const wmap = weightsRef.current;
+      const arr = g.nodes.map((n) => ({ n, b: map.get(n.id)!, w: wmap.get(n.id) ?? 0.5 }));
       for (let i = 0; i < arr.length; i++) {
         for (let j = i + 1; j < arr.length; j++) {
           const a = arr[i].b, b = arr[j].b;
           const dx = a.x - b.x, dy = a.y - b.y;
           const d2 = Math.max(80, dx * dx + dy * dy);
-          const f = 2600 / d2;
+          // Тяжёлые расталкивают сильнее — вокруг них появляется воздух,
+          // а мелочь слипается плотнее и не растаскивает граф по холсту.
+          const same = arr[i].n.category === arr[j].n.category;
+          const f = (2600 * (0.55 + arr[i].w + arr[j].w) * (same ? 0.55 : 1)) / d2;
           const d = Math.sqrt(d2);
           a.vx += (dx / d) * f; a.vy += (dy / d) * f;
           b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
         }
+      }
+
+      // Кластеры: узлы одной категории тянутся к общему центру масс, так граф
+      // распадается на читаемые «доли» вместо равномерного облака точек.
+      const centroids = new Map<string, { x: number; y: number; n: number }>();
+      for (const { n, b } of arr) {
+        const c = centroids.get(n.category) ?? { x: 0, y: 0, n: 0 };
+        c.x += b.x; c.y += b.y; c.n++;
+        centroids.set(n.category, c);
+      }
+      for (const { n, b, w } of arr) {
+        const c = centroids.get(n.category)!;
+        if (c.n < 2) continue;
+        // Лёгкие липнут к своей доле охотнее; тяжёлые держат позицию сами.
+        const pull = 0.012 * (1.3 - w);
+        b.vx += (c.x / c.n - b.x) * pull;
+        b.vy += (c.y / c.n - b.y) * pull;
       }
       for (const e of g.edges) {
         const a = map.get(e.from), b = map.get(e.to);
@@ -202,10 +267,13 @@ export function BrainPanel() {
         b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
       }
       t += 0.016;
-      for (const { n, b } of arr) {
-        // Мягкое притяжение к центру + лёгкое «дыхание», чтобы граф плыл.
-        b.vx += (w / 2 - b.x) * 0.0008 + Math.cos(t * 0.6 + b.phase) * 0.02;
-        b.vy += (h / 2 - b.y) * 0.0008 + Math.sin(t * 0.5 + b.phase) * 0.02;
+      for (const { n, b, w: nw } of arr) {
+        // Тяжёлые тянет к центру сильнее (ядро графа), лёгкие уплывают к краю.
+        // «Дыхание» им наоборот приглушаем, чтобы опорные узлы не дрожали.
+        const gravity = 0.0004 + nw * 0.0012;
+        const drift = 0.03 * (1.15 - nw);
+        b.vx += (w / 2 - b.x) * gravity + Math.cos(t * 0.6 + b.phase) * drift;
+        b.vy += (h / 2 - b.y) * gravity + Math.sin(t * 0.5 + b.phase) * drift;
         if (pointer.current.dragId !== n.id) {
           b.vx *= 0.86; b.vy *= 0.86;
           b.x += b.vx; b.y += b.vy;
@@ -236,8 +304,11 @@ export function BrainPanel() {
         const a = map.get(e.from), b = map.get(e.to);
         if (!a || !b) continue;
         const active = sel && (e.from === sel || e.to === sel);
-        ctx.strokeStyle = active ? "rgba(79,193,255,0.75)" : "rgba(140,140,150,0.25)";
-        ctx.lineWidth = active ? 1.6 : 1;
+        // Связь весит столько же, сколько её более лёгкий конец: линия между
+        // двумя мусорными узлами не должна чертить холст наравне с опорной.
+        const ew = Math.min(wmap.get(e.from) ?? 0.5, wmap.get(e.to) ?? 0.5);
+        ctx.strokeStyle = active ? "rgba(79,193,255,0.75)" : `rgba(140,140,150,${(0.08 + ew * 0.26).toFixed(3)})`;
+        ctx.lineWidth = active ? 1.6 : 0.6 + ew * 0.9;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
@@ -251,15 +322,19 @@ export function BrainPanel() {
       }
 
       const matches = searchRef.current;
-      for (const { n, b } of arr) {
-        const r = radius(n.importance);
+      for (const { n, b, w: nw } of arr) {
+        const r = radius(nw);
         // Поиск важнее выделения: гасим всё, что не совпало; иначе — обычная логика соседей.
         const dim = matches ? !matches.has(n.id) : sel ? !neighbors.has(n.id) : false;
         const hit = matches?.has(n.id) ?? false;
+        const focused = n.id === sel || n.id === hover || hit;
         const color = catColor(n.category);
-        ctx.globalAlpha = dim ? 0.25 : 1;
-        // Свечение важных узлов.
-        if (n.importance >= 4 && !dim) {
+        // Лёгкие узлы полупрозрачны — остаются как фон/контекст, но не спорят
+        // за внимание с тяжёлыми. Под курсором и в поиске проявляются полностью.
+        const weightAlpha = focused ? 1 : 0.3 + Math.min(1, nw / NOISE) * 0.7 * (0.55 + nw * 0.45);
+        ctx.globalAlpha = dim ? 0.12 : weightAlpha;
+        // Свечение тяжёлых узлов.
+        if (nw >= 0.78 && !dim) {
           const glow = ctx.createRadialGradient(b.x, b.y, r * 0.4, b.x, b.y, r * 2.4);
           glow.addColorStop(0, color + "55");
           glow.addColorStop(1, "transparent");
@@ -277,10 +352,15 @@ export function BrainPanel() {
           ctx.lineWidth = hit ? 2.2 : 1.6;
           ctx.stroke();
         }
-        ctx.fillStyle = dim ? "rgba(200,200,210,0.4)" : "rgba(225,225,235,0.95)";
-        ctx.font = `${n.importance >= 4 ? "600 " : ""}11px system-ui, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.fillText(n.label.slice(0, 32), b.x, b.y + r + 13);
+        // Подписи — главный источник каши. Мелочь подписываем только под
+        // курсором / в выделении / в поиске, иначе холст забивается текстом.
+        if (focused || (nw >= NOISE && !dim)) {
+          ctx.globalAlpha = dim ? 0.3 : focused ? 1 : 0.45 + nw * 0.55;
+          ctx.fillStyle = "rgba(225,225,235,0.95)";
+          ctx.font = `${nw >= 0.78 ? "600 12" : nw >= 0.5 ? "11" : "10"}px system-ui, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.fillText(n.label.slice(0, nw >= 0.5 ? 32 : 20), b.x, b.y + r + 12);
+        }
         ctx.globalAlpha = 1;
       }
       ctx.restore();
@@ -304,7 +384,8 @@ export function BrainPanel() {
       const n = g.nodes[i];
       const b = bodies.current.get(n.id);
       if (!b) continue;
-      const r = radius(n.importance) + 4;
+      // +5: мелкие узлы иначе почти невозможно попасть курсором.
+      const r = radius(weightsRef.current.get(n.id) ?? 0.5) + 5;
       if ((b.x - wx) ** 2 + (b.y - wy) ** 2 <= r * r) return n.id;
     }
     return null;
@@ -739,6 +820,10 @@ export function BrainPanel() {
                 />
                 {selected.importance}
               </label>
+            </div>
+            <div className="text-[11px] text-vsc-muted">
+              Вес в графе: <span className="text-vsc-text">{Math.round((weights.get(selected.id) ?? 0) * 100)}%</span>
+              {" "}— из важности и числа связей. {(weights.get(selected.id) ?? 0) < NOISE && "Сейчас это фон: подпись скрыта, пока не наведёшь."}
             </div>
             <textarea
               value={selected.summary}
