@@ -271,6 +271,13 @@ export function BrainPanel() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  // Миникарта: на большом графе легко уехать в пустоту и потерять, где вообще
+  // находишься. Здесь видно всю карту сразу и рамку текущего вида.
+  const miniRef = useRef<HTMLCanvasElement>(null);
+  const [miniOn, setMiniOn] = useState(true);
+  /** Пересчёт «мир → миникарта» из последнего кадра: нужен, чтобы клик по
+   *  миникарте попал ровно туда, куда показывает нарисованная точка. */
+  const miniFit = useRef({ s: 1, ox: 0, oy: 0 });
   const bodies = useRef<Bodies>(new Map());
   // Рисуем и считаем физику по графу С достроенными центрами категорий;
   // сохраняется и редактируется при этом `graph` — центры туда не просачиваются.
@@ -567,6 +574,69 @@ export function BrainPanel() {
         ctx.globalAlpha = 1;
       }
       ctx.restore();
+
+      /* ---- миникарта ------------------------------------------------------
+       * Рисуется тем же кадром: отдельный цикл ради ста точек — лишняя работа,
+       * а рассинхрон с основным холстом сразу заметен глазом.
+       */
+      const mini = miniRef.current;
+      if (mini && arr.length) {
+        const mctx = mini.getContext("2d");
+        const mw = mini.clientWidth, mh = mini.clientHeight;
+        if (mctx && mw && mh) {
+          const dpr = window.devicePixelRatio || 1;
+          if (mini.width !== Math.round(mw * dpr)) {
+            mini.width = Math.round(mw * dpr);
+            mini.height = Math.round(mh * dpr);
+          }
+          mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          mctx.clearRect(0, 0, mw, mh);
+
+          // Границы по узлам, а не по холсту: граф уплывает, и карта должна
+          // ехать за ним, иначе точки собьются в угол.
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const { b } of arr) {
+            if (b.x < minX) minX = b.x; if (b.x > maxX) maxX = b.x;
+            if (b.y < minY) minY = b.y; if (b.y > maxY) maxY = b.y;
+          }
+          const pad = 30;
+          const s = Math.min((mw - 8) / Math.max(1, maxX - minX + pad * 2), (mh - 8) / Math.max(1, maxY - minY + pad * 2));
+          const ox = 4 - (minX - pad) * s, oy = 4 - (minY - pad) * s;
+          miniFit.current = { s, ox, oy };
+          const mx = (x: number) => x * s + ox, my = (y: number) => y * s + oy;
+
+          for (const { n, b, w: nw } of arr) {
+            const hit = matches?.has(n.id) ?? false;
+            // Найденное поиском на карте видно сразу — иначе, чтобы понять, куда
+            // ехать за совпадением, пришлось бы возить основной вид наугад.
+            const faded = matches ? !hit : false;
+            // Связи на миникарте не рисуем вовсе: в таком масштабе они дают
+            // сплошную заливку, из которой не читается ничего.
+            mctx.globalAlpha = faded ? 0.12 : 0.25 + nw * 0.75;
+            mctx.fillStyle = hit ? "#4fc1ff" : catColor(n.category);
+            mctx.beginPath();
+            mctx.arc(mx(b.x), my(b.y), Math.max(1, (hit ? 2 : 1) + nw * 2.5), 0, Math.PI * 2);
+            mctx.fill();
+            // Выделенный узел помечаем всегда: это точка отсчёта на карте.
+            if (n.id === sel) {
+              mctx.globalAlpha = 1;
+              mctx.strokeStyle = "#ffffff";
+              mctx.lineWidth = 1.2;
+              mctx.stroke();
+            }
+          }
+          mctx.globalAlpha = 1;
+
+          // Рамка текущего вида — то, ради чего карта и нужна.
+          // Мировые координаты левого верхнего угла экрана — это -offset/scale.
+          const vx = mx(-view.current.ox / view.current.scale);
+          const vy = my(-view.current.oy / view.current.scale);
+          mctx.strokeStyle = "rgba(79,193,255,0.9)";
+          mctx.lineWidth = 1;
+          mctx.strokeRect(vx, vy, (w / view.current.scale) * s, (h / view.current.scale) * s);
+        }
+      }
+
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -642,6 +712,27 @@ export function BrainPanel() {
       }
     }
     pointer.current = { dragId: null, panning: false, lastX: 0, lastY: 0, moved: false };
+  };
+
+  /**
+   * Прыжок по миникарте: центрируем вид на точке, куда ткнули.
+   *
+   * Работает и на зажатой кнопке — тащишь по карте, основной вид едет следом.
+   * Масштаб при этом не трогаем: карта отвечает на «где я», а не «насколько
+   * близко», и внезапный зум под пальцем сбивал бы ориентацию.
+   */
+  const miniGo = (e: React.PointerEvent) => {
+    if (e.buttons === 0 && e.type === "pointermove") return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const { s, ox, oy } = miniFit.current;
+    if (!s) return;
+    const wx = (e.clientX - rect.left - ox) / s;
+    const wy = (e.clientY - rect.top - oy) / s;
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const v = view.current;
+    v.ox = wrap.clientWidth / 2 - wx * v.scale;
+    v.oy = wrap.clientHeight / 2 - wy * v.scale;
   };
 
   const onWheel = (e: React.WheelEvent) => {
@@ -1429,6 +1520,30 @@ export function BrainPanel() {
               Пусто. Нажми «Собрать мозг» — ИИ прочитает задачи, заметки, календарь, почту и Notion и построит граф. Или добавь узлы вручную.
             </div>
           )}
+          {/* миникарта: где я на графе и куда прыгнуть */}
+          {graph.nodes.length > 0 && (
+            <div className="absolute right-2 top-2 rounded border border-vsc-line bg-black/40 backdrop-blur-sm">
+              <div className="flex items-center justify-between gap-2 px-1.5 py-0.5">
+                <span className="text-[10px] text-vsc-muted">Карта</span>
+                <button
+                  onClick={() => setMiniOn((v) => !v)}
+                  className="rounded p-0.5 text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"
+                  title={miniOn ? "Свернуть карту" : "Развернуть карту"}
+                >
+                  {miniOn ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                </button>
+              </div>
+              {miniOn && (
+                <canvas
+                  ref={miniRef}
+                  onPointerDown={(e) => { (e.target as Element).setPointerCapture(e.pointerId); miniGo(e); }}
+                  onPointerMove={miniGo}
+                  className="block h-29.5 w-42.5 cursor-crosshair touch-none"
+                />
+              )}
+            </div>
+          )}
+
           {/* легенда: только категории, реально присутствующие в графе */}
           {graph.nodes.length > 0 && (
             <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap gap-x-3 gap-y-1 rounded bg-black/25 px-2 py-1">
