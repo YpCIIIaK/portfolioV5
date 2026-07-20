@@ -132,6 +132,9 @@ export function BrainPanel() {
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
   const [search, setSearch] = useState("");
+  // Список привязки в карточке узла: открыт/закрыт + строка фильтра.
+  const [linkPicker, setLinkPicker] = useState(false);
+  const [linkQuery, setLinkQuery] = useState("");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -142,6 +145,16 @@ export function BrainPanel() {
   const weights = useMemo(() => computeWeights(graph.nodes, graph.edges), [graph]);
   const weightsRef = useRef(weights);
   weightsRef.current = weights;
+  // Число соседей — показываем его в списке привязки, чтобы было видно,
+  // почему узел стоит выше: вес складывается из важности и связности.
+  const degrees = useMemo(() => {
+    const d = new Map<string, number>();
+    for (const e of graph.edges) {
+      d.set(e.from, (d.get(e.from) ?? 0) + 1);
+      d.set(e.to, (d.get(e.to) ?? 0) + 1);
+    }
+    return d;
+  }, [graph.edges]);
   const view = useRef({ ox: 0, oy: 0, scale: 1 });
   const pointer = useRef({ dragId: null as string | null, panning: false, lastX: 0, lastY: 0, moved: false });
   const hoverRef = useRef<string | null>(null);
@@ -570,13 +583,20 @@ export function BrainPanel() {
     }
   };
 
+  /** Новый узел. Если сейчас выделен другой — сразу вешаем связь с ним:
+   *  узел почти никогда не нужен сам по себе, а искать его потом в списке
+   *  привязки дороже, чем отменить лишнее ребро. */
   const addNode = () => {
     const id = `n${Date.now()}`;
+    const parent = selectedId;
     setGraph((g) => ({
-      ...g,
       nodes: [...g.nodes, { id, label: "Новый узел", category: "other", importance: 3, summary: "", source: null }],
+      edges: parent && g.nodes.some((n) => n.id === parent)
+        ? [...g.edges, { id: `e${Date.now()}`, from: parent, to: id }]
+        : g.edges,
     }));
     setSelectedId(id);
+    setLinkPicker(false);
     setDirty(true);
   };
 
@@ -591,11 +611,24 @@ export function BrainPanel() {
       edges: g.edges.filter((e) => e.from !== id && e.to !== id),
     }));
     setSelectedId(null);
+    setLinkPicker(false);
     setDirty(true);
   };
 
   const deleteEdge = (id: string) => {
     setGraph((g) => ({ ...g, edges: g.edges.filter((e) => e.id !== id) }));
+    setDirty(true);
+  };
+
+  /** Связать два узла. Дубликат (в любую сторону) молча игнорируем. */
+  const addEdge = (from: string, to: string) => {
+    if (from === to) return;
+    setGraph((g) => ({
+      ...g,
+      edges: g.edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from))
+        ? g.edges
+        : [...g.edges, { id: `e${Date.now()}`, from, to }],
+    }));
     setDirty(true);
   };
 
@@ -611,6 +644,23 @@ export function BrainPanel() {
     ? graph.edges.filter((e) => e.from === selected.id || e.to === selected.id)
     : [];
   const nodeLabel = (id: string) => graph.nodes.find((n) => n.id === id)?.label ?? id;
+
+  /**
+   * Кандидаты для привязки: всё, кроме самого узла и тех, с кем связь уже есть.
+   * Сортировка по весу — та же величина, что задаёт размер узла на холсте
+   * (важность + связность), поэтому сверху оказываются «якоря» графа, к которым
+   * новый узел чаще всего и нужно цеплять.
+   */
+  const linkCandidates = useMemo(() => {
+    if (!selected) return [];
+    const linked = new Set(selectedEdges.map((e) => (e.from === selected.id ? e.to : e.from)));
+    const q = linkQuery.trim().toLowerCase();
+    return graph.nodes
+      .filter((n) => n.id !== selected.id && !linked.has(n.id))
+      .filter((n) => !q || n.label.toLowerCase().includes(q) || n.category.toLowerCase().includes(q))
+      .sort((a, b) => (weights.get(b.id) ?? 0) - (weights.get(a.id) ?? 0) || a.label.localeCompare(b.label))
+      .slice(0, 50);
+  }, [selected, selectedEdges, graph.nodes, linkQuery, weights]);
 
   /** Навести камеру на узел (центрировать) и выделить его. */
   const focusNode = (id: string) => {
@@ -859,13 +909,62 @@ export function BrainPanel() {
                   </div>
                 );
               })}
-              {!demo && (
-                <button
-                  onClick={() => setLinkFrom(selected.id)}
-                  className="mt-1 flex items-center gap-1.5 rounded border border-dashed border-vsc-line px-2 py-1 text-[12px] text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"
-                >
-                  <Link2 size={12} /> Связать с…
-                </button>
+              {!demo && !linkPicker && (
+                <div className="mt-1 flex gap-1">
+                  <button
+                    onClick={() => { setLinkPicker(true); setLinkQuery(""); }}
+                    className="flex flex-1 items-center gap-1.5 rounded border border-dashed border-vsc-line px-2 py-1 text-[12px] text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"
+                  >
+                    <Link2 size={12} /> Связать с…
+                  </button>
+                  <button
+                    onClick={() => setLinkFrom(selected.id)}
+                    title="Выбрать узел кликом на холсте"
+                    className="rounded border border-dashed border-vsc-line px-2 py-1 text-[12px] text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"
+                  >
+                    на холсте
+                  </button>
+                </div>
+              )}
+              {!demo && linkPicker && (
+                <div className="mt-1 rounded border border-vsc-line bg-vsc-sidebar p-1">
+                  <div className="mb-1 flex items-center gap-1">
+                    <input
+                      autoFocus
+                      value={linkQuery}
+                      onChange={(e) => setLinkQuery(e.target.value)}
+                      placeholder="Найти узел…"
+                      className="min-w-0 flex-1 rounded border border-vsc-line bg-vsc-bg px-2 py-1 text-[12px] text-vsc-text outline-none focus:border-vsc-accent"
+                    />
+                    <button onClick={() => setLinkPicker(false)} className="rounded p-1 text-vsc-muted hover:text-vsc-text">
+                      <X size={12} />
+                    </button>
+                  </div>
+                  <div className="max-h-48 overflow-auto">
+                    {linkCandidates.length === 0 ? (
+                      <p className="px-1 py-1.5 text-[12px] text-vsc-muted">
+                        {linkQuery ? "Ничего не найдено." : "Не с чем связывать."}
+                      </p>
+                    ) : (
+                      linkCandidates.map((n) => (
+                        <button
+                          key={n.id}
+                          onClick={() => { addEdge(selected.id, n.id); setLinkQuery(""); }}
+                          className="flex w-full items-center gap-2 rounded px-1 py-1 text-left hover:bg-vsc-hover"
+                        >
+                          <span
+                            className="h-1.5 w-1.5 shrink-0 rounded-full"
+                            style={{ background: catColor(n.category) }}
+                          />
+                          <span className="min-w-0 flex-1 truncate text-[12px] text-vsc-text">{n.label}</span>
+                          <span className="shrink-0 text-[10px] text-vsc-muted">
+                            {n.importance}★ · {degrees.get(n.id) ?? 0}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
               )}
             </div>
             {!demo && (
