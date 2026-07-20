@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2, Search, ChevronDown, ChevronRight, Eraser } from "lucide-react";
+import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2, Search, ChevronDown, ChevronRight, Eraser, Ban } from "lucide-react";
 import { BRAIN_MODES, BRAIN_MODE_LABEL, BRAIN_MODE_HINT, brainMode, type BrainMode } from "@/lib/brain-modes";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
@@ -140,6 +140,10 @@ export function BrainPanel() {
   const [busy, setBusy] = useState<"" | "generate" | "augment" | "save" | "clean">("");
   // План чистки: показываем, что удалится, ДО удаления — снапшот один и отката нет.
   const [cleanPlan, setCleanPlan] = useState<CleanPlan | null>(null);
+  // Чёрный список тем: чистить постфактум мало, надо чтобы не появлялось заново.
+  const [blockRules, setBlockRules] = useState<{ id: string; pattern: string }[]>([]);
+  const [blockOpen, setBlockOpen] = useState(false);
+  const [blockInput, setBlockInput] = useState("");
   const [info, setInfo] = useState("");
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -501,6 +505,41 @@ export function BrainPanel() {
   /* ---- действия -------------------------------------------------------- */
 
   /** Инкремент: сервер дополняет ПОСЛЕДНИЙ снапшот только новым из источников. */
+  const loadBlocklist = async () => {
+    try {
+      const res = await fetch("/api/workspace/brain/blocklist");
+      const json = await res.json();
+      if (res.ok) setBlockRules(json.rules ?? []);
+    } catch { /* список не критичен для работы панели */ }
+  };
+
+  const addBlockRule = async () => {
+    const pattern = blockInput.trim();
+    if (pattern.length < 2) return;
+    setError("");
+    try {
+      const res = await fetch("/api/workspace/brain/blocklist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pattern }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      setBlockRules(json.rules ?? []);
+      setBlockInput("");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const removeBlockRule = async (id: string) => {
+    try {
+      const res = await fetch(`/api/workspace/brain/blocklist?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const json = await res.json();
+      if (res.ok) setBlockRules(json.rules ?? []);
+    } catch { /* молча: удаление правила — не критичная операция */ }
+  };
+
   /** Шаг 1: спросить сервер, что он считает мусором. Ничего не меняет. */
   const previewClean = async () => {
     setBusy("clean"); setError(""); setInfo(""); setCleanPlan(null);
@@ -844,6 +883,15 @@ export function BrainPanel() {
           {busy === "clean" ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />}
           Почистить
         </button>
+        <button
+          onClick={() => { setBlockOpen((v) => !v); if (!blockOpen) void loadBlocklist(); }}
+          disabled={demo || !owner}
+          className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[12.5px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
+          title="Темы, которые мозгу запрещено заводить"
+        >
+          <Ban size={14} />
+          Чёрный список{blockRules.length ? ` (${blockRules.length})` : ""}
+        </button>
         {/* Свобода сборки — влияет и на «Собрать», и на «Дополнить». */}
         <select
           value={mode}
@@ -912,6 +960,53 @@ export function BrainPanel() {
 
       {error && <div className="mb-2 rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[12px] text-red-300">{error}</div>}
       {info && <div className="mb-2 rounded border border-vsc-line bg-vsc-sidebar px-3 py-1.5 text-[12px] text-vsc-muted">{info}</div>}
+
+      {/* Чёрный список: запрет действует и в промпте, и при мерже, и при чистке. */}
+      {blockOpen && (
+        <div className="mb-2 rounded border border-vsc-line bg-vsc-sidebar px-3 py-2 text-[12px]">
+          <div className="mb-1.5 text-vsc-muted">
+            Мозг не будет заводить узлы, у которых название или суть содержит одну из
+            строк. Сравнение без учёта регистра, по подстроке.
+          </div>
+          <div className="mb-2 flex gap-2">
+            <input
+              value={blockInput}
+              onChange={(e) => setBlockInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void addBlockRule(); }}
+              placeholder="например: TeleportHQ"
+              className="flex-1 rounded border border-vsc-line bg-vsc-bg px-2 py-1 text-vsc-text outline-none focus:border-vsc-accent"
+            />
+            <button
+              onClick={() => void addBlockRule()}
+              disabled={blockInput.trim().length < 2}
+              className="rounded border border-vsc-line px-2 py-1 text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
+            >
+              Добавить
+            </button>
+          </div>
+          {blockRules.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {blockRules.map((r) => (
+                <span key={r.id} className="flex items-center gap-1 rounded border border-vsc-line px-2 py-0.5 text-vsc-text">
+                  {r.pattern}
+                  <button
+                    onClick={() => void removeBlockRule(r.id)}
+                    className="text-vsc-muted hover:text-red-400"
+                    title="Убрать из списка"
+                  >
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="text-vsc-muted">Список пуст.</div>
+          )}
+          <div className="mt-2 text-vsc-muted">
+            Уже накопившиеся узлы по этим темам уберёт кнопка «Почистить».
+          </div>
+        </div>
+      )}
 
       {/* Предпросмотр чистки: удаление необратимо, поэтому сначала список. */}
       {cleanPlan && (

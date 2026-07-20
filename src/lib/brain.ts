@@ -6,6 +6,7 @@ import { bitrixConfigured, fetchTasks } from "@/lib/bitrix";
 import { telegramConfigured, fetchDialogs } from "@/lib/telegram";
 import { notionConnected, notionStatus, searchNotion, pageContent, fetchNotionTasks } from "@/lib/notion";
 import { driveBrainContext } from "@/lib/google";
+import { listBlocklist, isBlocked } from "@/lib/brain-blocklist";
 
 /**
  * «Второй мозг» — граф знаний, который ИИ собирает из всего подключённого
@@ -250,7 +251,17 @@ const UNIQUE_RUBRIC = [
 ].join("\n");
 
 /** Строгий промпт: модель должна вернуть ТОЛЬКО JSON графа. */
-export function buildBrainPrompt(context: string, mode: Mode = "balanced"): string {
+/** Текст запрета для промпта. Пустой список — пустая строка, лишнего шума в промпте не нужно. */
+export function blocklistRule(patterns: string[]): string {
+  if (!patterns.length) return "";
+  return [
+    "ЗАПРЕЩЁННЫЕ ТЕМЫ — НЕ создавай узлы, если название или суть содержит:",
+    ...patterns.map((p) => `- ${p}`),
+    "Это осознанное решение пользователя. Такие сущности пропускай молча, не заменяй синонимами и не объединяй в общий узел.",
+  ].join("\n");
+}
+
+export function buildBrainPrompt(context: string, mode: Mode = "balanced", blocked: string[] = []): string {
   const spec = MODE_SPEC[mode];
   return [
     "Ты строишь «второй мозг» — граф знаний по личному рабочему пространству.",
@@ -264,6 +275,7 @@ export function buildBrainPrompt(context: string, mode: Mode = "balanced"): stri
     IMPORTANCE_RUBRIC,
     "",
     UNIQUE_RUBRIC,
+    ...(blocked.length ? ["", blocklistRule(blocked)] : []),
     "",
     "- Категории: предпочитай базовые work|project|idea|people|finance|learn|life|other. Если сущность явно не влезает — придумай СВОЮ короткую категорию (одно слово латиницей, напр. health, travel) и используй её последовательно для похожих узлов.",
     "- source.panel — одна из: tasks, notes, calendar, mail, telegram, notion, bitrix, drive, projects, subscriptions, news, other; source.ref — заголовок/название исходной записи.",
@@ -400,7 +412,7 @@ export function buildBrainShortcuts(data: BrainData): string {
 }
 
 /** Промпт дельты: вернуть ТОЛЬКО новые узлы и новые связи (в т.ч. к существующим id). */
-export function buildBrainAugmentPrompt(shortcuts: string, context: string, mode: Mode = "balanced"): string {
+export function buildBrainAugmentPrompt(shortcuts: string, context: string, mode: Mode = "balanced", blocked: string[] = []): string {
   const spec = MODE_SPEC[mode];
   return [
     "Ты ДОПОЛНЯЕШЬ существующий «второй мозг» — граф знаний по личному рабочему пространству.",
@@ -421,6 +433,7 @@ export function buildBrainAugmentPrompt(shortcuts: string, context: string, mode
     IMPORTANCE_RUBRIC,
     "",
     UNIQUE_RUBRIC,
+    ...(blocked.length ? ["", blocklistRule(blocked)] : []),
     "",
     "- Категории: сперва используй те, что уже есть в шорткатах, затем базовые work|project|idea|people|finance|learn|life|other; если ничего не подходит — придумай свою (одно слово латиницей).",
     "- id новых узлов — новые slug-строки (nb1, nb2, …), не совпадающие с существующими id.",
@@ -555,12 +568,13 @@ export async function searchBrain(query: string, limit = 10): Promise<string> {
 export async function generateBrainData(mode: Mode = "balanced"): Promise<{ data: BrainData; sources: string[] }> {
   const spec = MODE_SPEC[mode];
   const { context, sources } = await collectBrainContext(mode);
-  const answer = await askAI(buildBrainPrompt(context, mode), {
+  const blocked = (await listBlocklist()).map((b) => b.pattern);
+  const answer = await askAI(buildBrainPrompt(context, mode, blocked), {
     task: "brain",
     temperature: spec.temperature,
     maxTokens: spec.maxTokens,
   });
-  let data = parseBrainAnswer(answer);
+  let data = dropBlocked(parseBrainAnswer(answer), blocked);
   if (!data.nodes.length) throw new Error("модель вернула пустой граф");
 
   // Модель поскупилась на связи — досвязываем отдельным коротким запросом.
@@ -606,12 +620,13 @@ export async function augmentLatestBrain(mode: Mode = "balanced"): Promise<Augme
     return { skipped: "нет снапшота — сначала собери мозг полностью", added: 0, edges: 0, labels: [] };
   }
   const { context, sources } = await collectBrainContext(mode);
-  const answer = await askAI(buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context, mode), {
+  const blocked = (await listBlocklist()).map((b) => b.pattern);
+  const answer = await askAI(buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context, mode, blocked), {
     // Дельта короче полной сборки — половины бюджета режима хватает.
     temperature: Math.max(0.2, spec.temperature - 0.1),
     maxTokens: Math.round(spec.maxTokens / 2),
   });
-  const delta = parseBrainAnswer(answer, new Set(snapshot.data.nodes.map((n) => n.id)));
+  const delta = dropBlocked(parseBrainAnswer(answer, new Set(snapshot.data.nodes.map((n) => n.id))), blocked);
   const { data, addedNodes, addedEdges, labels } = mergeBrainDelta(snapshot.data, delta);
   if (addedNodes || addedEdges) {
     await sbUpdate("ws_brain", `id=eq.${encodeURIComponent(snapshot.id)}`, { data, updated_at: new Date().toISOString() });
@@ -626,6 +641,7 @@ export async function augmentLatestBrain(mode: Mode = "balanced"): Promise<Augme
  */
 export async function expandBrainCategory(category: string, mode: Mode = "balanced"): Promise<AugmentResult> {
   const spec = MODE_SPEC[mode];
+  const blocked = (await listBlocklist()).map((b) => b.pattern);
   const snapshot = await latestBrainSnapshot();
   if (!snapshot || !snapshot.data.nodes.length) {
     return { skipped: "нет снапшота — сначала собери мозг полностью", added: 0, edges: 0, labels: [] };
@@ -666,12 +682,24 @@ export async function expandBrainCategory(category: string, mode: Mode = "balanc
     temperature: Math.max(0.2, spec.temperature - 0.1),
     maxTokens: Math.round(spec.maxTokens / 2),
   });
-  const delta = parseBrainAnswer(answer, new Set(snapshot.data.nodes.map((n) => n.id)));
+  const delta = dropBlocked(parseBrainAnswer(answer, new Set(snapshot.data.nodes.map((n) => n.id))), blocked);
   const { data, addedNodes, addedEdges, labels } = mergeBrainDelta(snapshot.data, delta);
   if (addedNodes || addedEdges) {
     await sbUpdate("ws_brain", `id=eq.${encodeURIComponent(snapshot.id)}`, { data, updated_at: new Date().toISOString() });
   }
   return { id: snapshot.id, title: snapshot.title, added: addedNodes, edges: addedEdges, labels, data, sources };
+}
+
+/**
+ * Выкинуть из ответа модели всё, что под запретом. Промпта мало: модель
+ * регулярно заводит запрещённый узел всё равно, а рёбра на него потом висят
+ * в никуда — поэтому режем и узлы, и связи с ними.
+ */
+export function dropBlocked(data: BrainData, patterns: string[]): BrainData {
+  if (!patterns.length) return data;
+  const nodes = data.nodes.filter((n) => !isBlocked(n, patterns));
+  const ids = new Set(nodes.map((n) => n.id));
+  return { nodes, edges: data.edges.filter((e) => ids.has(e.from) && ids.has(e.to)) };
 }
 
 /* ---- чистка графа ------------------------------------------------------ */
@@ -709,7 +737,10 @@ function normLabel(s: string): string {
  *
  * Связи чистим отдельно: петли, дубли, ссылки на несуществующие узлы.
  */
-export function planBrainCleanup(data: BrainData, opts: { dropLonely?: boolean } = {}): CleanPlan {
+export function planBrainCleanup(
+  data: BrainData,
+  opts: { dropLonely?: boolean; blocked?: string[] } = {},
+): CleanPlan {
   const { nodes, edges } = data;
 
   const degree = new Map<string, number>();
@@ -742,9 +773,12 @@ export function planBrainCleanup(data: BrainData, opts: { dropLonely?: boolean }
     }
   }
 
-  // 2. Пустые названия и одинокая мелочь.
+  // 2. Чёрный список, пустые названия и одинокая мелочь.
+  const blocked = opts.blocked ?? [];
   for (const n of nodes) {
     if (drop.has(n.id)) continue;
+    const hit = blocked.length ? isBlocked(n, blocked) : null;
+    if (hit) { drop.set(n.id, `чёрный список: «${hit}»`); continue; }
     if (!normLabel(n.label)) { drop.set(n.id, "пустое название"); continue; }
     if (opts.dropLonely && !(degree.get(n.id) ?? 0) && n.importance <= 2) {
       drop.set(n.id, "без связей и незначимый");
@@ -780,6 +814,7 @@ export function applyBrainCleanup(data: BrainData, plan: CleanPlan): BrainData {
   const nodes = data.nodes.filter((n) => !dropIds.has(n.id));
 
   // Связи удалённого дубля не выбрасываем: переносим на узел с тем же названием.
+  // Для узлов из чёрного списка переносить некуда — их близнецы удалены тоже.
   const byLabel = new Map(nodes.map((n) => [normLabel(n.label), n.id]));
   const byId = new Map(data.nodes.map((n) => [n.id, n]));
   const remap = new Map<string, string>();
@@ -816,7 +851,8 @@ export async function cleanLatestBrain(
     return { nodes: [], edges: 0, keptNodes: 0, keptEdges: 0, applied: false };
   }
 
-  const plan = planBrainCleanup(snapshot.data, { dropLonely: opts.dropLonely });
+  const blocked = (await listBlocklist()).map((b) => b.pattern);
+  const plan = planBrainCleanup(snapshot.data, { dropLonely: opts.dropLonely, blocked });
   if (!opts.apply || (!plan.nodes.length && !plan.edges)) {
     return { ...plan, applied: false, id: snapshot.id };
   }

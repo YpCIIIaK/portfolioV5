@@ -364,3 +364,18 @@ create table if not exists ws_ai_models (
 alter table ws_ai_models enable row level security;
 -- Политик нет намеренно: anon-ключ не должен видеть таблицу вовсе, сервер ходит
 -- под service_role в обход RLS.
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Чёрный список мозга: подстроки, которые не должны становиться узлами.
+-- Сравнение регистронезависимое, по названию и по сути узла.
+create table if not exists ws_brain_blocklist (
+  id         uuid primary key default gen_random_uuid(),
+  pattern    text not null,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists ws_brain_blocklist_pattern_idx
+  on ws_brain_blocklist (lower(pattern));
+
+alter table ws_brain_blocklist enable row level security;
+-- Политик нет намеренно: anon-ключ доступа не получает, сервер ходит под service_role.
