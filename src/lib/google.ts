@@ -300,9 +300,20 @@ export async function fileText(file: DriveFile, maxChars = 20_000): Promise<stri
 
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
   if (!res.ok) return "";
-  const text = await res.text();
-  // Drive exports are UTF-8 with a BOM; it would otherwise poison the first token.
-  return text.replace(/^﻿/, "").slice(0, maxChars);
+  return sanitize(await res.text()).slice(0, maxChars);
+}
+
+/**
+ * Make Drive's bytes safe to store as Postgres `text`.
+ *
+ * Postgres rejects NUL outright (22P05), so a UTF-16 file — every other byte a
+ * NUL — or a mislabelled binary would fail the whole insert. We also drop the
+ * BOM and the other C0 controls, keeping tab/newline/CR.
+ */
+function sanitize(text: string): string {
+  return text
+    .replace(/^\uFEFF/, "")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
 }
 
 /* ---- sources & index (Supabase) ----------------------------------------- */
@@ -354,8 +365,10 @@ export interface DriveIndexRow {
  * feed and only touch what moved. File bodies stay on Drive — we store an
  * excerpt (and only for text-ish files) so the assistant has something to read.
  */
-export async function syncSource(source: DriveSource): Promise<{ added: number; updated: number; removed: number }> {
-  const stats = { added: 0, updated: 0, removed: 0 };
+export async function syncSource(
+  source: DriveSource,
+): Promise<{ added: number; updated: number; removed: number; skipped: number }> {
+  const stats = { added: 0, updated: 0, removed: 0, skipped: 0 };
 
   const indexed = await sbSelect<DriveIndexRow>(
     "ws_drive_index",
@@ -403,7 +416,7 @@ export async function syncSource(source: DriveSource): Promise<{ added: number; 
     const row = {
       source_id: source.id,
       file_id: file.id,
-      name: file.name,
+      name: sanitize(file.name),
       mime_type: file.mimeType,
       modified_time: file.modifiedTime ?? null,
       md5: file.md5Checksum ?? null,
@@ -413,12 +426,18 @@ export async function syncSource(source: DriveSource): Promise<{ added: number; 
       synced_at: new Date().toISOString(),
     };
 
-    if (known) {
-      await sbUpdate("ws_drive_index", `id=eq.${known.id}`, row);
-      stats.updated++;
-    } else {
-      await sbInsert("ws_drive_index", row);
-      stats.added++;
+    // One unwritable file must not abort the whole folder: skip it and keep
+    // going, so a single odd encoding can't cost us the entire sync.
+    try {
+      if (known) {
+        await sbUpdate("ws_drive_index", `id=eq.${known.id}`, row);
+        stats.updated++;
+      } else {
+        await sbInsert("ws_drive_index", row);
+        stats.added++;
+      }
+    } catch {
+      stats.skipped++;
     }
   }
 
