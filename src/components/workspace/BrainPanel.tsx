@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2, Search, ChevronDown, ChevronRight } from "lucide-react";
+import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2, Search, ChevronDown, ChevronRight, Eraser } from "lucide-react";
 import { BRAIN_MODES, BRAIN_MODE_LABEL, BRAIN_MODE_HINT, brainMode, type BrainMode } from "@/lib/brain-modes";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
@@ -11,6 +11,14 @@ import {
   type BrainState, type BrainNode, type BrainEdge, type BrainSnapshot, type BrainCategory,
 } from "@/lib/workspace";
 import { GuestBanner } from "./GuestBanner";
+
+/** Зеркало CleanPlan из brain.ts — сам brain.ts тянет Supabase и в клиент не импортируется. */
+interface CleanPlan {
+  nodes: { id: string; label: string; reason: string }[];
+  edges: number;
+  keptNodes: number;
+  keptEdges: number;
+}
 
 /**
  * «Второй мозг» — граф знаний, собранный ИИ из всего воркспейса (задачи,
@@ -129,7 +137,9 @@ export function BrainPanel() {
   const [title, setTitle] = useState("Мой мозг");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [linkFrom, setLinkFrom] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"" | "generate" | "augment" | "save">("");
+  const [busy, setBusy] = useState<"" | "generate" | "augment" | "save" | "clean">("");
+  // План чистки: показываем, что удалится, ДО удаления — снапшот один и отката нет.
+  const [cleanPlan, setCleanPlan] = useState<CleanPlan | null>(null);
   const [info, setInfo] = useState("");
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -491,6 +501,52 @@ export function BrainPanel() {
   /* ---- действия -------------------------------------------------------- */
 
   /** Инкремент: сервер дополняет ПОСЛЕДНИЙ снапшот только новым из источников. */
+  /** Шаг 1: спросить сервер, что он считает мусором. Ничего не меняет. */
+  const previewClean = async () => {
+    setBusy("clean"); setError(""); setInfo(""); setCleanPlan(null);
+    try {
+      const res = await fetch("/api/workspace/brain/clean", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apply: false }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      if (!json.nodes?.length && !json.edges) { setInfo("Мусора не нашлось — граф чистый."); return; }
+      setCleanPlan(json);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  /** Шаг 2: применить показанный план. */
+  const applyClean = async (dropLonely: boolean) => {
+    setBusy("clean"); setError("");
+    try {
+      const res = await fetch("/api/workspace/brain/clean", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apply: true, dropLonely }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      if (json.data) {
+        setGraph(json.data);
+        setSelectedId(null);
+        setDirty(false);
+        setSnapshots((s) => s.map((x) => (x.id === json.id ? { ...x, data: json.data, updated_at: new Date().toISOString() } : x)));
+      }
+      setInfo(`Удалено: ${json.nodes?.length ?? 0} узл., ${json.edges ?? 0} связ. Осталось ${json.keptNodes} узл.`);
+      setCleanPlan(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  };
+
   const augment = async () => {
     setBusy("augment"); setError(""); setInfo(""); setAddedLabels([]);
     try {
@@ -779,6 +835,15 @@ export function BrainPanel() {
           {busy === "augment" ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
           Дополнить
         </button>
+        <button
+          onClick={previewClean}
+          disabled={demo || !owner || busy !== "" || !snapshotId}
+          className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[12.5px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
+          title="Найти дубли, битые связи и одинокие мелкие узлы"
+        >
+          {busy === "clean" ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />}
+          Почистить
+        </button>
         {/* Свобода сборки — влияет и на «Собрать», и на «Дополнить». */}
         <select
           value={mode}
@@ -847,6 +912,47 @@ export function BrainPanel() {
 
       {error && <div className="mb-2 rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[12px] text-red-300">{error}</div>}
       {info && <div className="mb-2 rounded border border-vsc-line bg-vsc-sidebar px-3 py-1.5 text-[12px] text-vsc-muted">{info}</div>}
+
+      {/* Предпросмотр чистки: удаление необратимо, поэтому сначала список. */}
+      {cleanPlan && (
+        <div className="mb-2 rounded border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[12px]">
+          <div className="mb-1 font-medium text-vsc-text">
+            Под удаление: {cleanPlan.nodes.length} узл. и {cleanPlan.edges} связ.
+            <span className="text-vsc-muted"> · останется {cleanPlan.keptNodes} узл., {cleanPlan.keptEdges} связ.</span>
+          </div>
+          <div className="max-h-40 overflow-auto">
+            {cleanPlan.nodes.map((n) => (
+              <div key={n.id} className="flex items-baseline gap-2 py-0.5">
+                <span className="truncate text-vsc-text">{n.label}</span>
+                <span className="shrink-0 text-vsc-muted">— {n.reason}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              onClick={() => void applyClean(false)}
+              disabled={busy !== ""}
+              className="rounded border border-vsc-line px-2 py-1 text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
+            >
+              Удалить дубли и битые связи
+            </button>
+            <button
+              onClick={() => void applyClean(true)}
+              disabled={busy !== ""}
+              title="Плюс узлы без связей с важностью 1–2"
+              className="rounded border border-vsc-line px-2 py-1 text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
+            >
+              И одинокую мелочь тоже
+            </button>
+            <button
+              onClick={() => setCleanPlan(null)}
+              className="rounded px-2 py-1 text-vsc-muted hover:bg-vsc-hover"
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      )}
       {addedLabels.length > 0 && (
         <div className="mb-2 rounded border border-vsc-line bg-vsc-sidebar text-[12px]">
           <div className="flex items-center gap-2 px-3 py-1.5">

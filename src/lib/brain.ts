@@ -464,6 +464,9 @@ export function mergeBrainDelta(existing: BrainData, delta: BrainData): { data: 
     const dup = byLabel.get(norm(n.label));
     if (dup) { remap.set(n.id, dup); return false; }
     if (existingIds.has(n.id)) { remap.set(n.id, n.id); return false; }
+    // Дубликаты ВНУТРИ одной дельты: сверки со старым графом мало — модель
+    // регулярно выдаёт один и тот же узел дважды за раз, и оба проходили.
+    byLabel.set(norm(n.label), n.id);
     return true;
   });
 
@@ -669,4 +672,159 @@ export async function expandBrainCategory(category: string, mode: Mode = "balanc
     await sbUpdate("ws_brain", `id=eq.${encodeURIComponent(snapshot.id)}`, { data, updated_at: new Date().toISOString() });
   }
   return { id: snapshot.id, title: snapshot.title, added: addedNodes, edges: addedEdges, labels, data, sources };
+}
+
+/* ---- чистка графа ------------------------------------------------------ */
+
+export interface CleanPlan {
+  /** Узлы под удаление: id + название + причина, чтобы решение было проверяемым. */
+  nodes: { id: string; label: string; reason: string }[];
+  /** Сколько связей уйдёт: битые, петли, дубли и висящие после удаления узлов. */
+  edges: number;
+  /** Что останется. */
+  keptNodes: number;
+  keptEdges: number;
+}
+
+export interface CleanResult extends CleanPlan {
+  applied: boolean;
+  id?: string;
+  data?: BrainData;
+}
+
+/** Слипшиеся пробелы/регистр/кавычки — иначе «TeleportHQ  UI» и «teleporthq ui» разные. */
+function normLabel(s: string): string {
+  return s.toLowerCase().replace(/[«»"'`]/g, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Найти мусор в графе. Только детерминированные правила — никакой модели:
+ * решение должно быть предсказуемым и объяснимым, иначе кнопка «почистить»
+ * превращается в лотерею над единственным снапшотом.
+ *
+ * Мусором считаем:
+ *  1) дубликаты по названию — остаётся самый весомый (importance, потом связность);
+ *  2) узлы без единой связи и с importance ≤ 2 — они ни на что не влияют;
+ *  3) узлы с пустым названием.
+ *
+ * Связи чистим отдельно: петли, дубли, ссылки на несуществующие узлы.
+ */
+export function planBrainCleanup(data: BrainData, opts: { dropLonely?: boolean } = {}): CleanPlan {
+  const { nodes, edges } = data;
+
+  const degree = new Map<string, number>();
+  for (const e of edges) {
+    if (e.from === e.to) continue;
+    degree.set(e.from, (degree.get(e.from) ?? 0) + 1);
+    degree.set(e.to, (degree.get(e.to) ?? 0) + 1);
+  }
+
+  const drop = new Map<string, string>();
+
+  // 1. Дубликаты по названию.
+  const groups = new Map<string, typeof nodes>();
+  for (const n of nodes) {
+    const key = normLabel(n.label);
+    if (!key) continue;
+    const g = groups.get(key);
+    if (g) g.push(n); else groups.set(key, [n]);
+  }
+  for (const [, group] of groups) {
+    if (group.length < 2) continue;
+    // Победитель: выше importance, при равенстве — больше связей, потом длиннее summary.
+    const winner = [...group].sort((a, b) =>
+      b.importance - a.importance ||
+      (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) ||
+      (b.summary?.length ?? 0) - (a.summary?.length ?? 0),
+    )[0];
+    for (const n of group) {
+      if (n.id !== winner.id) drop.set(n.id, `дубль «${winner.label}»`);
+    }
+  }
+
+  // 2. Пустые названия и одинокая мелочь.
+  for (const n of nodes) {
+    if (drop.has(n.id)) continue;
+    if (!normLabel(n.label)) { drop.set(n.id, "пустое название"); continue; }
+    if (opts.dropLonely && !(degree.get(n.id) ?? 0) && n.importance <= 2) {
+      drop.set(n.id, "без связей и незначимый");
+    }
+  }
+
+  const keptIds = new Set(nodes.filter((n) => !drop.has(n.id)).map((n) => n.id));
+
+  // 3. Связи: петли, дубли, битые концы, висящие после удаления узлов.
+  const seen = new Set<string>();
+  let keptEdges = 0;
+  for (const e of edges) {
+    if (e.from === e.to) continue;
+    if (!keptIds.has(e.from) || !keptIds.has(e.to)) continue;
+    const key = [e.from, e.to].sort().join("→");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    keptEdges++;
+  }
+
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  return {
+    nodes: [...drop].map(([id, reason]) => ({ id, label: byId.get(id)?.label ?? id, reason })),
+    edges: edges.length - keptEdges,
+    keptNodes: keptIds.size,
+    keptEdges,
+  };
+}
+
+/** Применить план к данным. Рёбра дублей переезжают на выжившего, а не теряются. */
+export function applyBrainCleanup(data: BrainData, plan: CleanPlan): BrainData {
+  const dropIds = new Set(plan.nodes.map((n) => n.id));
+  const nodes = data.nodes.filter((n) => !dropIds.has(n.id));
+
+  // Связи удалённого дубля не выбрасываем: переносим на узел с тем же названием.
+  const byLabel = new Map(nodes.map((n) => [normLabel(n.label), n.id]));
+  const byId = new Map(data.nodes.map((n) => [n.id, n]));
+  const remap = new Map<string, string>();
+  for (const id of dropIds) {
+    const target = byLabel.get(normLabel(byId.get(id)?.label ?? ""));
+    if (target) remap.set(id, target);
+  }
+
+  const keptIds = new Set(nodes.map((n) => n.id));
+  const seen = new Set<string>();
+  const edges = data.edges
+    .map((e) => ({ ...e, from: remap.get(e.from) ?? e.from, to: remap.get(e.to) ?? e.to }))
+    .filter((e) => {
+      if (e.from === e.to) return false;
+      if (!keptIds.has(e.from) || !keptIds.has(e.to)) return false;
+      const key = [e.from, e.to].sort().join("→");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+  return { nodes, edges };
+}
+
+/**
+ * Чистка последнего снапшота. Без `apply` возвращает только план — кнопка
+ * должна показывать, что именно исчезнет, до того как оно исчезнет.
+ */
+export async function cleanLatestBrain(
+  opts: { apply?: boolean; dropLonely?: boolean } = {},
+): Promise<CleanResult> {
+  const snapshot = await latestBrainSnapshot();
+  if (!snapshot || !snapshot.data.nodes.length) {
+    return { nodes: [], edges: 0, keptNodes: 0, keptEdges: 0, applied: false };
+  }
+
+  const plan = planBrainCleanup(snapshot.data, { dropLonely: opts.dropLonely });
+  if (!opts.apply || (!plan.nodes.length && !plan.edges)) {
+    return { ...plan, applied: false, id: snapshot.id };
+  }
+
+  const data = applyBrainCleanup(snapshot.data, plan);
+  await sbUpdate("ws_brain", `id=eq.${encodeURIComponent(snapshot.id)}`, {
+    data,
+    updated_at: new Date().toISOString(),
+  });
+  return { ...plan, applied: true, id: snapshot.id, data };
 }
