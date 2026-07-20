@@ -351,3 +351,16 @@ alter table public.ws_events add column if not exists repeat text not null defau
 --
 -- To change the schedule later: select cron.unschedule('ws-event-reminders');
 -- then re-run cron.schedule(...). Inspect runs: select * from cron.job_run_details;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Модели OpenRouter по задачам. Строка task='default' — общая модель, остальные
+-- переопределяют её точечно. Пустая/отсутствующая запись = «использовать общую».
+create table if not exists ws_ai_models (
+  task       text primary key,
+  model      text not null default '',
+  updated_at timestamptz not null default now()
+);
+
+alter table ws_ai_models enable row level security;
+-- Политик нет намеренно: anon-ключ не должен видеть таблицу вовсе, сервер ходит
+-- под service_role в обход RLS.

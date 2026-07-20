@@ -76,7 +76,7 @@ export async function compactSession(chatId: string): Promise<{ compacted: boole
     session.summary ? `\n\nУже накопленная память:\n${session.summary}` : ""
   }\n\nНовый фрагмент диалога:\n${transcript}`;
 
-  const summary = await chatAI([{ role: "user", content: prompt }], { maxTokens: 500 });
+  const summary = await chatAI([{ role: "user", content: prompt }], { task: "assistant", maxTokens: 500 });
   const next: Session = { summary: summary.trim().slice(0, 4000), messages: [] };
   await saveSession(chatId, next);
   return { compacted: true, summary: next.summary };

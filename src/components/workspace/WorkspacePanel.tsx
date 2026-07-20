@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, FolderGit2, Blocks, Briefcase, Send, CreditCard, Sparkles, Newspaper, Music, BookText, Shapes, HeartPulse, Frame, Brain, Workflow, HardDrive, ChevronRight, ChevronDown } from "lucide-react";
+import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, FolderGit2, Blocks, Briefcase, Send, CreditCard, Sparkles, Newspaper, Music, BookText, Shapes, HeartPulse, Frame, Brain, Workflow, HardDrive, Cpu, ChevronRight, ChevronDown } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
 
@@ -39,6 +39,7 @@ const GROUPS: { key: string; title: string; items: Item[] }[] = [
       { id: "workspace/notion.tsx", label: "Notion", Icon: BookText },
       { id: "workspace/drive.tsx", label: "Google Drive", Icon: HardDrive },
       { id: "workspace/bitrix.tsx", label: "Bitrix24", Icon: Briefcase },
+      { id: "workspace/models.tsx", label: "Модели ИИ", Icon: Cpu },
       { id: "workspace/subscriptions.tsx", label: "Подписки", Icon: CreditCard },
     ],
   },

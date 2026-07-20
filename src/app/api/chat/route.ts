@@ -27,6 +27,19 @@ function rateLimited(req: Request): boolean {
 // The UI can override per-request via body.model (Fast / Balanced / Max).
 const MODEL = process.env.OPENROUTER_MODEL ?? "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
 
+/**
+ * Что публичному чату разрешено выбирать — ровно пресеты Fast/Balanced/Max из
+ * CopilotPanel. Всё остальное молча падает на MODEL: эндпоинт открыт миру, и
+ * непроверенный body.model означал бы, что счёт за самую дорогую модель
+ * выставит любой, кто откроет DevTools.
+ */
+const CHAT_MODELS = new Set([
+  MODEL,
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
+]);
+
 interface Msg {
   role: "user" | "assistant" | "system";
   content: string;
@@ -88,7 +101,9 @@ export async function POST(req: Request) {
         ? "Ты — полезный ассистент на сайте-портфолио Владимира. Отвечай кратко и по делу. У тебя есть доступ к интернету — используй его для актуальных фактов."
         : BIO) + langDirective,
   };
-  const baseModel = body.model || MODEL;
+  // Эндпоинт публичный, поэтому модель из тела — только из белого списка:
+  // иначе любой желающий выбирает самую дорогую модель за мой счёт.
+  const baseModel = body.model && CHAT_MODELS.has(body.model) ? body.model : MODEL;
   const model = mode === "web" ? `${baseModel}:online` : baseModel;
 
   let upstream: Response;

@@ -36,7 +36,7 @@ const RUNNERS: Record<string, StepRunner> = {
 
   async ai(p) {
     if (!p.prompt) throw new Error("пустой промпт");
-    return askAI(p.prompt, { system: p.system || undefined, temperature: 0.4 });
+    return askAI(p.prompt, { task: "workflow", system: p.system || undefined, temperature: 0.4 });
   },
 
   async telegram(p) {

@@ -13,9 +13,13 @@
  *
  * Regardless of the model, we also send a MINIMIZED context (titles/short
  * previews, never full message bodies) — the real privacy win.
+ *
+ * Модель не константа: она выбирается по задаче (см. ai-models.ts), поэтому у
+ * мозга и у чата могут быть разные модели.
  */
 
-const MODEL = process.env.OPENROUTER_MODEL ?? "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
+import { resolveModel, type AiTask } from "@/lib/ai-models";
+
 // "deny" = only zero-data-retention providers. Loosen to "allow" if a free model has none.
 const DATA_POLICY = (process.env.OPENROUTER_DATA_POLICY ?? "deny") === "allow" ? "allow" : "deny";
 
@@ -35,6 +39,10 @@ interface AskOptions {
   system?: string;
   temperature?: number;
   maxTokens?: number;
+  /** Какой задаче принадлежит вызов — от неё зависит выбранная модель. */
+  task?: AiTask;
+  /** Явная модель, минуя настройки (сравнение моделей, отладка). */
+  model?: string;
 }
 
 export interface AiMessage {
@@ -66,11 +74,12 @@ async function callOpenRouter(body: Record<string, unknown>): Promise<AssistantC
       "X-Title": "Workspace AI",
     },
     body: JSON.stringify({
-      model: MODEL,
       reasoning: { exclude: true },
       // Privacy: keep the request off training/logging providers.
       provider: { data_collection: DATA_POLICY, allow_fallbacks: true },
       ...body,
+      // Модель — после спреда: иначе отсутствующий body.model затёр бы её на undefined.
+      model: (body.model as string | undefined) ?? (await resolveModel("default")),
     }),
   });
 
@@ -107,9 +116,11 @@ async function callOpenRouter(body: Record<string, unknown>): Promise<AssistantC
 export async function chatAI(messages: AiMessage[], opts: Omit<AskOptions, "system"> = {}): Promise<string> {
   const maxTokens = opts.maxTokens ?? MAX_TOKENS;
   const temperature = opts.temperature ?? 0.3;
+  const model = opts.model ?? (await resolveModel(opts.task ?? "default"));
 
   for (const attempt of [0, 1]) {
     const msg = await callOpenRouter({
+      model,
       messages,
       temperature: attempt ? Math.min(temperature + 0.2, 1) : temperature,
       max_tokens: attempt ? Math.min(maxTokens * 2, MAX_TOKENS) : maxTokens,
@@ -161,7 +172,7 @@ export interface ToolTurn {
  * Recover tool calls a model wrote as plain text instead of emitting properly.
  *
  * Models without real function-calling on OpenRouter fall back to their own
- * training-time syntax and it lands in `content` — DeepSeek uses
+ * training-time syntax and it lands in `content`. DeepSeek uses
  * `<｜DSML｜invoke name="…">`, others use a bare `<invoke>`. Without this the
  * raw markup is shown to the user as if it were the answer, and the tool never
  * runs. We normalise the delimiter noise away, then read it as plain tags.
@@ -208,6 +219,7 @@ export async function chatWithTools(
   opts: Omit<AskOptions, "system"> = {},
 ): Promise<ToolTurn> {
   const msg = await callOpenRouter({
+    model: opts.model ?? (await resolveModel(opts.task ?? "default")),
     messages,
     temperature: opts.temperature ?? 0.3,
     max_tokens: opts.maxTokens ?? MAX_TOKENS,

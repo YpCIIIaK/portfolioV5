@@ -53,6 +53,24 @@ export async function sbInsert<T>(table: string, row: Record<string, unknown>): 
   return rows[0];
 }
 
+/**
+ * Вставка с перезаписью по конфликту (PostgREST upsert). `onConflict` — колонка
+ * с уникальным индексом; без неё Postgres не знает, что считать дубликатом.
+ */
+export async function sbUpsert<T>(
+  table: string,
+  row: Record<string, unknown>,
+  onConflict: string,
+): Promise<T> {
+  const res = await fetch(`${endpoint(table)}?on_conflict=${encodeURIComponent(onConflict)}`, {
+    method: "POST",
+    headers: headers({ Prefer: "return=representation,resolution=merge-duplicates" }),
+    body: JSON.stringify(row),
+  });
+  const rows = await handle<T[]>(res);
+  return rows[0];
+}
+
 export async function sbUpdate<T>(
   table: string,
   query: string,

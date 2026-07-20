@@ -750,7 +750,7 @@ export async function runAssistant(
 
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
-      const turn = await chatWithTools(messages, TOOLS.map((t) => t.def));
+      const turn = await chatWithTools(messages, TOOLS.map((t) => t.def), { task: "assistant" });
       if (!turn.toolCalls.length) {
         return { answer: turn.content || "…", actions };
       }

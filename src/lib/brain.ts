@@ -282,12 +282,44 @@ export function buildBrainPrompt(context: string, mode: Mode = "balanced"): stri
  * Достаём JSON из ответа модели (терпим к ```json-ограждениям и болтовне вокруг).
  * `knownIds` — id уже существующих узлов: рёбра дельты могут ссылаться на них.
  */
+/**
+ * Первый сбалансированный {...} в тексте. Считаем скобки, пропуская те, что
+ * внутри строк, и уважая экранирование, — иначе «}» в summary ломает счёт.
+ * null, если объект так и не закрылся (обрыв по max_tokens — им займётся
+ * repairTruncatedJson).
+ */
+function firstJsonObject(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}" && --depth === 0) return text.slice(start, i + 1);
+  }
+  return null;
+}
+
 export function parseBrainAnswer(raw: string, knownIds?: Set<string>): BrainData {
   let text = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start === -1 || end <= start) throw new Error("модель не вернула JSON");
-  text = text.slice(start, end + 1);
+  // Берём ПЕРВЫЙ сбалансированный объект, а не всё до последней «}»: модель
+  // порой пишет два объекта подряд или добавляет пояснение со скобками, и тогда
+  // в парсер уезжало «{...}{...}» — «Unexpected non-whitespace character after JSON».
+  text = firstJsonObject(text) ?? text.slice(start, end + 1);
   let json: unknown;
   try {
     json = JSON.parse(text);
@@ -521,6 +553,7 @@ export async function generateBrainData(mode: Mode = "balanced"): Promise<{ data
   const spec = MODE_SPEC[mode];
   const { context, sources } = await collectBrainContext(mode);
   const answer = await askAI(buildBrainPrompt(context, mode), {
+    task: "brain",
     temperature: spec.temperature,
     maxTokens: spec.maxTokens,
   });
@@ -530,7 +563,7 @@ export async function generateBrainData(mode: Mode = "balanced"): Promise<{ data
   // Модель поскупилась на связи — досвязываем отдельным коротким запросом.
   if (data.nodes.length >= 4 && data.edges.length < data.nodes.length / 2) {
     try {
-      const extra = await askAI(buildEdgesPrompt(buildBrainShortcuts(data)), { temperature: 0.3, maxTokens: 2000 });
+      const extra = await askAI(buildEdgesPrompt(buildBrainShortcuts(data)), { task: "brain", temperature: 0.3, maxTokens: 2000 });
       const delta = parseBrainAnswer(extra, new Set(data.nodes.map((n) => n.id)));
       data = mergeBrainDelta(data, { nodes: [], edges: delta.edges }).data;
     } catch { /* граф без части связей лучше, чем ошибка */ }

@@ -40,7 +40,7 @@ export async function GET(req: Request) {
     }
     // 600 токенов не хватало reasoning-моделям: рассуждение съедало бюджет и
     // ответ приходил пустым. Брифинг короткий, запас лишним не будет.
-    const brief = await askAI(`Вот сводка на ${todayISO()}:\n\n${context}`, { system: SYSTEM, maxTokens: 1500 });
+    const brief = await askAI(`Вот сводка на ${todayISO()}:\n\n${context}`, { task: "brief", system: SYSTEM, maxTokens: 1500 });
     const data = { brief, generatedAt: new Date().toISOString() };
     cache = { at: Date.now(), data };
     return NextResponse.json(data);
