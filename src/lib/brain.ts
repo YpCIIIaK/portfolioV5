@@ -336,9 +336,20 @@ export function parseBrainAnswer(raw: string, knownIds?: Set<string>): BrainData
   try {
     json = JSON.parse(text);
   } catch {
-    // Модель упёрлась в max_tokens и JSON обрезан — чиним: отсекаем до последнего
-    // целого элемента массива и закрываем оставшиеся скобки.
-    json = JSON.parse(repairTruncatedJson(text));
+    try {
+      // Модель упёрлась в max_tokens и JSON обрезан — чиним: отсекаем до последнего
+      // целого элемента массива и закрываем оставшиеся скобки.
+      json = JSON.parse(repairTruncatedJson(text));
+    } catch {
+      // Не обрыв, а порча в середине (кавычка или перенос строки внутри summary).
+      // Собираем что уцелело поэлементно, вместо того чтобы терять весь ответ.
+      const nodes = salvageArray(text, "nodes");
+      const edges = salvageArray(text, "edges");
+      // Спасать было нечего — честная ошибка лучше, чем пустой граф, который
+      // в дополнении выглядит как безобидное «нового ничего нет».
+      if (!nodes.length && !edges.length) throw new Error("модель вернула нечитаемый JSON");
+      json = { nodes, edges };
+    }
   }
 
   // Терпимо: разбираем поэлементно и выкидываем битые узлы/рёбра, а не весь ответ.
@@ -398,6 +409,52 @@ function repairTruncatedJson(text: string): string {
   if (lastGood === -1) throw new Error("модель вернула нечитаемый JSON");
   const closers = lastGoodStack.reverse().map((c) => (c === "{" ? "}" : "]")).join("");
   return text.slice(0, lastGood + 1) + closers;
+}
+
+/**
+ * Спасти массив по элементам, когда весь JSON невалиден.
+ *
+ * Обрыв по токенам чинит repairTruncatedJson, но модель ломает JSON и в
+ * середине: неэкранированная кавычка или перенос строки внутри summary — и
+ * «Expected ',' or '}' after property value». Терять из-за одного узла все
+ * остальные обидно, поэтому идём по элементам массива и разбираем каждый
+ * отдельно: битые выбрасываем, целые оставляем.
+ */
+function salvageArray(text: string, key: string): unknown[] {
+  const at = text.indexOf(`"${key}"`);
+  if (at === -1) return [];
+  const open = text.indexOf("[", at);
+  if (open === -1) return [];
+
+  const out: unknown[] = [];
+  let depth = 0;
+  let start = -1;
+  let inStr = false;
+  let esc = false;
+
+  for (let i = open + 1; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === "{") { if (depth === 0) start = i; depth++; continue; }
+    if (c === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        const chunk = text.slice(start, i + 1);
+        try { out.push(JSON.parse(chunk)); } catch { /* битый элемент — пропускаем */ }
+        start = -1;
+      }
+      continue;
+    }
+    // Массив закончился, а мы не внутри объекта — дальше уже другое поле.
+    if (c === "]" && depth === 0) break;
+  }
+  return out;
 }
 
 /* ---- инкрементальное дополнение («утренний тик») ---------------------- */
