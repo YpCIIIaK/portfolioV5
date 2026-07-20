@@ -70,6 +70,11 @@ export async function googleStatus(): Promise<GoogleStatus> {
   };
 }
 
+/** We hold usable tokens (mirrors notionConnected). */
+export async function googleConnected(): Promise<boolean> {
+  return !!(await getRow());
+}
+
 export async function disconnectGoogle(): Promise<void> {
   await sbDelete("ws_integrations", "provider=eq.google");
   await sbDelete("ws_drive_sources", "id=not.is.null");
@@ -482,6 +487,23 @@ export async function searchDrive(query: string, limit = 20): Promise<DriveIndex
     `select=id,source_id,file_id,name,mime_type,modified_time,web_view_link,excerpt` +
       `&or=(name.ilike.${q},excerpt.ilike.${q})&order=modified_time.desc&limit=${limit}`,
   );
+}
+
+/** Full text of an indexed file, fetched live from Drive (the index only keeps
+ *  a 4k excerpt). Returns null when the id isn't ours — the assistant must not
+ *  be able to read arbitrary Drive files outside the picked folders. */
+export async function readDriveFile(fileId: string): Promise<{ name: string; text: string } | null> {
+  const known = await sbSelect<DriveIndexRow>(
+    "ws_drive_index",
+    `select=file_id,name,mime_type&file_id=eq.${encodeURIComponent(fileId)}&limit=1`,
+  );
+  if (!known.length) return null;
+  const row = known[0];
+  const text = await fileText(
+    { id: row.file_id, name: row.name, mimeType: row.mime_type },
+    20_000,
+  );
+  return { name: row.name, text };
 }
 
 /** Compact snapshot for the AI aggregator — filenames only, like notionContext. */

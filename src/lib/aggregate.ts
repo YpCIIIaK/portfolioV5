@@ -13,6 +13,7 @@ import { telegramConfigured, fetchDialogs } from "@/lib/telegram";
 import { mailConfigured, fetchInbox } from "@/lib/mail-server";
 import { fetchNews, formatNewsContext } from "@/lib/news";
 import { notionContext } from "@/lib/notion";
+import { driveContext } from "@/lib/google";
 
 interface WsTask { title: string; due: string | null; priority: string; done: boolean }
 interface WsEvent { title: string; date: string; time: string | null }
@@ -128,6 +129,11 @@ async function build(): Promise<string> {
   try {
     const nt = await notionContext();
     if (nt) parts.push(nt);
+  } catch { /* skip */ }
+
+  try {
+    const dt = await driveContext();
+    if (dt) parts.push(dt);
   } catch { /* skip */ }
 
   try {

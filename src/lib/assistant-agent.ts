@@ -19,6 +19,7 @@ import {
 } from "@/lib/ai";
 import { supabaseConfigured, sbSelect, sbInsert, sbUpdate, sbDelete } from "@/lib/supabase";
 import { notionConnected, searchNotion, pageContent, createPage } from "@/lib/notion";
+import { googleConnected, searchDrive, readDriveFile } from "@/lib/google";
 import { telegramConfigured, fetchDialogs, fetchMessageHistory } from "@/lib/telegram";
 import { githubConfigured, createRepo, createIssue, listRepos } from "@/lib/github";
 import { webFetch, webSearch } from "@/lib/web";
@@ -84,6 +85,44 @@ const TOOLS: Tool[] = [
         pages[0];
       const { title, markdown } = await pageContent(best.id);
       return `«${title}»:\n${markdown ? markdown.slice(0, 6000) : "(пусто)"}`;
+    },
+  },
+  {
+    def: {
+      name: "search_drive",
+      description:
+        "Найти файлы в подключённых папках Google Drive по имени или содержимому. Возвращает имена и короткие выдержки.",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string", description: "Поисковый запрос." } },
+        required: ["query"],
+      },
+    },
+    async run(a) {
+      if (!(await googleConnected())) return "Google Drive не подключён.";
+      const hits = await searchDrive(str(a.query), 12);
+      if (!hits.length) return "Ничего не найдено.";
+      return hits
+        .map((h) => `- ${h.name} [id:${h.file_id}]${h.excerpt ? `\n  ${h.excerpt.slice(0, 200).replace(/\n/g, " ")}…` : ""}`)
+        .join("\n");
+    },
+  },
+  {
+    def: {
+      name: "read_drive_file",
+      description:
+        "Прочитать полный текст файла из Google Drive по его id (id берётся из search_drive). Работает только для текстовых файлов и Google Docs.",
+      parameters: {
+        type: "object",
+        properties: { fileId: { type: "string", description: "id файла из search_drive." } },
+        required: ["fileId"],
+      },
+    },
+    async run(a) {
+      if (!(await googleConnected())) return "Google Drive не подключён.";
+      const doc = await readDriveFile(str(a.fileId));
+      if (!doc) return "Файл не найден среди проиндексированных.";
+      return `«${doc.name}»:\n${doc.text || "(пусто или бинарный файл)"}`;
     },
   },
   {
@@ -660,7 +699,7 @@ export function buildAssistantSystem(today: string, context: string, extra = "")
 Длину подбирай под вопрос: на простой — одна-две фразы, на разбор/анализ/план — столько, сколько нужно, не ужимай ответ искусственно и не обрывай на середине. Лучше дописать мысль до конца, чем уложиться покороче.
 
 У тебя есть ИНСТРУМЕНТЫ — вызывай их сам, когда нужно:
-- чтение: search_notion, read_notion_page, read_telegram_chat (для полного текста страниц и истории чатов — в сводке только заголовки); web_search, web_fetch (поиск и чтение страниц в интернете); list_github_repos;
+- чтение: search_notion, read_notion_page, read_telegram_chat (для полного текста страниц и истории чатов — в сводке только заголовки); search_drive, read_drive_file (файлы в подключённых папках Google Drive — в сводке только имена, за содержимым иди в search_drive); web_search, web_fetch (поиск и чтение страниц в интернете); list_github_repos;
 - запись в кабинет: create_task, complete_task, delete_task, create_event, delete_event, create_note, create_notion_page, create_project, create_subscription;
 - GitHub: create_github_repo, create_github_issue;
 - «второй мозг» (граф знаний): read_brain (что уже в мозге — ВСЕГДА вызывай первым, если речь о мозге), search_brain (найти узлы по теме и их связи), rebuild_brain (полный пересбор новым снапшотом), augment_brain (дополнить только новым), expand_brain_category (детализировать категорию/тему);
