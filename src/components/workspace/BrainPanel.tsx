@@ -254,7 +254,12 @@ export function BrainPanel() {
     let cancelled = false;
     (async () => {
       await Promise.resolve();
-      if (!cancelled) setModeState(brainMode(localStorage.getItem("brain:mode")));
+      if (cancelled) return;
+      const saved = brainMode(localStorage.getItem("brain:mode"));
+      // «total» мог осесть в localStorage, пока он ошибочно висел в выпадашке:
+      // теперь его там нет, и такой режим оставил бы селектор пустым, а обычную
+      // сборку — с настройками, рассчитанными на пачку файлов, а не на всё сразу.
+      setModeState(saved === "total" ? "free" : saved);
     })();
     return () => { cancelled = true; };
   }, []);
@@ -1077,7 +1082,7 @@ export function BrainPanel() {
         <button
           onClick={() => void runSweep()}
           disabled={demo || !owner || busy !== "" || !snapshotId}
-          className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[12.5px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded border border-vsc-accent/60 bg-vsc-accent/10 px-3 py-1.5 text-[12.5px] text-vsc-text hover:bg-vsc-accent/20 disabled:opacity-40"
           title="Прочитать КАЖДЫЙ файл Диска целиком, пачками, и внести всё в мозг"
         >
           {busy === "sweep" ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
@@ -1100,7 +1105,10 @@ export function BrainPanel() {
           title={BRAIN_MODE_HINT[mode]}
           className="rounded border border-vsc-line bg-vsc-sidebar px-2 py-1.5 text-[12.5px] text-vsc-text outline-none focus:border-vsc-accent disabled:opacity-40"
         >
-          {BRAIN_MODES.map((m) => (
+          {/* «Полный обход» сюда не попадает: это не степень свободы, а отдельное
+              длинное действие со своим циклом и прогрессом — у него своя кнопка.
+              В выпадашке он выглядел выбираемым, но выбор ничего не делал. */}
+          {BRAIN_MODES.filter((m) => m !== "total").map((m) => (
             <option key={m} value={m}>{BRAIN_MODE_LABEL[m]}</option>
           ))}
         </select>
