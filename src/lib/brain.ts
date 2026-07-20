@@ -5,7 +5,7 @@ import { supabaseConfigured, sbSelect, sbInsert, sbUpdate } from "@/lib/supabase
 import { bitrixConfigured, fetchTasks } from "@/lib/bitrix";
 import { telegramConfigured, fetchDialogs } from "@/lib/telegram";
 import { notionConnected, notionStatus, searchNotion, pageContent, fetchNotionTasks } from "@/lib/notion";
-import { driveBrainContext } from "@/lib/google";
+import { driveBrainContext, readDriveFile } from "@/lib/google";
 import { listBlocklist, isBlocked } from "@/lib/brain-blocklist";
 
 /**
@@ -412,7 +412,14 @@ export function buildBrainShortcuts(data: BrainData): string {
 }
 
 /** Промпт дельты: вернуть ТОЛЬКО новые узлы и новые связи (в т.ч. к существующим id). */
-export function buildBrainAugmentPrompt(shortcuts: string, context: string, mode: Mode = "balanced", blocked: string[] = []): string {
+export function buildBrainAugmentPrompt(
+  shortcuts: string,
+  context: string,
+  mode: Mode = "balanced",
+  blocked: string[] = [],
+  /** Дополняем по вручную выбранным файлам — тон промпта меняется на «разбери именно это». */
+  picked = false,
+): string {
   const spec = MODE_SPEC[mode];
   return [
     "Ты ДОПОЛНЯЕШЬ существующий «второй мозг» — граф знаний по личному рабочему пространству.",
@@ -446,7 +453,16 @@ export function buildBrainAugmentPrompt(shortcuts: string, context: string, mode
     "СУЩЕСТВУЮЩИЕ УЗЛЫ (шорткаты):",
     shortcuts || "(граф пуст)",
     "",
-    "СВЕЖИЕ ДАННЫЕ:",
+    ...(picked
+      ? [
+          "ВАЖНО: пользователь выбрал эти файлы ВРУЧНУЮ и ждёт, что ты разберёшь именно их.",
+          "Не отмахивайся оценкой «незначимо»: раз файл выбран — он значим. Вытащи из него конкретику:",
+          "сущности, инструменты, методики, промпты, формулы, имена, решения — и заведи узлы на них.",
+          "Вернуть пустую дельту здесь можно ТОЛЬКО если всё содержимое уже есть в шорткатах.",
+          "",
+        ]
+      : []),
+    picked ? "ВЫБРАННЫЕ ФАЙЛЫ (полный текст):" : "СВЕЖИЕ ДАННЫЕ:",
     context || "(источники пусты)",
   ].join("\n");
 }
@@ -612,16 +628,58 @@ export interface AugmentResult {
   sources?: string[];
 }
 
-/** Инкремент: дополнить последний снапшот только новым из источников. */
-export async function augmentLatestBrain(mode: Mode = "balanced"): Promise<AugmentResult> {
+/**
+ * Контекст из конкретных файлов Диска — для точечного дополнения.
+ *
+ * Отличие от обычного прохода принципиальное: там выжимки по 500–6000 символов
+ * с сотни файлов и модель сама решает, что важно. Здесь — ПОЛНЫЙ текст (до 20k)
+ * нескольких выбранных файлов, то есть «прочитай вот это внимательно».
+ */
+async function pickedFilesContext(fileIds: string[]): Promise<{ context: string; sources: string[] }> {
+  const parts: string[] = [];
+  const sources: string[] = [];
+
+  for (const id of fileIds.slice(0, 20)) {
+    try {
+      const file = await readDriveFile(id);
+      if (!file?.text?.trim()) {
+        sources.push(`${file?.name ?? id} (пусто)`);
+        continue;
+      }
+      parts.push(`ФАЙЛ «${file.name}»:
+${file.text}`);
+      sources.push(file.name);
+    } catch (e) {
+      sources.push(`${id} (ошибка: ${(e as Error).message.slice(0, 60)})`);
+    }
+  }
+
+  return { context: parts.join("\n\n"), sources };
+}
+
+/**
+ * Инкремент: дополнить последний снапшот только новым из источников.
+ *
+ * С `fileIds` работает точечно — читает целиком именно эти файлы Диска и ничего
+ * больше. Это ответ на «модель прочитала пласт по игре и всё равно ничего не
+ * взяла»: когда файл один, ей некуда деться.
+ */
+export async function augmentLatestBrain(
+  mode: Mode = "balanced",
+  opts: { fileIds?: string[] } = {},
+): Promise<AugmentResult> {
   const spec = MODE_SPEC[mode];
   const snapshot = await latestBrainSnapshot();
   if (!snapshot || !snapshot.data.nodes.length) {
     return { skipped: "нет снапшота — сначала собери мозг полностью", added: 0, edges: 0, labels: [] };
   }
-  const { context, sources } = await collectBrainContext(mode);
+  const picked = opts.fileIds?.length ? await pickedFilesContext(opts.fileIds) : null;
+  if (picked && !picked.context) {
+    return { skipped: "из выбранных файлов не удалось прочитать текст", added: 0, edges: 0, labels: [], sources: picked.sources };
+  }
+  const { context, sources } = picked ?? (await collectBrainContext(mode));
   const blocked = (await listBlocklist()).map((b) => b.pattern);
-  const answer = await askAI(buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context, mode, blocked), {
+  const answer = await askAI(buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context, mode, blocked, !!picked), {
     // Дельта короче полной сборки — половины бюджета режима хватает.
     temperature: Math.max(0.2, spec.temperature - 0.1),
     maxTokens: Math.round(spec.maxTokens / 2),

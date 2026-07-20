@@ -42,11 +42,17 @@ async function run(req: Request) {
   }
 
   // Режим приходит телом (панель) или ?mode= (планировщик); по умолчанию средний.
-  const body = (await req.json().catch(() => ({}))) as { mode?: string };
+  const body = (await req.json().catch(() => ({}))) as { mode?: string; fileIds?: unknown };
   const mode = brainMode(body.mode ?? new URL(req.url).searchParams.get("mode"));
 
+  // Точечное дополнение по вручную выбранным файлам Диска. Потолок в 20 файлов
+  // держится в brain.ts — здесь только отбрасываем всё, что не строка.
+  const fileIds = Array.isArray(body.fileIds)
+    ? body.fileIds.filter((x): x is string => typeof x === "string" && !!x).slice(0, 20)
+    : [];
+
   try {
-    const r = await augmentLatestBrain(mode);
+    const r = await augmentLatestBrain(mode, { fileIds });
     if (r.skipped) return NextResponse.json({ ok: true, skipped: r.skipped });
 
     if (r.added) {

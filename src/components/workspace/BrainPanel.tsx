@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2, Search, ChevronDown, ChevronRight, Eraser, Ban } from "lucide-react";
+import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2, Search, ChevronDown, ChevronRight, Eraser, Ban, FileText } from "lucide-react";
 import { BRAIN_MODES, BRAIN_MODE_LABEL, BRAIN_MODE_HINT, brainMode, type BrainMode } from "@/lib/brain-modes";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
@@ -144,6 +144,8 @@ export function BrainPanel() {
   const [blockRules, setBlockRules] = useState<{ id: string; pattern: string }[]>([]);
   const [blockOpen, setBlockOpen] = useState(false);
   const [blockInput, setBlockInput] = useState("");
+  // Точечное дополнение: модалка выбора конкретных файлов Диска.
+  const [filePicker, setFilePicker] = useState(false);
   const [info, setInfo] = useState("");
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -586,13 +588,13 @@ export function BrainPanel() {
     }
   };
 
-  const augment = async () => {
+  const augment = async (fileIds: string[] = []) => {
     setBusy("augment"); setError(""); setInfo(""); setAddedLabels([]);
     try {
       const res = await fetch("/api/workspace/brain/augment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode, fileIds }),
       });
       const text = await res.text();
       let json: { data?: BrainState; id?: string; added?: number; edges?: number; labels?: string[]; sources?: string[]; skipped?: string; error?: string } = {};
@@ -866,7 +868,7 @@ export function BrainPanel() {
           Собрать мозг
         </button>
         <button
-          onClick={augment}
+          onClick={() => void augment()}
           disabled={demo || !owner || busy !== "" || !snapshotId}
           className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[12.5px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
           title="ИИ добавит в последний снапшот только новое, не пересобирая весь граф"
@@ -882,6 +884,15 @@ export function BrainPanel() {
         >
           {busy === "clean" ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />}
           Почистить
+        </button>
+        <button
+          onClick={() => setFilePicker(true)}
+          disabled={demo || !owner || busy !== "" || !snapshotId}
+          className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[12.5px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
+          title="Выбрать конкретные файлы Диска и разобрать именно их"
+        >
+          <FileText size={14} />
+          Дополнить по файлам
         </button>
         <button
           onClick={() => { setBlockOpen((v) => !v); if (!blockOpen) void loadBlocklist(); }}
@@ -960,6 +971,13 @@ export function BrainPanel() {
 
       {error && <div className="mb-2 rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[12px] text-red-300">{error}</div>}
       {info && <div className="mb-2 rounded border border-vsc-line bg-vsc-sidebar px-3 py-1.5 text-[12px] text-vsc-muted">{info}</div>}
+
+      {filePicker && (
+        <DriveFilePicker
+          onClose={() => setFilePicker(false)}
+          onConfirm={(ids) => { setFilePicker(false); void augment(ids); }}
+        />
+      )}
 
       {/* Чёрный список: запрет действует и в промпте, и при мерже, и при чистке. */}
       {blockOpen && (
@@ -1276,6 +1294,125 @@ export function BrainPanel() {
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Выбор конкретных файлов Диска для точечного дополнения.
+ *
+ * Обычный «Дополнить» читает выжимки с сотни файлов, и модель сама решает, что
+ * важно, — на большом пласте она регулярно проходит мимо. Здесь выбранные файлы
+ * читаются ЦЕЛИКОМ, и промпт прямо говорит: их выбрали руками, разбирай.
+ */
+function DriveFilePicker({
+  onClose, onConfirm,
+}: {
+  onClose: () => void;
+  onConfirm: (fileIds: string[]) => void;
+}) {
+  const [files, setFiles] = useState<{ file_id: string; name: string; excerpt?: string }[]>([]);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/google/search?q=${encodeURIComponent(q)}&limit=200`);
+        const json = await res.json();
+        if (!alive) return;
+        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+        setFiles(json.files ?? []);
+        setError("");
+      } catch (e) {
+        if (alive) setError((e as Error).message);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }, q ? 250 : 0); // дебаунс только для набора текста, первый показ — сразу
+    return () => { alive = false; clearTimeout(t); };
+  }, [q]);
+
+  const toggle = (id: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="flex h-[80vh] w-full max-w-2xl flex-col rounded border border-vsc-line bg-vsc-bg">
+        <div className="flex items-center justify-between border-b border-vsc-line px-3 py-2">
+          <span className="text-[13px] font-medium text-vsc-text">Какие файлы разобрать</span>
+          <button onClick={onClose} className="text-vsc-muted hover:text-vsc-text"><X size={16} /></button>
+        </div>
+
+        <div className="border-b border-vsc-line px-3 py-2">
+          <div className="flex items-center gap-2 rounded border border-vsc-line px-2">
+            <Search size={13} className="text-vsc-muted" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="поиск по названию и содержимому…"
+              className="w-full bg-transparent py-1 text-[12px] text-vsc-text outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto">
+          {loading && <div className="p-3 text-[12px] text-vsc-muted">Загружаю…</div>}
+          {error && <div className="p-3 text-[12px] text-red-300">{error}</div>}
+          {files.map((f) => (
+            <button
+              key={f.file_id}
+              onClick={() => toggle(f.file_id)}
+              className={`flex w-full items-start gap-2 border-b border-vsc-line px-3 py-2 text-left hover:bg-vsc-hover ${
+                picked.has(f.file_id) ? "bg-vsc-accent/10" : ""
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={picked.has(f.file_id)}
+                readOnly
+                className="mt-0.5 shrink-0"
+              />
+              <span className="min-w-0">
+                <span className="block truncate text-[12px] text-vsc-text">{f.name}</span>
+                {f.excerpt && (
+                  <span className="block truncate text-[11px] text-vsc-muted">
+                    {f.excerpt.replace(/\s+/g, " ").slice(0, 120)}
+                  </span>
+                )}
+              </span>
+            </button>
+          ))}
+          {!loading && !error && !files.length && (
+            <div className="p-3 text-[12px] text-vsc-muted">Ничего не найдено.</div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between border-t border-vsc-line px-3 py-2">
+          <span className="text-[12px] text-vsc-muted">
+            Выбрано: {picked.size}{picked.size > 20 ? " — возьмём первые 20" : ""}
+          </span>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="rounded px-2 py-1 text-[12px] text-vsc-muted hover:bg-vsc-hover">
+              Отмена
+            </button>
+            <button
+              onClick={() => onConfirm([...picked])}
+              disabled={!picked.size}
+              className="rounded border border-vsc-line px-2 py-1 text-[12px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
+            >
+              Дополнить выбранным
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
