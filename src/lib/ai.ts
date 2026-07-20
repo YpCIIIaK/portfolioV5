@@ -157,6 +157,50 @@ export interface ToolTurn {
   raw: AgentMessage;
 }
 
+/**
+ * Recover tool calls a model wrote as plain text instead of emitting properly.
+ *
+ * Models without real function-calling on OpenRouter fall back to their own
+ * training-time syntax and it lands in `content` — DeepSeek uses
+ * `<｜DSML｜invoke name="…">`, others use a bare `<invoke>`. Without this the
+ * raw markup is shown to the user as if it were the answer, and the tool never
+ * runs. We normalise the delimiter noise away, then read it as plain tags.
+ */
+export function parseInlineToolCalls(content: string): { calls: ToolCall[]; text: string } {
+  // Strip the provider-specific delimiters so one parser handles every dialect.
+  const norm = content.replace(/｜DSML｜/g, "").replace(/antml:/g, "");
+  if (!/<invoke\s+name=/i.test(norm)) return { calls: [], text: content };
+
+  const calls: ToolCall[] = [];
+  const invokeRe = /<invoke\s+name="([^"]+)"\s*>([\s\S]*?)<\/invoke>/gi;
+  const paramRe = /<parameter\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/parameter>/gi;
+
+  for (let m = invokeRe.exec(norm); m; m = invokeRe.exec(norm)) {
+    const args: Record<string, unknown> = {};
+    for (let p = paramRe.exec(m[2]); p; p = paramRe.exec(m[2])) {
+      args[p[1]] = coerce(p[2].trim());
+    }
+    calls.push({ id: `inline_${calls.length}`, name: m[1], arguments: JSON.stringify(args) });
+  }
+
+  const text = norm
+    .replace(/<\/?tool_calls>/gi, "")
+    .replace(invokeRe, "")
+    .trim();
+  return { calls, text };
+}
+
+/** Parameter bodies arrive as raw text; JSON payloads must not stay strings. */
+function coerce(raw: string): unknown {
+  if (/^[[{]/.test(raw)) {
+    try { return JSON.parse(raw); } catch { /* keep as text */ }
+  }
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  if (raw !== "" && !Number.isNaN(Number(raw))) return Number(raw);
+  return raw;
+}
+
 /** One tool-calling step: returns the model's text and any tool calls it made. */
 export async function chatWithTools(
   messages: AgentMessage[],
@@ -173,8 +217,31 @@ export async function chatWithTools(
   const toolCalls: ToolCall[] = (msg.tool_calls ?? [])
     .filter((c) => c.function?.name)
     .map((c) => ({ id: c.id, name: c.function.name, arguments: c.function.arguments || "{}" }));
+
+  const content = (msg.content ?? "").trim();
+  // Nothing native, but the text looks like a tool call: rescue it rather than
+  // showing the markup to the user.
+  if (!toolCalls.length) {
+    const inline = parseInlineToolCalls(content);
+    if (inline.calls.length) {
+      return {
+        content: inline.text,
+        toolCalls: inline.calls,
+        raw: {
+          role: "assistant",
+          content: inline.text,
+          tool_calls: inline.calls.map((c) => ({
+            id: c.id,
+            type: "function",
+            function: { name: c.name, arguments: c.arguments },
+          })),
+        },
+      };
+    }
+  }
+
   return {
-    content: (msg.content ?? "").trim(),
+    content,
     toolCalls,
     raw: { role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls },
   };
