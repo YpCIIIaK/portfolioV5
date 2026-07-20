@@ -56,7 +56,7 @@ async function run(req: Request) {
       ).catch(() => { /* уведомление — не повод ронять тик */ });
     }
 
-    return NextResponse.json({ ok: true, id: r.id, added: r.added, edges: r.edges, labels: r.labels, data: r.data });
+    return NextResponse.json({ ok: true, id: r.id, added: r.added, edges: r.edges, labels: r.labels, data: r.data, sources: r.sources });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }

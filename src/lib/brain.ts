@@ -71,6 +71,19 @@ export async function collectBrainContext(mode: Mode = "balanced"): Promise<{ co
     if (body) { parts.push(`${title}:\n${body}`); sources.push(src); }
   };
 
+  // Drive идёт ПЕРВЫМ, а не последним. Он самый объёмный источник, и когда он
+  // стоял в хвосте, при переполнении окна модели обрезался именно он — со
+  // стороны это выглядело как «мозг не читает диск» без единой ошибки в логах.
+  try {
+    const drive = await driveBrainContext(modeSpec.driveFiles, modeSpec.driveChars);
+    if (drive) {
+      parts.push(drive);
+      sources.push("Google Drive");
+    }
+  } catch (e) {
+    parts.push(`GOOGLE DRIVE: ошибка чтения — ${(e as Error).message.slice(0, 200)}`);
+  }
+
   if (supabaseConfigured()) {
     try {
       const tasks = await sbSelect<{ title: string; due: string | null; priority: string; done: boolean }>(
@@ -157,15 +170,38 @@ export async function collectBrainContext(mode: Mode = "balanced"): Promise<{ co
     }
   } catch { /* skip */ }
 
-  try {
-    const drive = await driveBrainContext(modeSpec.driveFiles, modeSpec.driveChars);
-    if (drive) {
-      parts.push(drive);
-      sources.push("Google Drive");
-    }
-  } catch { /* skip */ }
+  // Общий потолок. Раньше его не было вовсе: контекст мог вырасти до сотен
+  // тысяч символов, и обрезал его уже провайдер — с конца и молча. Режем сами,
+  // с хвоста каждого раздела, чтобы ни один источник не пропал целиком.
+  const context = capContext(parts, modeSpec.contextChars);
+  return { context, sources };
+}
 
-  return { context: parts.join("\n\n"), sources };
+/**
+ * Ужать разделы под общий лимит. Урезаем пропорционально: раздел, влезающий в
+ * свою долю, остаётся целым, остальные обрезаются по границе строки, чтобы не
+ * рвать запись посередине.
+ */
+function capContext(parts: string[], limit: number): string {
+  const joined = parts.join("\n\n");
+  if (joined.length <= limit) return joined;
+
+  const share = Math.floor(limit / Math.max(1, parts.length));
+  // Сначала соберём излишек с тех, кто меньше своей доли, и раздадим остальным.
+  const small = parts.filter((p) => p.length <= share);
+  const surplus = small.reduce((n, p) => n + (share - p.length), 0);
+  const bigCount = parts.length - small.length;
+  const bigShare = share + (bigCount ? Math.floor(surplus / bigCount) : 0);
+
+  return parts
+    .map((p) => {
+      if (p.length <= bigShare) return p;
+      const cut = p.slice(0, bigShare);
+      const lastBreak = cut.lastIndexOf("\n");
+      const body = lastBreak > bigShare * 0.5 ? cut.slice(0, lastBreak) : cut;
+      return `${body}\n… (раздел обрезан по лимиту контекста)`;
+    })
+    .join("\n\n");
 }
 
 /**
@@ -508,6 +544,9 @@ export interface AugmentResult {
   edges: number;
   labels: string[];
   data?: BrainData;
+  /** Что реально попало в контекст — иначе «диск не читается» неотличимо от
+   *  «диск прочитан, но модель ничего оттуда не взяла». */
+  sources?: string[];
 }
 
 /** Инкремент: дополнить последний снапшот только новым из источников. */
@@ -517,7 +556,7 @@ export async function augmentLatestBrain(mode: Mode = "balanced"): Promise<Augme
   if (!snapshot || !snapshot.data.nodes.length) {
     return { skipped: "нет снапшота — сначала собери мозг полностью", added: 0, edges: 0, labels: [] };
   }
-  const { context } = await collectBrainContext(mode);
+  const { context, sources } = await collectBrainContext(mode);
   const answer = await askAI(buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context, mode), {
     // Дельта короче полной сборки — половины бюджета режима хватает.
     temperature: Math.max(0.2, spec.temperature - 0.1),
@@ -528,7 +567,7 @@ export async function augmentLatestBrain(mode: Mode = "balanced"): Promise<Augme
   if (addedNodes || addedEdges) {
     await sbUpdate("ws_brain", `id=eq.${encodeURIComponent(snapshot.id)}`, { data, updated_at: new Date().toISOString() });
   }
-  return { id: snapshot.id, title: snapshot.title, added: addedNodes, edges: addedEdges, labels, data };
+  return { id: snapshot.id, title: snapshot.title, added: addedNodes, edges: addedEdges, labels, data, sources };
 }
 
 /**
@@ -549,7 +588,7 @@ export async function expandBrainCategory(category: string, mode: Mode = "balanc
   if (!targets.length) {
     return { skipped: `в мозге нет узлов категории/темы «${category}»`, added: 0, edges: 0, labels: [] };
   }
-  const { context } = await collectBrainContext(mode);
+  const { context, sources } = await collectBrainContext(mode);
   const prompt = [
     `Ты ДЕТАЛИЗИРУЕШЬ часть «второго мозга» — узлы категории/темы «${category}».`,
     "",
@@ -583,5 +622,5 @@ export async function expandBrainCategory(category: string, mode: Mode = "balanc
   if (addedNodes || addedEdges) {
     await sbUpdate("ws_brain", `id=eq.${encodeURIComponent(snapshot.id)}`, { data, updated_at: new Date().toISOString() });
   }
-  return { id: snapshot.id, title: snapshot.title, added: addedNodes, edges: addedEdges, labels, data };
+  return { id: snapshot.id, title: snapshot.title, added: addedNodes, edges: addedEdges, labels, data, sources };
 }

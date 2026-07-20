@@ -44,6 +44,8 @@ export interface ModeSpec {
   /** Сколько файлов Drive класть в контекст и по сколько символов из каждого. */
   driveFiles: number;
   driveChars: number;
+  /** Потолок всего контекста в символах (~4 симв. на токен). */
+  contextChars: number;
 }
 
 export const MODE_SPEC: Record<BrainMode, ModeSpec> = {
@@ -60,6 +62,7 @@ export const MODE_SPEC: Record<BrainMode, ModeSpec> = {
     maxTokens: 4000,
     driveFiles: 30,
     driveChars: 400,
+    contextChars: 60000,
   },
   balanced: {
     full: "12–40 узлов",
@@ -73,6 +76,7 @@ export const MODE_SPEC: Record<BrainMode, ModeSpec> = {
     maxTokens: 6000,
     driveFiles: 80,
     driveChars: 700,
+    contextChars: 120000,
   },
   free: {
     full: "40–120 узлов",
@@ -88,6 +92,7 @@ export const MODE_SPEC: Record<BrainMode, ModeSpec> = {
     maxTokens: 12000,
     driveFiles: 250,
     driveChars: 1500,
+    contextChars: 240000,
   },
 };
 

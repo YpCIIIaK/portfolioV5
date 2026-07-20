@@ -653,30 +653,31 @@ export async function driveBrainContext(limit = 60, chars = 500): Promise<string
   try {
     const sources = await listSources();
     if (!sources.length) return "";
-    // Файлы с текстом идут первыми: пустая выжимка даёт модели только имя,
-    // а места в контексте занимает столько же.
-    const files = await sbSelect<DriveIndexRow>(
+
+    // Фильтруем в JS, а не запросом: `excerpt=neq.` с пустым значением —
+    // хрупкий синтаксис PostgREST, а любая его ошибка раньше уходила в catch
+    // и Drive молча пропадал из контекста целиком.
+    const rows = await sbSelect<DriveIndexRow>(
       "ws_drive_index",
-      `${INDEX_FIELDS}&excerpt=neq.&order=modified_time.desc.nullslast&limit=${limit}`,
+      `${INDEX_FIELDS}&order=modified_time.desc.nullslast&limit=${Math.max(limit * 3, 200)}`,
     );
-    // Сколько ещё ждёт скачивания текста — без этого «мозг мало берёт с диска»
-    // выглядит как баг, хотя индекс просто не дособран.
-    const pending = await sbSelect<{ id: string }>(
-      "ws_drive_index",
-      "select=id&needs_text=is.true&limit=1000",
-    );
+    const withText = rows.filter((r) => (r.excerpt ?? "").trim().length > 0);
+    const files = withText.slice(0, limit);
+    const pending = rows.length - withText.length;
 
     if (!files.length) {
-      return pending.length
-        ? `GOOGLE DRIVE: индекс ещё собирается, текст скачан для 0 файлов (в очереди ${pending.length}). Файлы не учитывай.`
-        : "";
+      return `GOOGLE DRIVE: в индексе ${rows.length} файлов, но ни у одного нет текста. Файлы не учитывай.`;
     }
 
     const lines = files.map((f) => `- ${f.name}: ${f.excerpt.replace(/\s+/g, " ").slice(0, chars)}`);
-    const tail = pending.length ? ` — ещё ${pending.length} файлов ждут индексации текста` : "";
-    return `GOOGLE DRIVE (папки: ${sources.map((s) => s.name).join(", ")}; файлов с текстом: ${files.length}${tail}):\n${lines.join("\n")}`;
-  } catch {
-    return "";
+    const head =
+      `GOOGLE DRIVE — папки: ${sources.map((s) => s.name).join(", ")}. ` +
+      `Файлов с текстом: ${withText.length}, показано ${files.length}` +
+      (pending ? `, без текста ${pending}` : "") + ".";
+    return `${head}\n${lines.join("\n")}`;
+  } catch (e) {
+    // Молчать нельзя: пустая строка выглядит как «на диске ничего нет».
+    return `GOOGLE DRIVE: не удалось прочитать индекс — ${(e as Error).message.slice(0, 200)}`;
   }
 }
 

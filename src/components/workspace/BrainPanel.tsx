@@ -500,14 +500,19 @@ export function BrainPanel() {
         body: JSON.stringify({ mode }),
       });
       const text = await res.text();
-      let json: { data?: BrainState; id?: string; added?: number; edges?: number; labels?: string[]; skipped?: string; error?: string } = {};
+      let json: { data?: BrainState; id?: string; added?: number; edges?: number; labels?: string[]; sources?: string[]; skipped?: string; error?: string } = {};
       try { json = JSON.parse(text); } catch { /* оставляем пустым */ }
       if (!res.ok) {
         if (res.status === 504 || /timeout|timed out/i.test(text)) throw new Error("Таймаут — попробуй ещё раз.");
         throw new Error(json.error || `HTTP ${res.status}: ${text.slice(0, 120)}`);
       }
       if (json.skipped) { setInfo(json.skipped); return; }
-      if (!json.added && !json.edges) { setInfo("Нового ничего нет — мозг актуален."); return; }
+      if (!json.added && !json.edges) {
+        // Тут важнее всего показать источники: «ничего нового» при непрочитанном
+        // диске и при прочитанном — это два разных диагноза.
+        setInfo(`Нового ничего нет — мозг актуален.${json.sources?.length ? ` Прочитано: ${json.sources.join(", ")}.` : ""}`);
+        return;
+      }
       if (json.data && json.id) {
         setGraph(json.data);
         setSnapshotId(json.id);
@@ -515,7 +520,10 @@ export function BrainPanel() {
         setDirty(false);
         setSnapshots((s) => s.map((x) => (x.id === json.id ? { ...x, data: json.data!, updated_at: new Date().toISOString() } : x)));
       }
-      setInfo(`Дополнено: +${json.added ?? 0} узл., +${json.edges ?? 0} связ.`);
+      // Источники — чтобы «диск не читается» отличалось от «диск прочитан,
+      // но модель ничего оттуда не взяла».
+      const src = json.sources?.length ? ` · прочитано: ${json.sources.join(", ")}` : "";
+      setInfo(`Дополнено: +${json.added ?? 0} узл., +${json.edges ?? 0} связ.${src}`);
       // Что именно добавилось — иначе «+7 узлов» ничего не говорит.
       setAddedLabels(json.labels ?? []);
       setAddedOpen((json.labels?.length ?? 0) <= 8);
