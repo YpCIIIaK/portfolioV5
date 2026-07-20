@@ -78,9 +78,11 @@ export async function collectBrainContext(mode: Mode = "balanced"): Promise<{ co
   // стороны это выглядело как «мозг не читает диск» без единой ошибки в логах.
   try {
     const drive = await driveBrainContext(modeSpec.driveFiles, modeSpec.driveChars);
-    if (drive) {
-      driveIndex = parts.push(drive) - 1;
-      sources.push("Google Drive");
+    if (drive.text) {
+      driveIndex = parts.push(drive.text) - 1;
+      sources.push(drive.label || "Google Drive");
+    } else if (drive.label) {
+      sources.push(drive.label);
     }
   } catch (e) {
     driveIndex = parts.push(`GOOGLE DRIVE: ошибка чтения — ${(e as Error).message.slice(0, 200)}`) - 1;

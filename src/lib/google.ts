@@ -549,9 +549,11 @@ export async function syncSource(source: DriveSource): Promise<SyncStats> {
     while (cursor < queued.length && Date.now() - startedAt < TEXT_BUDGET_MS) {
       const row = queued[cursor++];
       try {
+        // 8000, а не 4000: свободный режим просит из файла до 6000 символов, и
+        // сохранённая выжимка не должна быть короче того, что у неё запрашивают.
         const excerpt = await fileText(
           { id: row.file_id, name: row.name, mimeType: row.mime_type },
-          4000,
+          8000,
         );
         await sbUpdate("ws_drive_index", `id=eq.${row.id}`, { excerpt, needs_text: false });
         stats.texts++;
@@ -648,11 +650,18 @@ export async function readDriveFile(fileId: string): Promise<{ name: string; tex
  * The assistant's own context stays filenames-only (see driveContext) — it can
  * always call read_drive_file when it needs the body.
  */
-export async function driveBrainContext(limit = 60, chars = 500): Promise<string> {
-  if (!supabaseConfigured()) return "";
+export interface DriveBrainContext {
+  text: string;
+  /** Для строки «прочитано» в панели: без этих чисел «диск не читается» и
+   *  «диск прочитан, но пустой» выглядят одинаково. */
+  label: string;
+}
+
+export async function driveBrainContext(limit = 60, chars = 500): Promise<DriveBrainContext> {
+  if (!supabaseConfigured()) return { text: "", label: "" };
   try {
     const sources = await listSources();
-    if (!sources.length) return "";
+    if (!sources.length) return { text: "", label: "Google Drive (папки не выбраны)" };
 
     // Фильтруем в JS, а не запросом: `excerpt=neq.` с пустым значением —
     // хрупкий синтаксис PostgREST, а любая его ошибка раньше уходила в catch
@@ -666,7 +675,10 @@ export async function driveBrainContext(limit = 60, chars = 500): Promise<string
     const pending = rows.length - withText.length;
 
     if (!files.length) {
-      return `GOOGLE DRIVE: в индексе ${rows.length} файлов, но ни у одного нет текста. Файлы не учитывай.`;
+      return {
+        text: `GOOGLE DRIVE: в индексе ${rows.length} файлов, но ни у одного нет текста. Файлы не учитывай.`,
+        label: `Google Drive (${rows.length} файлов, НИ ОДНОГО с текстом)`,
+      };
     }
 
     const lines = files.map((f) => `- ${f.name}: ${f.excerpt.replace(/\s+/g, " ").slice(0, chars)}`);
@@ -674,10 +686,20 @@ export async function driveBrainContext(limit = 60, chars = 500): Promise<string
       `GOOGLE DRIVE — папки: ${sources.map((s) => s.name).join(", ")}. ` +
       `Файлов с текстом: ${withText.length}, показано ${files.length}` +
       (pending ? `, без текста ${pending}` : "") + ".";
-    return `${head}\n${lines.join("\n")}`;
+    const body = `${head}\n${lines.join("\n")}`;
+    return {
+      text: body,
+      label:
+        `Google Drive (${files.length} файлов, ${Math.round(body.length / 1000)}k симв.` +
+        (pending ? `, без текста ${pending}` : "") + ")",
+    };
   } catch (e) {
     // Молчать нельзя: пустая строка выглядит как «на диске ничего нет».
-    return `GOOGLE DRIVE: не удалось прочитать индекс — ${(e as Error).message.slice(0, 200)}`;
+    const msg = (e as Error).message.slice(0, 200);
+    return {
+      text: `GOOGLE DRIVE: не удалось прочитать индекс — ${msg}`,
+      label: `Google Drive (ОШИБКА: ${msg.slice(0, 60)})`,
+    };
   }
 }
 
