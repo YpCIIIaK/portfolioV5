@@ -627,6 +627,23 @@ export async function searchDrive(query: string, limit = 20): Promise<DriveIndex
   );
 }
 
+/**
+ * Every indexed file, id + name only, in a STABLE order.
+ *
+ * The stable order is the point: the full sweep walks this list across many
+ * separate HTTP calls, holding nothing but a numeric cursor. Ordering by
+ * modified_time (what the panel uses) would reshuffle the list the moment a
+ * file is touched mid-sweep, and the cursor would silently skip or repeat
+ * files. `file_id` never changes.
+ */
+export async function listAllIndexedFiles(): Promise<{ file_id: string; name: string }[]> {
+  if (!supabaseConfigured()) return [];
+  return sbSelect<{ file_id: string; name: string }>(
+    "ws_drive_index",
+    "select=file_id,name&order=file_id.asc&limit=5000",
+  );
+}
+
 /** Full text of an indexed file, fetched live from Drive (the index only keeps
  *  a 4k excerpt). Returns null when the id isn't ours — the assistant must not
  *  be able to read arbitrary Drive files outside the picked folders. */

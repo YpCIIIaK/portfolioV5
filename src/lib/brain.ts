@@ -476,6 +476,15 @@ export function buildBrainAugmentPrompt(
   blocked: string[] = [],
   /** Дополняем по вручную выбранным файлам — тон промпта меняется на «разбери именно это». */
   picked = false,
+  /**
+   * Полный обход: какая это итерация и что уже сделано в предыдущих.
+   *
+   * Без этого каждая итерация — отдельный разговор с чистого листа: модель не
+   * знает, что она в середине длинного обхода, и ведёт себя как при разовом
+   * дополнении — экономит объём и осторожничает с узлами. С номером итерации и
+   * сводкой прошлых она достраивает уже начатую картину.
+   */
+  sweep?: { index: number; total: number; carry: string },
 ): string {
   const spec = MODE_SPEC[mode];
   return [
@@ -510,6 +519,16 @@ export function buildBrainAugmentPrompt(
     "СУЩЕСТВУЮЩИЕ УЗЛЫ (шорткаты):",
     shortcuts || "(граф пуст)",
     "",
+    ...(sweep
+      ? [
+          `ЭТО ИТЕРАЦИЯ ${sweep.index} ИЗ ${sweep.total} полного обхода Диска.`,
+          "Файлы разбиты на пачки, потому что все сразу не помещаются. Ты видишь очередную пачку целиком.",
+          "Граф общий и накапливается между итерациями — привязывай новое к тому, что уже в шорткатах,",
+          "иначе обход развалится на несвязанные острова по числу пачек.",
+          ...(sweep.carry ? ["", "ЧТО УЖЕ СДЕЛАНО В ПРЕДЫДУЩИХ ИТЕРАЦИЯХ:", sweep.carry] : []),
+          "",
+        ]
+      : []),
     ...(picked
       ? [
           "ВАЖНО: пользователь выбрал эти материалы ВРУЧНУЮ и ждёт, что ты разберёшь именно их.",
@@ -692,11 +711,16 @@ export interface AugmentResult {
  * с сотни файлов и модель сама решает, что важно. Здесь — ПОЛНЫЙ текст (до 20k)
  * нескольких выбранных файлов, то есть «прочитай вот это внимательно».
  */
-async function pickedFilesContext(fileIds: string[]): Promise<{ context: string; sources: string[] }> {
+async function pickedFilesContext(
+  fileIds: string[],
+  /** Потолок файлов за раз. Ручной выбор ограничен 20; полный обход сам режет
+   *  список на пачки и приходит уже с готовой порцией. */
+  maxFiles = 20,
+): Promise<{ context: string; sources: string[] }> {
   const parts: string[] = [];
   const sources: string[] = [];
 
-  for (const id of fileIds.slice(0, 20)) {
+  for (const id of fileIds.slice(0, maxFiles)) {
     try {
       const file = await readDriveFile(id);
       if (!file?.text?.trim()) {
@@ -763,7 +787,12 @@ async function pickedProjectsContext(ids: string[]): Promise<{ context: string; 
  */
 export async function augmentLatestBrain(
   mode: Mode = "balanced",
-  opts: { fileIds?: string[]; projectIds?: string[] } = {},
+  opts: {
+    fileIds?: string[];
+    projectIds?: string[];
+    maxFiles?: number;
+    sweep?: { index: number; total: number; carry: string };
+  } = {},
 ): Promise<AugmentResult> {
   const spec = MODE_SPEC[mode];
   const snapshot = await latestBrainSnapshot();
@@ -775,7 +804,7 @@ export async function augmentLatestBrain(
   let picked: { context: string; sources: string[] } | null = null;
   if (hasPicks) {
     const [f, p] = await Promise.all([
-      pickedFilesContext(opts.fileIds ?? []),
+      pickedFilesContext(opts.fileIds ?? [], opts.maxFiles),
       pickedProjectsContext(opts.projectIds ?? []),
     ]);
     picked = {
@@ -788,10 +817,12 @@ export async function augmentLatestBrain(
   }
   const { context, sources } = picked ?? (await collectBrainContext(mode));
   const blocked = (await listBlocklist()).map((b) => b.pattern);
-  const answer = await askAI(buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context, mode, blocked, !!picked), {
-    // Дельта короче полной сборки — половины бюджета режима хватает.
+  const answer = await askAI(buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context, mode, blocked, !!picked, opts.sweep), {
     temperature: Math.max(0.2, spec.temperature - 0.1),
-    maxTokens: Math.round(spec.maxTokens / 2),
+    // Дельта короче полной сборки — половины бюджета режима хватает. Но в
+    // полном обходе дельта И ЕСТЬ результат: там режем не по объёму ответа, а
+    // по числу файлов в пачке, и обрезать её на середине — терять целый файл.
+    maxTokens: opts.sweep ? spec.maxTokens : Math.round(spec.maxTokens / 2),
   });
   const delta = dropBlocked(parseBrainAnswer(answer, new Set(snapshot.data.nodes.map((n) => n.id))), blocked);
   const { data, addedNodes, addedEdges, labels } = mergeBrainDelta(snapshot.data, delta);

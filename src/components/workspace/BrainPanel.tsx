@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2, Search, ChevronDown, ChevronRight, Eraser, Ban, FileText } from "lucide-react";
+import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2, Search, ChevronDown, ChevronRight, Eraser, Ban, FileText, Layers } from "lucide-react";
 import { BRAIN_MODES, BRAIN_MODE_LABEL, BRAIN_MODE_HINT, brainMode, type BrainMode } from "@/lib/brain-modes";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
@@ -218,7 +218,13 @@ export function BrainPanel() {
   const [title, setTitle] = useState("Мой мозг");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [linkFrom, setLinkFrom] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"" | "generate" | "augment" | "save" | "clean">("");
+  const [busy, setBusy] = useState<"" | "generate" | "augment" | "save" | "clean" | "sweep">("");
+  // Полный обход: прогресс и флаг остановки. Обход длинный (десятки итераций),
+  // поэтому его должно быть видно и его должно быть можно прервать.
+  const [sweep, setSweep] = useState<{
+    iteration: number; iterations: number; added: number; edges: number; batch: string[]; note: string;
+  } | null>(null);
+  const sweepStop = useRef(false);
   // План чистки: показываем, что удалится, ДО удаления — снапшот один и отката нет.
   const [cleanPlan, setCleanPlan] = useState<CleanPlan | null>(null);
   // Чёрный список тем: чистить постфактум мало, надо чтобы не появлялось заново.
@@ -737,6 +743,74 @@ export function BrainPanel() {
     }
   };
 
+  /**
+   * Полный обход Диска: читаем каждый файл целиком, пачками, пока не кончатся.
+   *
+   * Цикл живёт здесь, а не на сервере, потому что обход длиннее любого лимита
+   * серверной функции. Состояние обхода — один курсор, так что прерванный
+   * обход (кнопкой или закрытой вкладкой) продолжается с того же места.
+   */
+  const runSweep = async () => {
+    setError(""); setInfo(""); setAddedLabels([]);
+    let plan: { files: number; iterations: number };
+    try {
+      const res = await fetch("/api/workspace/brain/sweep");
+      plan = await res.json();
+      if (!res.ok) throw new Error((plan as unknown as { error?: string }).error || `HTTP ${res.status}`);
+    } catch (e) {
+      setError((e as Error).message);
+      return;
+    }
+    if (!plan.files) { setError("В индексе Диска нет файлов — подключи папки и дождись синка."); return; }
+    // Обход платный и долгий: сорок итераций не должны стартовать молча.
+    if (!confirm(`Прочитать все ${plan.files} файлов Диска целиком? Это ${plan.iterations} итераций и займёт время.`)) return;
+
+    sweepStop.current = false;
+    setBusy("sweep");
+    let cursor = 0, added = 0, edges = 0;
+    const problems: string[] = [];
+    try {
+      for (;;) {
+        if (sweepStop.current) { setInfo(`Обход остановлен: +${added} узл., +${edges} связ.`); break; }
+        const res = await fetch("/api/workspace/brain/sweep", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cursor }),
+        });
+        const step = await res.json();
+        if (!res.ok) throw new Error(step.error || `HTTP ${res.status}`);
+        cursor = step.cursor;
+        added += step.added ?? 0;
+        edges += step.edges ?? 0;
+        // Пачка могла не задаться — это не повод ронять весь обход, но и молчать
+        // о ней нельзя: в конце покажем, сколько пачек прошло мимо.
+        if (step.error) problems.push(`${step.iteration}: ${step.error}`);
+        setSweep({
+          iteration: step.iteration, iterations: step.iterations,
+          added, edges, batch: step.batch ?? [],
+          note: step.error ?? "",
+        });
+        if (step.done) {
+          setInfo(
+            `Обход завершён: ${plan.files} файлов, +${added} узл., +${edges} связ.` +
+            (problems.length ? ` Пачек с ошибкой: ${problems.length}.` : ""),
+          );
+          break;
+        }
+      }
+      // Граф перечитываем один раз в конце: тянуть его на каждой итерации —
+      // это десятки лишних мегабайт по сети ради промежуточных кадров.
+      const rows = await wsList<BrainSnapshot>("brain");
+      setSnapshots(rows);
+      if (rows.length) { setGraph(rows[0].data); setSnapshotId(rows[0].id); setDirty(false); setSelectedId(null); }
+    } catch (e) {
+      setError(`${(e as Error).message} · остановлено на файле ${cursor} из ${plan.files}`);
+    } finally {
+      setBusy("");
+      setSweep(null);
+    }
+  };
+
   const generate = async () => {
     setBusy("generate"); setError(""); setInfo(""); setAddedLabels([]);
     try {
@@ -1001,6 +1075,15 @@ export function BrainPanel() {
           Дополнить по файлам
         </button>
         <button
+          onClick={() => void runSweep()}
+          disabled={demo || !owner || busy !== "" || !snapshotId}
+          className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[12.5px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
+          title="Прочитать КАЖДЫЙ файл Диска целиком, пачками, и внести всё в мозг"
+        >
+          {busy === "sweep" ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
+          Полный обход
+        </button>
+        <button
           onClick={() => { setBlockOpen((v) => !v); if (!blockOpen) void loadBlocklist(); }}
           disabled={demo || !owner}
           className="flex items-center gap-1.5 rounded border border-vsc-line px-3 py-1.5 text-[12.5px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
@@ -1074,6 +1157,31 @@ export function BrainPanel() {
           </button>
         )}
       </div>
+
+      {/* Прогресс обхода: без него десяток минут выглядит как зависшая вкладка. */}
+      {sweep && (
+        <div className="mb-2 rounded border border-vsc-line bg-vsc-sidebar px-3 py-2 text-[12px]">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="text-vsc-text">
+              Обход: итерация {sweep.iteration} из {sweep.iterations} · +{sweep.added} узл., +{sweep.edges} связ.
+            </span>
+            <button
+              onClick={() => { sweepStop.current = true; }}
+              className="rounded border border-vsc-line px-2 py-0.5 text-[11px] text-vsc-muted hover:bg-vsc-hover"
+            >
+              Остановить
+            </button>
+          </div>
+          <div className="mb-1.5 h-1 overflow-hidden rounded bg-vsc-line">
+            <div
+              className="h-full bg-vsc-accent transition-all"
+              style={{ width: `${Math.round((sweep.iteration / Math.max(1, sweep.iterations)) * 100)}%` }}
+            />
+          </div>
+          <div className="truncate text-[11px] text-vsc-muted">{sweep.batch.join(", ")}</div>
+          {sweep.note && <div className="mt-1 text-[11px] text-amber-300/80">{sweep.note}</div>}
+        </div>
+      )}
 
       {error && <div className="mb-2 rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[12px] text-red-300">{error}</div>}
       {info && <div className="mb-2 rounded border border-vsc-line bg-vsc-sidebar px-3 py-1.5 text-[12px] text-vsc-muted">{info}</div>}
