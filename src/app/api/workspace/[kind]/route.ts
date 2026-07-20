@@ -4,6 +4,8 @@ import { requireOwner, getSession } from "@/lib/auth";
 import { invalidateContext } from "@/lib/aggregate";
 import { supabaseConfigured, sbSelect, sbInsert, sbUpdate, sbDelete } from "@/lib/supabase";
 import { brainData } from "@/lib/brain";
+import { workflowData } from "@/lib/workflow-steps";
+import { isKnownStep } from "@/lib/workflow";
 
 export const runtime = "nodejs";
 
@@ -13,7 +15,7 @@ export const runtime = "nodejs";
  * is gated behind requireOwner().
  */
 
-type Kind = "notes" | "tasks" | "events" | "projects" | "subscriptions" | "diagrams" | "brain";
+type Kind = "notes" | "tasks" | "events" | "projects" | "subscriptions" | "diagrams" | "brain" | "workflows";
 
 const TABLE: Record<Kind, string> = {
   notes: "ws_notes",
@@ -23,6 +25,7 @@ const TABLE: Record<Kind, string> = {
   subscriptions: "ws_subscriptions",
   diagrams: "ws_diagrams",
   brain: "ws_brain",
+  workflows: "ws_workflows",
 };
 
 const ORDER: Record<Kind, string> = {
@@ -33,6 +36,7 @@ const ORDER: Record<Kind, string> = {
   subscriptions: "order=created_at.desc",
   diagrams: "order=updated_at.desc",
   brain: "order=updated_at.desc",
+  workflows: "order=updated_at.desc",
 };
 
 const priority = z.enum(["none", "low", "medium", "high"]);
@@ -63,6 +67,13 @@ const diagramData = z.object({
   edges: z.array(diagramEdge).max(1000).default([]),
 });
 
+// Воркфлоу: цепочка блоков. Тип блока обязан быть реализован раннером, иначе
+// сохранится документ, который заведомо упадёт на запуске.
+const wfData = workflowData.refine(
+  (d) => d.steps.every((s) => isKnownStep(s.type)),
+  { message: "неизвестный тип блока" },
+);
+
 // Field whitelists — anything else in the body is dropped before hitting the DB.
 const CREATE: Record<Kind, z.ZodTypeAny> = {
   notes: z.object({ title: z.string().max(200).default("Без названия"), body: z.string().max(20000).default(""), priority: priority.default("none"), color: color.default("") }),
@@ -72,6 +83,7 @@ const CREATE: Record<Kind, z.ZodTypeAny> = {
   subscriptions: z.object({ name: z.string().min(1).max(200), price: z.number().min(0).max(1e9).default(0), currency: z.string().max(8).default("₽"), period: subPeriod.default("monthly"), tier: z.string().max(100).default(""), description: z.string().max(2000).default(""), next_date: z.string().nullable().default(null) }),
   diagrams: z.object({ title: z.string().max(200).default("Новая диаграмма"), data: diagramData.default({ nodes: [], edges: [] }) }),
   brain: z.object({ title: z.string().max(200).default("Снапшот мозга"), data: brainData.default({ nodes: [], edges: [] }) }),
+  workflows: z.object({ title: z.string().max(200).default("Новый воркфлоу"), description: z.string().max(1000).default(""), enabled: z.boolean().default(true), data: wfData.default({ steps: [] }) }),
 };
 
 const UPDATE: Record<Kind, z.ZodTypeAny> = {
@@ -82,10 +94,16 @@ const UPDATE: Record<Kind, z.ZodTypeAny> = {
   subscriptions: z.object({ name: z.string().min(1).max(200).optional(), price: z.number().min(0).max(1e9).optional(), currency: z.string().max(8).optional(), period: subPeriod.optional(), tier: z.string().max(100).optional(), description: z.string().max(2000).optional(), next_date: z.string().nullable().optional() }),
   diagrams: z.object({ title: z.string().max(200).optional(), data: diagramData.optional() }),
   brain: z.object({ title: z.string().max(200).optional(), data: brainData.optional() }),
+  workflows: z.object({ title: z.string().max(200).optional(), description: z.string().max(1000).optional(), enabled: z.boolean().optional(), data: wfData.optional() }),
 };
 
+/** Сколько прошлых сборок воркфлоу храним в строке. */
+const MAX_VERSIONS = 20;
+
+const KINDS = ["notes", "tasks", "events", "projects", "subscriptions", "diagrams", "brain", "workflows"] as const;
+
 function parseKind(raw: string): Kind | null {
-  return raw === "notes" || raw === "tasks" || raw === "events" || raw === "projects" || raw === "subscriptions" || raw === "diagrams" || raw === "brain" ? raw : null;
+  return (KINDS as readonly string[]).includes(raw) ? (raw as Kind) : null;
 }
 
 async function guard(kindRaw: string): Promise<{ kind: Kind } | NextResponse> {
@@ -141,7 +159,22 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const parsed = UPDATE[g.kind].safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid body" }, { status: 400 });
   const patch = { ...(parsed.data as Record<string, unknown>) };
-  if (g.kind === "notes" || g.kind === "diagrams" || g.kind === "brain") patch.updated_at = new Date().toISOString();
+  if (g.kind === "notes" || g.kind === "diagrams" || g.kind === "brain" || g.kind === "workflows") {
+    patch.updated_at = new Date().toISOString();
+  }
+
+  // Воркфлоу версионируются: прежняя схема уезжает в `versions`, так что
+  // сборку всегда можно откатить, а не потерять поверх сохранением.
+  if (g.kind === "workflows" && "data" in patch) {
+    const [current] = await sbSelect<{ data: unknown; versions: unknown }>(
+      TABLE.workflows,
+      `select=data,versions&id=eq.${encodeURIComponent(id)}&limit=1`,
+    );
+    if (current && JSON.stringify(current.data) !== JSON.stringify(patch.data)) {
+      const history = Array.isArray(current.versions) ? current.versions : [];
+      patch.versions = [{ at: new Date().toISOString(), data: current.data }, ...history].slice(0, MAX_VERSIONS);
+    }
+  }
   // Keep the kanban status and the legacy done flag consistent whichever one arrives.
   if (g.kind === "tasks") {
     if ("status" in patch && !("done" in patch)) patch.done = patch.status === "done";

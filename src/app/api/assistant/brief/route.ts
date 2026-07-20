@@ -38,11 +38,16 @@ export async function GET(req: Request) {
       cache = { at: Date.now(), data };
       return NextResponse.json(data);
     }
-    const brief = await askAI(`Вот сводка на ${todayISO()}:\n\n${context}`, { system: SYSTEM, maxTokens: 600 });
+    // 600 токенов не хватало reasoning-моделям: рассуждение съедало бюджет и
+    // ответ приходил пустым. Брифинг короткий, запас лишним не будет.
+    const brief = await askAI(`Вот сводка на ${todayISO()}:\n\n${context}`, { system: SYSTEM, maxTokens: 1500 });
     const data = { brief, generatedAt: new Date().toISOString() };
     cache = { at: Date.now(), data };
     return NextResponse.json(data);
   } catch (e) {
+    // Брифинг — не критичный экран: лучше показать прошлый (пусть протухший),
+    // чем 502. Свежесть видно по generatedAt, а `stale` включает пометку в UI.
+    if (cache) return NextResponse.json({ ...(cache.data as object), cached: true, stale: true });
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }
 }

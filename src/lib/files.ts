@@ -949,6 +949,12 @@ export const WORKSPACE_FILES: FileNode[] = [
     blocks: [],
   },
   {
+    id: "workspace/workflows.tsx",
+    name: "workflows.tsx",
+    language: "TypeScript",
+    blocks: [],
+  },
+  {
     id: "workspace/projects.tsx",
     name: "projects.tsx",
     language: "TypeScript",

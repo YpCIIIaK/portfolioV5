@@ -17,10 +17,14 @@ import {
 } from "@/lib/assistant-tools";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// Развёрнутые ответы и цепочки инструментов не укладывались в 60с — берём
+// столько же, сколько у telegram-бота (максимум Fluid).
+export const maxDuration = 300;
 
 const bodySchema = z.object({
-  messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(8000) })).min(1).max(20),
+  // 32k на реплику: длинные ответы ассистента возвращаются сюда же в истории,
+  // и при лимите 8000 следующий запрос падал бы с «invalid body».
+  messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(32000) })).min(1).max(20),
 });
 
 export async function POST(req: Request) {

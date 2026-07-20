@@ -19,6 +19,14 @@ const MODEL = process.env.OPENROUTER_MODEL ?? "nvidia/nemotron-3-nano-omni-30b-a
 // "deny" = only zero-data-retention providers. Loosen to "allow" if a free model has none.
 const DATA_POLICY = (process.env.OPENROUTER_DATA_POLICY ?? "deny") === "allow" ? "allow" : "deny";
 
+/**
+ * Потолок ответа по умолчанию. Раньше стояло 800/900 — развёрнутые ответы
+ * обрывались на полуслове. Ставим с запасом; реально модель тратит столько,
+ * сколько нужно, а лимит просто перестаёт резать. AI_MAX_TOKENS — на случай,
+ * если у выбранной модели контекст меньше.
+ */
+const MAX_TOKENS = Math.max(256, Number(process.env.AI_MAX_TOKENS) || 8000);
+
 export function aiConfigured(): boolean {
   return !!process.env.OPENROUTER_API_KEY;
 }
@@ -88,16 +96,28 @@ async function callOpenRouter(body: Record<string, unknown>): Promise<AssistantC
   return msg;
 }
 
-/** Multi-turn completion over an explicit message list (system + conversation). */
+/**
+ * Multi-turn completion over an explicit message list (system + conversation).
+ *
+ * Reasoning-модели изредка отдают пустой `content`: весь бюджет токенов ушёл в
+ * рассуждение, а на ответ не осталось (`reasoning.exclude` убирает его из
+ * выдачи, но не из счётчика). Один раз повторяем с удвоенным потолком и чуть
+ * выше температурой — этого хватает почти всегда.
+ */
 export async function chatAI(messages: AiMessage[], opts: Omit<AskOptions, "system"> = {}): Promise<string> {
-  const msg = await callOpenRouter({
-    messages,
-    temperature: opts.temperature ?? 0.3,
-    max_tokens: opts.maxTokens ?? 800,
-  });
-  const text = msg.content?.trim();
-  if (!text) throw new Error("Модель вернула пустой ответ");
-  return text;
+  const maxTokens = opts.maxTokens ?? MAX_TOKENS;
+  const temperature = opts.temperature ?? 0.3;
+
+  for (const attempt of [0, 1]) {
+    const msg = await callOpenRouter({
+      messages,
+      temperature: attempt ? Math.min(temperature + 0.2, 1) : temperature,
+      max_tokens: attempt ? Math.min(maxTokens * 2, MAX_TOKENS) : maxTokens,
+    });
+    const text = msg.content?.trim();
+    if (text) return text;
+  }
+  throw new Error("Модель вернула пустой ответ");
 }
 
 /* ---- tool calling ----------------------------------------------------- */
@@ -146,7 +166,7 @@ export async function chatWithTools(
   const msg = await callOpenRouter({
     messages,
     temperature: opts.temperature ?? 0.3,
-    max_tokens: opts.maxTokens ?? 900,
+    max_tokens: opts.maxTokens ?? MAX_TOKENS,
     tools: tools.map((t) => ({ type: "function", function: t })),
     tool_choice: "auto",
   });

@@ -2,6 +2,8 @@
 
 /** Shared types, demo data and a tiny fetch helper for the personal workspace. */
 
+import type { Workflow } from "@/lib/workflow-steps";
+
 /** Shared priority scale used by tasks, events and notes. */
 export type Priority = "none" | "low" | "medium" | "high";
 
@@ -74,7 +76,7 @@ export interface Subscription {
   created_at: string;
 }
 
-export type Kind = "notes" | "tasks" | "events" | "projects" | "subscriptions" | "diagrams" | "brain";
+export type Kind = "notes" | "tasks" | "events" | "projects" | "subscriptions" | "diagrams" | "brain" | "workflows";
 
 /* ---- Second brain: AI-собранный граф знаний -------------------------- */
 
@@ -117,6 +119,9 @@ export interface BrainSnapshot {
   updated_at: string;
   created_at: string;
 }
+
+/** Воркфлоу: типы и каталог блоков живут в workflow-steps (общие с сервером). */
+export type { Workflow, WorkflowData, WorkflowStep, WorkflowRun, WorkflowVersion, StepResult } from "@/lib/workflow-steps";
 
 /** Currency symbols offered in the subscriptions form. */
 export const CURRENCIES = ["₽", "₸", "$", "€"];
@@ -219,6 +224,41 @@ export const DEMO_BRAIN: BrainState = {
     { id: "be10", from: "b8", to: "b1", label: "в портфолио" },
   ],
 };
+
+/** Демо-воркфлоу для гостей — показывает, из чего собирается цепочка. */
+export const DEMO_WORKFLOWS: Workflow[] = [
+  {
+    id: "demo-1",
+    title: "Итог дня в Telegram",
+    description: "Собирает короткую сводку по задачам и присылает её в личный чат.",
+    enabled: true,
+    data: {
+      steps: [
+        { id: "s1", type: "ai", params: { prompt: "Сформулируй итог дня в 3–5 пунктов по этим данным:\n{{input}}", system: "Ты — секретарь. Пиши сухо, без воды." } },
+        { id: "s2", type: "telegram", params: { text: "Итог дня {{date}}:\n\n{{prev}}", format: "markdown" } },
+      ],
+    },
+    versions: [],
+    updated_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "demo-2",
+    title: "Идея → задача + письмо",
+    description: "Превращает сырую мысль в задачу и дублирует её на почту.",
+    enabled: true,
+    data: {
+      steps: [
+        { id: "s1", type: "ai", params: { prompt: "Переформулируй в одну чёткую задачу с глаголом действия:\n{{input}}" } },
+        { id: "s2", type: "task", params: { title: "{{prev}}", priority: "medium" } },
+        { id: "s3", type: "email", params: { subject: "Новая задача от {{date}}", text: "{{step:s1}}" } },
+      ],
+    },
+    versions: [],
+    updated_at: new Date(Date.now() - 86400000).toISOString(),
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+  },
+];
 
 interface ApiList<T> { items: T[] }
 interface ApiOne<T> { item: T }

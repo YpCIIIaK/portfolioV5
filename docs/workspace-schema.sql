@@ -113,6 +113,39 @@ create table if not exists public.ws_brain (
 );
 alter table public.ws_brain enable row level security;
 
+-- Workflows (chains of assistant actions) ------------------------------
+-- `data` holds { steps: [{ id, type, params }] } — the block chain the owner
+-- assembled in the builder. Saving never destroys the previous build: the API
+-- pushes the old `data` onto `versions` (newest first, capped at 20), so any
+-- earlier build can be restored.
+create table if not exists public.ws_workflows (
+  id          uuid primary key default gen_random_uuid(),
+  title       text not null default 'Новый воркфлоу',
+  description text not null default '',
+  enabled     boolean not null default true,
+  data        jsonb not null default '{"steps":[]}'::jsonb,
+  versions    jsonb not null default '[]'::jsonb,
+  updated_at  timestamptz not null default now(),
+  created_at  timestamptz not null default now()
+);
+alter table public.ws_workflows enable row level security;
+
+-- Workflow runs (execution log) ----------------------------------------
+-- One row per launch: what went in, what came out, and the per-step journal.
+-- Kept forever so a chain's history is auditable; the UI shows the last 30.
+create table if not exists public.ws_workflow_runs (
+  id          uuid primary key default gen_random_uuid(),
+  workflow_id uuid not null references public.ws_workflows(id) on delete cascade,
+  ok          boolean not null default false,
+  input       text not null default '',
+  output      text not null default '',
+  steps       jsonb not null default '[]'::jsonb,
+  created_at  timestamptz not null default now()
+);
+create index if not exists ws_workflow_runs_wf_idx
+  on public.ws_workflow_runs (workflow_id, created_at desc);
+alter table public.ws_workflow_runs enable row level security;
+
 -- Integrations (OAuth tokens for third-party services) ----------------
 -- One row per provider ('notion', …). Holds the owner's OAuth access token
 -- and a free-form `config` (e.g. which Notion database backs "tasks").

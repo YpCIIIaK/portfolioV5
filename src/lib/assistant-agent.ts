@@ -23,6 +23,8 @@ import { telegramConfigured, fetchDialogs, fetchMessageHistory } from "@/lib/tel
 import { githubConfigured, createRepo, createIssue, listRepos } from "@/lib/github";
 import { webFetch, webSearch } from "@/lib/web";
 import { rebuildBrainSnapshot, augmentLatestBrain, expandBrainCategory, brainOverview, searchBrain } from "@/lib/brain";
+import { listWorkflows, findWorkflowByTitle, runSavedWorkflow } from "@/lib/workflow";
+import { describeWorkflow, stepLabel } from "@/lib/workflow-steps";
 import type { Priority } from "@/lib/workspace";
 
 const MAX_STEPS = 5;
@@ -601,6 +603,49 @@ const TOOLS: Tool[] = [
       return `Диаграмма «${title}» создана: ${nodes.length} блоков, ${edges.length} стрелок. Открой вкладку «Диаграммы».`;
     },
   },
+  {
+    def: {
+      name: "list_workflows",
+      description: "Показать сохранённые воркфлоу (цепочки действий) владельца: название, описание и последовательность блоков. Вызывай перед запуском, чтобы узнать точное название.",
+      parameters: { type: "object", properties: {} },
+    },
+    async run() {
+      if (!supabaseConfigured()) return "Supabase не настроен.";
+      const items = await listWorkflows();
+      if (!items.length) return "Воркфлоу пока нет — их можно собрать во вкладке «Воркфлоу».";
+      return items
+        .map((w) => `- ${describeWorkflow(w)}${w.enabled ? "" : " [выключен]"}`)
+        .join("\n");
+    },
+  },
+  {
+    def: {
+      name: "run_workflow",
+      description: "Запустить сохранённый воркфлоу по названию. Блоки цепочки могут отправлять сообщения и создавать записи — запускай только по явной просьбе.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Название воркфлоу (можно частично)." },
+          input: { type: "string", description: "Текст на вход цепочки — подставляется как {{input}} (опционально)." },
+        },
+        required: ["title"],
+      },
+    },
+    async run(a) {
+      if (!supabaseConfigured()) return "Supabase не настроен.";
+      const title = str(a.title);
+      if (!title) return "Не указано название воркфлоу.";
+      const wf = await findWorkflowByTitle(title);
+      if (!wf) return `Воркфлоу «${title}» не найден.`;
+      if (!wf.enabled) return `Воркфлоу «${wf.title}» выключен — включи его во вкладке «Воркфлоу».`;
+
+      const r = await runSavedWorkflow(wf.id, str(a.input));
+      const log = r.steps
+        .map((s) => `${s.ok ? "✓" : "✗"} ${stepLabel(s.type)}: ${s.output.replace(/\s+/g, " ").slice(0, 200)}`)
+        .join("\n");
+      return `Воркфлоу «${r.title}» ${r.ok ? "выполнен" : "остановился на ошибке"}:\n${log}`;
+    },
+  },
 ];
 
 const TOOL_MAP = new Map(TOOLS.map((t) => [t.def.name, t]));
@@ -611,14 +656,16 @@ const TOOL_MAP = new Map(TOOLS.map((t) => [t.def.name, t]));
 export function buildAssistantSystem(today: string, context: string, extra = ""): string {
   return `Ты — личный ассистент владельца рабочего кабинета. Сегодня ${today}.
 Тебе доступна актуальная сводка из его задач, календаря, Bitrix, Notion, Telegram, почты и свежих новостей — ниже.
-Отвечай кратко, по делу, на русском. Если данных не хватает — используй инструменты, не выдумывай.
+Отвечай по делу, на русском. Если данных не хватает — используй инструменты, не выдумывай.
+Длину подбирай под вопрос: на простой — одна-две фразы, на разбор/анализ/план — столько, сколько нужно, не ужимай ответ искусственно и не обрывай на середине. Лучше дописать мысль до конца, чем уложиться покороче.
 
 У тебя есть ИНСТРУМЕНТЫ — вызывай их сам, когда нужно:
 - чтение: search_notion, read_notion_page, read_telegram_chat (для полного текста страниц и истории чатов — в сводке только заголовки); web_search, web_fetch (поиск и чтение страниц в интернете); list_github_repos;
 - запись в кабинет: create_task, complete_task, delete_task, create_event, delete_event, create_note, create_notion_page, create_project, create_subscription;
 - GitHub: create_github_repo, create_github_issue;
 - «второй мозг» (граф знаний): read_brain (что уже в мозге — ВСЕГДА вызывай первым, если речь о мозге), search_brain (найти узлы по теме и их связи), rebuild_brain (полный пересбор новым снапшотом), augment_brain (дополнить только новым), expand_brain_category (детализировать категорию/тему);
-- диаграммы: create_diagram (блочная схема: блоки + стрелки) — используй, когда просят нарисовать схему/процесс/архитектуру.
+- диаграммы: create_diagram (блочная схема: блоки + стрелки) — используй, когда просят нарисовать схему/процесс/архитектуру;
+- воркфлоу (готовые цепочки действий): list_workflows (какие есть — вызывай первым), run_workflow (запустить по названию, можно передать входной текст). Цепочка может слать сообщения и создавать записи — запускай только по явной просьбе.
 Меняй данные, создавай репозитории/issue и удаляй что-либо ТОЛЬКО когда пользователь явно об этом просит. Удаление необратимо — если сомневаешься, переспроси. После действия коротко подтверди результат (для GitHub — дай ссылку).
 
 === АКТУАЛЬНЫЕ ДАННЫЕ ===

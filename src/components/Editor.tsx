@@ -33,6 +33,7 @@ import { MusicPanel } from "./workspace/MusicPanel";
 import { NotionPanel } from "./workspace/NotionPanel";
 import { DiagramPanel } from "./workspace/DiagramPanel";
 import { BrainPanel } from "./workspace/BrainPanel";
+import { WorkflowsPanel } from "./workspace/WorkflowsPanel";
 import { RepoHealthPanel } from "./workspace/RepoHealthPanel";
 import { FigmaPanel } from "./workspace/FigmaPanel";
 
@@ -118,6 +119,7 @@ export function Editor() {
           {file.id === "workspace/notion.tsx" && <NotionPanel />}
           {file.id === "workspace/diagrams.tsx" && <DiagramPanel />}
           {file.id === "workspace/brain.tsx" && <BrainPanel />}
+          {file.id === "workspace/workflows.tsx" && <WorkflowsPanel />}
           {file.id === "workspace/projects.tsx" && <ProjectsPanel />}
           {file.id === "tools/repo-health.tsx" && <RepoHealthPanel />}
           {file.id === "tools/figma.tsx" && <FigmaPanel />}

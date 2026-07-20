@@ -79,7 +79,8 @@ export async function POST(req: Request) {
       summary: session.summary,
       messages: [...history, { role: "assistant", content: answer }],
     });
-    await sendTelegram(answer.slice(0, 4000), "markdown");
+    // Без обрезки: длинный ответ sendTelegram сам разложит по нескольким сообщениям.
+    await sendTelegram(answer, "markdown");
   } catch (e) {
     await sendTelegram(`❌ Не смог выполнить: ${(e as Error).message}\n\nПопробуй повторить или напиши /new, чтобы начать сессию заново.`);
   }

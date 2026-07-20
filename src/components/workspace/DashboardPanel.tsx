@@ -344,6 +344,7 @@ function AiBriefWidget() {
   const [brief, setBrief] = useState(() => getDaily<string>(DAILY_BRIEF_KEY) ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [stale, setStale] = useState(false);
 
   const load = useCallback(async (force: boolean) => {
     setLoading(true);
@@ -353,8 +354,10 @@ function AiBriefWidget() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
       const text = json.brief || "";
+      setStale(!!json.stale);
       setBrief(text);
-      setDaily(DAILY_BRIEF_KEY, text);
+      // Протухший брифинг не кэшируем на день — иначе свежий не соберётся.
+      if (!json.stale) setDaily(DAILY_BRIEF_KEY, text);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -389,7 +392,14 @@ function AiBriefWidget() {
       ) : error ? (
         <p className="text-[12px] text-vsc-yellow">{error}</p>
       ) : brief ? (
-        <MiniMarkdown text={brief} />
+        <>
+          {stale && (
+            <p className="mb-2 text-[11px] text-vsc-yellow">
+              Модель сейчас недоступна — показан прошлый брифинг.
+            </p>
+          )}
+          <MiniMarkdown text={brief} />
+        </>
       ) : (
         <p className="text-[13px] text-vsc-muted">Нет данных для брифинга.</p>
       )}
