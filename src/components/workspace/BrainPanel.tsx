@@ -81,12 +81,93 @@ function computeWeights(nodes: BrainNode[], edges: BrainEdge[]): Map<string, num
   sorted.forEach((x, i) => { if (!rankOf.has(x.s)) rankOf.set(x.s, i); });
   const last = Math.max(1, sorted.length - 1);
   for (const x of score) {
-    const rank = rankOf.get(x.s)! / last;
+    // Ранг в степени: линейный давал «тяжёлыми» верхнюю четверть графа — два
+    // десятка узлов со свечением, то есть выделено всё и не выделено ничего.
+    // ^2.2 оставляет наверху единицы, середина оседает в спокойный фон.
+    const rank = Math.pow(rankOf.get(x.s)! / last, 2.2);
     // Смешиваем ранг с абсолютом: ранг даёт контраст даже в плоском графе,
     // абсолют не даёт «повысить» откровенный мусор в маленьком графе.
     out.set(x.id, rank * 0.65 + Math.min(1, (x.s - 1) / 6) * 0.35);
   }
+
+  // Явные опоры: 2–3 верхних узла графа поднимаем до максимума независимо от
+  // того, насколько плотно они сидят с соседями по рангу. Без этого «главный
+  // проект» и «второй проект» отличались от рядового узла на пару процентов
+  // веса — глазом неразличимо. Сколько именно опор — от размера графа, чтобы
+  // в графе из десяти узлов не выделилась треть.
+  const hubs = Math.min(3, Math.max(1, Math.round(nodes.length / 18)));
+  const top = [...score].sort((a, b) => b.s - a.s).slice(0, hubs);
+  top.forEach((x, i) => out.set(x.id, Math.max(out.get(x.id) ?? 0, 1 - i * 0.05)));
+
   return out;
+}
+
+/* ---- центры категорий ------------------------------------------------- */
+
+/**
+ * Узлы-центры категорий — чисто отображаемые, в снапшот не сохраняются.
+ *
+ * Модель заводит «финансы» как категорию, но узла, к которому эта категория
+ * сходится, не создаёт: подписки, счета и траты висят отдельными точками, и
+ * доля выглядит рассыпанной пылью. Здесь недостающий центр достраивается на
+ * лету и к нему подтягивается то, что внутри категории ни с чем не связано, —
+ * то есть ровно то, что «очевидно к нему идёт».
+ *
+ * Префикс отличает их от настоящих узлов: они не редактируются, не участвуют в
+ * связывании и не попадают в сохраняемый граф.
+ */
+const HUB_PREFIX = "cat:";
+export const isHubId = (id: string) => id.startsWith(HUB_PREFIX);
+
+function withCategoryHubs(g: BrainState): BrainState {
+  const byCat = new Map<string, BrainNode[]>();
+  for (const n of g.nodes) {
+    const list = byCat.get(n.category) ?? [];
+    list.push(n);
+    byCat.set(n.category, list);
+  }
+
+  const nodes: BrainNode[] = [];
+  const edges: BrainEdge[] = [];
+
+  for (const [cat, members] of byCat) {
+    // Меньше четырёх — это не «доля», центр только добавит шума.
+    if (members.length < 4) continue;
+
+    const ids = new Set(members.map((n) => n.id));
+    // Связи ВНУТРИ категории: только они говорят, есть ли у доли своё ядро.
+    const inDegree = new Map<string, number>();
+    for (const e of g.edges) {
+      if (ids.has(e.from) && ids.has(e.to)) {
+        inDegree.set(e.from, (inDegree.get(e.from) ?? 0) + 1);
+        inDegree.set(e.to, (inDegree.get(e.to) ?? 0) + 1);
+      }
+    }
+    // Естественный центр уже есть — свой узел лучше выдуманного, не мешаем.
+    const natural = members.some((n) => (inDegree.get(n.id) ?? 0) >= members.length * 0.4);
+    if (natural) continue;
+
+    // Подтягиваем только сирот: у кого внутри категории нет ни одной связи.
+    // Тянуть всех — значит нарисовать сплошную звезду поверх готовых связей.
+    const orphans = members.filter((n) => !(inDegree.get(n.id) ?? 0));
+    if (orphans.length < 3) continue;
+
+    const hubId = `${HUB_PREFIX}${cat}`;
+    nodes.push({
+      id: hubId,
+      label: catLabel(cat),
+      category: cat,
+      importance: 5,
+      summary: "",
+      source: { panel: "other", ref: "" },
+    });
+    for (const o of orphans) {
+      edges.push({ id: `${hubId}:${o.id}`, from: hubId, to: o.id });
+    }
+  }
+
+  if (!nodes.length) return g;
+  return { nodes: [...g.nodes, ...nodes], edges: [...g.edges, ...edges] };
 }
 
 const radius = (w: number) => 3.5 + w * 11;
@@ -179,10 +260,13 @@ export function BrainPanel() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const bodies = useRef<Bodies>(new Map());
-  const graphRef = useRef(graph);
-  graphRef.current = graph;
+  // Рисуем и считаем физику по графу С достроенными центрами категорий;
+  // сохраняется и редактируется при этом `graph` — центры туда не просачиваются.
+  const viewGraph = useMemo(() => withCategoryHubs(graph), [graph]);
+  const graphRef = useRef(viewGraph);
+  graphRef.current = viewGraph;
   // Веса пересчитываем только при смене графа — в кадре анимации это дорого.
-  const weights = useMemo(() => computeWeights(graph.nodes, graph.edges), [graph]);
+  const weights = useMemo(() => computeWeights(viewGraph.nodes, viewGraph.edges), [viewGraph]);
   const weightsRef = useRef(weights);
   weightsRef.current = weights;
   // Число соседей — показываем его в списке привязки, чтобы было видно,
@@ -353,6 +437,12 @@ export function BrainPanel() {
         }
       }
 
+      // На отдалении линий в кадре втрое больше, и они сливаются в серую сетку,
+      // которая забивает сами узлы. Гасим их тем сильнее, чем дальше отъехали:
+      // на общем плане важна форма графа, а не каждая отдельная связь.
+      // Выделенные не трогаем — иначе теряется смысл клика по узлу издалека.
+      const zoomFade = Math.min(1, Math.max(0.22, (scale - 0.28) / 0.62));
+
       for (const e of g.edges) {
         const a = map.get(e.from), b = map.get(e.to);
         if (!a || !b) continue;
@@ -360,7 +450,9 @@ export function BrainPanel() {
         // Связь весит столько же, сколько её более лёгкий конец: линия между
         // двумя мусорными узлами не должна чертить холст наравне с опорной.
         const ew = Math.min(wmap.get(e.from) ?? 0.5, wmap.get(e.to) ?? 0.5);
-        ctx.strokeStyle = active ? "rgba(79,193,255,0.75)" : `rgba(140,140,150,${(0.08 + ew * 0.26).toFixed(3)})`;
+        ctx.strokeStyle = active
+          ? "rgba(79,193,255,0.75)"
+          : `rgba(140,140,150,${((0.08 + ew * 0.26) * zoomFade).toFixed(3)})`;
         ctx.lineWidth = active ? 1.6 : 0.6 + ew * 0.9;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
@@ -396,10 +488,22 @@ export function BrainPanel() {
           ctx.arc(b.x, b.y, r * 2.4, 0, Math.PI * 2);
           ctx.fill();
         }
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
-        ctx.fill();
+        // Центр категории рисуем кольцом, а не точкой: он не сущность, а место
+        // сбора, и не должен выглядеть как узел, который можно открыть.
+        if (isHubId(n.id)) {
+          ctx.fillStyle = color + "22";
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
         if (hit || n.id === sel || n.id === hover || n.id === linkFromRef.current) {
           ctx.strokeStyle = n.id === linkFromRef.current ? "#dcdcaa" : hit ? "#4fc1ff" : "#ffffff";
           ctx.lineWidth = hit ? 2.2 : 1.6;
@@ -473,7 +577,9 @@ export function BrainPanel() {
     if (!p.moved) {
       const { x, y } = toWorld(e.clientX, e.clientY);
       const id = nodeAt(x, y);
-      if (id && linkFromRef.current && id !== linkFromRef.current) {
+      // Центр категории — не настоящий узел: связь с ним ушла бы в снапшот
+      // ссылкой в никуда, поэтому связывание на нём просто не срабатывает.
+      if (id && !isHubId(id) && linkFromRef.current && id !== linkFromRef.current) {
         // Режим связывания: второй клик создаёт ребро.
         const from = linkFromRef.current;
         setGraph((g) => ({
