@@ -175,10 +175,13 @@ alter table public.ws_integrations add column if not exists expires_at timestamp
 -- cursor: null means "never synced", so the next run does a full walk.
 -- `status` flips to 'revoked' when Drive answers 403/404 (folder unshared or
 -- deleted), so a rotting index is visible instead of silent.
+-- `kind` distinguishes a whole folder from a single attached file, so the owner
+-- can point at one document without indexing everything around it.
 create table if not exists public.ws_drive_sources (
   id           uuid primary key default gen_random_uuid(),
-  folder_id    text not null unique,   -- Drive folder id
+  folder_id    text not null unique,   -- Drive id: folder, or file when kind='file'
   name         text not null,
+  kind         text not null default 'folder',  -- folder | file
   recursive    boolean not null default true,
   page_token   text,
   status       text not null default 'ok',   -- ok | revoked
@@ -211,6 +214,7 @@ create table if not exists public.ws_drive_index (
 -- them in a single run. Metadata lands immediately; `needs_text` marks what
 -- still owes a download, and each sync drains the queue under a time budget.
 alter table public.ws_drive_index add column if not exists needs_text boolean not null default true;
+alter table public.ws_drive_sources add column if not exists kind text not null default 'folder';
 
 create unique index if not exists ws_drive_index_file_idx
   on public.ws_drive_index (source_id, file_id);

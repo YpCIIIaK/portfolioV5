@@ -11,6 +11,8 @@ const AddSchema = z.object({
   folderId: z.string().min(1),
   name: z.string().min(1).max(200),
   recursive: z.boolean().default(true),
+  /** 'file' attaches exactly one file instead of walking a folder. */
+  kind: z.enum(["folder", "file"]).default("folder"),
 });
 
 export async function GET() {
@@ -26,7 +28,12 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "bad request" }, { status: 400 });
 
   try {
-    const source = await addSource(parsed.data.folderId, parsed.data.name, parsed.data.recursive);
+    const source = await addSource(
+      parsed.data.folderId,
+      parsed.data.name,
+      parsed.data.recursive,
+      parsed.data.kind,
+    );
     const stats = await syncSource(source);
     return NextResponse.json({ source, stats });
   } catch (e) {

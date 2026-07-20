@@ -9,6 +9,7 @@ interface Source {
   id: string;
   folder_id: string;
   name: string;
+  kind: string; // folder | file
   recursive: boolean;
   status: string;
   file_count: number;
@@ -339,13 +340,16 @@ function FoldersTab({ sources, onChange, onError }: { sources: Source[]; onChang
         <div className="divide-y divide-vsc-line">
           {sources.map((s) => (
             <div key={s.id} className="flex items-center gap-3 px-1 py-2.5 hover:bg-vsc-hover">
-              <Folder size={15} className={`shrink-0 ${s.status === "revoked" ? "text-vsc-yellow" : "text-vsc-muted"}`} />
+              {s.kind === "file" ? (
+                <FileText size={15} className={`shrink-0 ${s.status === "revoked" ? "text-vsc-yellow" : "text-vsc-muted"}`} />
+              ) : (
+                <Folder size={15} className={`shrink-0 ${s.status === "revoked" ? "text-vsc-yellow" : "text-vsc-muted"}`} />
+              )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[13px] text-vsc-text">{s.name}</div>
                 <div className="text-[11px] text-vsc-muted">
-                  {s.file_count} файлов
-                  {s.recursive ? " · с подпапками" : ""}
-                  {s.last_sync_at ? ` · синк ${when(s.last_sync_at)}` : " · ещё не синхронизировалась"}
+                  {s.kind === "file" ? "отдельный файл" : `${s.file_count} файлов${s.recursive ? " · с подпапками" : ""}`}
+                  {s.last_sync_at ? ` · синк ${when(s.last_sync_at)}` : " · ещё не синхронизирован"}
                   {s.status === "revoked" ? " · нет доступа" : ""}
                 </div>
               </div>
@@ -366,6 +370,7 @@ function FoldersTab({ sources, onChange, onError }: { sources: Source[]; onChang
 function FolderPicker({ onClose, onAdded, onError }: { onClose: () => void; onAdded: () => void; onError: (e: string) => void }) {
   const [trail, setTrail] = useState<DriveFolder[]>([]);
   const [folders, setFolders] = useState<DriveFolder[]>([]);
+  const [files, setFiles] = useState<DriveFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [recursive, setRecursive] = useState(true);
   const [adding, setAdding] = useState("");
@@ -383,7 +388,10 @@ function FolderPicker({ onClose, onAdded, onError }: { onClose: () => void; onAd
         const r = await fetch(url);
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-        if (!cancelled) setFolders((j.folders as DriveFolder[]) ?? []);
+        if (!cancelled) {
+          setFolders((j.folders as DriveFolder[]) ?? []);
+          setFiles((j.files as DriveFolder[]) ?? []);
+        }
       } catch (e) {
         if (!cancelled) onError((e as Error).message);
       } finally {
@@ -393,14 +401,14 @@ function FolderPicker({ onClose, onAdded, onError }: { onClose: () => void; onAd
     return () => { cancelled = true; };
   }, [current, onError]);
 
-  async function add(f: DriveFolder) {
+  async function add(f: DriveFolder, kind: "folder" | "file" = "folder") {
     setAdding(f.id);
     try {
       // The POST also runs the first sync, so this can take a while.
       const res = await fetch("/api/google/sources", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folderId: f.id, name: f.name, recursive }),
+        body: JSON.stringify({ folderId: f.id, name: f.name, recursive, kind }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
@@ -419,7 +427,7 @@ function FolderPicker({ onClose, onAdded, onError }: { onClose: () => void; onAd
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="flex max-h-[70vh] w-full max-w-lg flex-col rounded border border-vsc-line bg-vsc-bg shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="border-b border-vsc-line px-4 py-3">
-          <h2 className="mb-2 text-[14px] font-semibold text-vsc-bright">Выбери папку</h2>
+          <h2 className="mb-2 text-[14px] font-semibold text-vsc-bright">Выбери папку или файл</h2>
           <div className="flex flex-wrap items-center gap-1 text-[12px] text-vsc-muted">
             <button onClick={() => setTrail([])} className="hover:text-vsc-text">Мой диск</button>
             {trail.map((f, i) => (
@@ -433,29 +441,41 @@ function FolderPicker({ onClose, onAdded, onError }: { onClose: () => void; onAd
 
         <div className="min-h-0 flex-1 overflow-auto px-2 py-1">
           {loading ? (
-            <p className="px-2 py-3 text-[13px] text-vsc-muted">Загрузка папок…</p>
-          ) : folders.length === 0 ? (
-            <p className="px-2 py-3 text-[13px] text-vsc-muted">Здесь нет вложенных папок.</p>
+            <p className="px-2 py-3 text-[13px] text-vsc-muted">Загрузка…</p>
+          ) : folders.length === 0 && files.length === 0 ? (
+            <p className="px-2 py-3 text-[13px] text-vsc-muted">Здесь пусто.</p>
           ) : (
-            folders.map((f) => (
-              <div key={f.id} className="flex items-center gap-2 rounded px-2 py-2 hover:bg-vsc-hover">
-                <Folder size={15} className="shrink-0 text-vsc-muted" />
-                <button onClick={() => setTrail([...trail, f])} className="min-w-0 flex-1 truncate text-left text-[13px] text-vsc-text">
-                  {f.name}
-                </button>
-                <button onClick={() => add(f)} disabled={!!adding}
-                  className="shrink-0 rounded border border-vsc-line px-2 py-1 text-[12px] text-vsc-muted hover:text-vsc-text disabled:opacity-50">
-                  {adding === f.id ? "Индексирую…" : "Выбрать"}
-                </button>
-              </div>
-            ))
+            <>
+              {folders.map((f) => (
+                <div key={f.id} className="flex items-center gap-2 rounded px-2 py-2 hover:bg-vsc-hover">
+                  <Folder size={15} className="shrink-0 text-vsc-muted" />
+                  <button onClick={() => setTrail([...trail, f])} className="min-w-0 flex-1 truncate text-left text-[13px] text-vsc-text">
+                    {f.name}
+                  </button>
+                  <button onClick={() => add(f, "folder")} disabled={!!adding}
+                    className="shrink-0 rounded border border-vsc-line px-2 py-1 text-[12px] text-vsc-muted hover:text-vsc-text disabled:opacity-50">
+                    {adding === f.id ? "Индексирую…" : "Вся папка"}
+                  </button>
+                </div>
+              ))}
+              {files.map((f) => (
+                <div key={f.id} className="flex items-center gap-2 rounded px-2 py-2 hover:bg-vsc-hover">
+                  <FileText size={15} className="shrink-0 text-vsc-muted" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-vsc-text">{f.name}</span>
+                  <button onClick={() => add(f, "file")} disabled={!!adding}
+                    className="shrink-0 rounded border border-vsc-line px-2 py-1 text-[12px] text-vsc-muted hover:text-vsc-text disabled:opacity-50">
+                    {adding === f.id ? "Индексирую…" : "Выбрать файл"}
+                  </button>
+                </div>
+              ))}
+            </>
           )}
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-vsc-line px-4 py-3">
           <label className="flex items-center gap-2 text-[12px] text-vsc-muted">
             <input type="checkbox" checked={recursive} onChange={(e) => setRecursive(e.target.checked)} />
-            включая подпапки
+            включая подпапки (для папок)
           </label>
           <button onClick={onClose} className="rounded px-3 py-1.5 text-[13px] text-vsc-muted hover:text-vsc-text">Закрыть</button>
         </div>

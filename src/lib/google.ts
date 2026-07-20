@@ -209,16 +209,27 @@ export interface DriveFile {
 
 const FILE_FIELDS = "id,name,mimeType,modifiedTime,md5Checksum,size,parents,webViewLink,trashed";
 
-/** Folders the owner can pick from. `parent` scopes to one level; omit for all. */
-export async function listFolders(parent?: string): Promise<DriveFile[]> {
-  const clauses = [`mimeType='${FOLDER_MIME}'`, "trashed=false"];
-  if (parent) clauses.push(`'${parent.replace(/'/g, "\\'")}' in parents`);
-  const q = encodeURIComponent(clauses.join(" and "));
+/**
+ * One level of the tree: folders first, then files, so the owner can attach
+ * either. Without `parent` this is the account's root — Drive's alias 'root'
+ * keeps the top level to actual top-level items instead of every folder in the
+ * account (which would list nested ones like `.obsidian` alongside their parents).
+ */
+export async function listChildren(parent?: string): Promise<DriveFile[]> {
+  const id = (parent || "root").replace(/'/g, "\\'");
+  const q = encodeURIComponent(`'${id}' in parents and trashed=false`);
   const data = await drive<{ files: DriveFile[] }>(
-    `/files?q=${q}&fields=files(id,name,parents)&pageSize=200&orderBy=name` +
+    `/files?q=${q}&fields=files(${FILE_FIELDS})&pageSize=500&orderBy=folder,name` +
       `&supportsAllDrives=true&includeItemsFromAllDrives=true`,
   );
   return data.files ?? [];
+}
+
+/** Metadata for a single file — used when the owner attaches one directly. */
+export async function getFile(fileId: string): Promise<DriveFile> {
+  return drive<DriveFile>(
+    `/files/${encodeURIComponent(fileId)}?fields=${FILE_FIELDS}&supportsAllDrives=true`,
+  );
 }
 
 /** Every non-folder file under `folderId`. With `recursive` it walks subfolders
@@ -338,8 +349,11 @@ function sanitize(text: string): string {
 
 export interface DriveSource {
   id: string;
+  /** Drive id of the attached item — a folder, or a single file when kind='file'. */
   folder_id: string;
   name: string;
+  /** 'folder' walks the tree; 'file' indexes exactly one file. */
+  kind: string;
   recursive: boolean;
   page_token: string | null;
   status: string; // ok | revoked
@@ -352,13 +366,18 @@ export async function listSources(): Promise<DriveSource[]> {
   return sbSelect<DriveSource>("ws_drive_sources", "select=*&order=created_at.asc");
 }
 
-export async function addSource(folderId: string, name: string, recursive = true): Promise<DriveSource> {
+export async function addSource(
+  folderId: string,
+  name: string,
+  recursive = true,
+  kind: "folder" | "file" = "folder",
+): Promise<DriveSource> {
   const existing = await sbSelect<DriveSource>(
     "ws_drive_sources",
     `select=id&folder_id=eq.${encodeURIComponent(folderId)}&limit=1`,
   );
-  if (existing.length) throw new Error("Эта папка уже подключена");
-  return sbInsert<DriveSource>("ws_drive_sources", { folder_id: folderId, name, recursive });
+  if (existing.length) throw new Error(kind === "file" ? "Этот файл уже подключён" : "Эта папка уже подключена");
+  return sbInsert<DriveSource>("ws_drive_sources", { folder_id: folderId, name, recursive, kind });
 }
 
 export async function removeSource(id: string): Promise<void> {
@@ -376,6 +395,22 @@ export interface DriveIndexRow {
   md5: string | null;
   web_view_link: string | null;
   excerpt: string;
+}
+
+/**
+ * Raised when the source row vanished mid-run — the owner detached the folder
+ * (or reconnected Drive) while a long sync was still writing. Postgres answers
+ * every insert with a foreign-key violation (23503) at that point, so we bail
+ * out instead of grinding through thousands of doomed writes.
+ */
+class SourceGoneError extends Error {
+  constructor() {
+    super("Источник удалён во время синхронизации");
+  }
+}
+
+function isMissingSource(e: unknown): boolean {
+  return /23503|source_id_fkey/.test((e as Error)?.message ?? "");
 }
 
 export interface SyncStats {
@@ -419,7 +454,10 @@ export async function syncSource(source: DriveSource): Promise<SyncStats> {
   if (!source.page_token) {
     // Cold start: full walk, and pin a token so the next run is incremental.
     nextToken = await getStartPageToken();
-    files = await listFilesRecursive(source.folder_id, MAX_FILES_PER_SOURCE, source.recursive);
+    files =
+      source.kind === "file"
+        ? [await getFile(source.folder_id)]
+        : await listFilesRecursive(source.folder_id, MAX_FILES_PER_SOURCE, source.recursive);
   } else {
     const { changes, nextToken: t } = await listChanges(source.page_token);
     nextToken = t;
@@ -433,12 +471,22 @@ export async function syncSource(source: DriveSource): Promise<SyncStats> {
         }
         continue;
       }
-      // The feed covers the whole Drive; keep only files under this source.
-      if (change.file && (known || change.file.parents?.includes(source.folder_id))) {
-        files.push(change.file);
-      }
+      if (!change.file) continue;
+      // The feed covers the whole Drive, so filter it down to this source:
+      // for a single file that's an id match, for a folder its direct children
+      // (plus anything already indexed under it, which covers subfolders).
+      const mine =
+        source.kind === "file"
+          ? change.fileId === source.folder_id
+          : known || change.file.parents?.includes(source.folder_id);
+      if (mine) files.push(change.file);
     }
   }
+
+  // The Drive walk above can take a while; make sure the owner didn't detach
+  // the source in the meantime before we start writing thousands of rows.
+  const alive = await sbSelect<{ id: string }>("ws_drive_sources", `select=id&id=eq.${source.id}&limit=1`);
+  if (!alive.length) throw new SourceGoneError();
 
   /* -- phase 1: metadata, no downloads -- */
   for (const file of files) {
@@ -465,7 +513,9 @@ export async function syncSource(source: DriveSource): Promise<SyncStats> {
     };
 
     // One unwritable file must not abort the whole folder: skip it and keep
-    // going, so a single odd encoding can't cost us the entire sync.
+    // going, so a single odd encoding can't cost us the entire sync. A missing
+    // source is different — every remaining write would fail the same way, so
+    // stop rather than spray hundreds of FK violations at the database.
     try {
       if (known) {
         await sbUpdate("ws_drive_index", `id=eq.${known.id}`, row);
@@ -474,7 +524,8 @@ export async function syncSource(source: DriveSource): Promise<SyncStats> {
         await sbInsert("ws_drive_index", { ...row, excerpt: "" });
         stats.added++;
       }
-    } catch {
+    } catch (e) {
+      if (isMissingSource(e)) throw new SourceGoneError();
       stats.skipped++;
     }
   }
@@ -526,6 +577,11 @@ export async function syncAll(): Promise<Record<string, unknown>[]> {
       results.push({ source: s.name, ...(await syncSource(s)) });
     } catch (e) {
       const message = (e as Error).message;
+      // Detached mid-run: nothing wrong with the integration, just skip it.
+      if (e instanceof SourceGoneError) {
+        results.push({ source: s.name, detached: true });
+        continue;
+      }
       // 404/403 usually means the folder was unshared or deleted — flag it so
       // the index doesn't silently rot.
       if (/40[34]/.test(message)) {
