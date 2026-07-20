@@ -23,6 +23,7 @@ interface Status {
   sources: Source[];
 }
 interface DriveFolder { id: string; name: string; parents?: string[] }
+interface PickedItem { folderId: string; name: string; kind: "folder" | "file" }
 interface IndexFile {
   id: string;
   file_id: string;
@@ -219,7 +220,7 @@ function DriveConnected({ status, tab, setTab, onChange }: { status: Status; tab
       {error && <p className="mb-3 text-[13px] text-vsc-yellow">{error}</p>}
       {note && <p className="mb-3 text-[13px] text-vsc-muted">{note}</p>}
       {tab === "files" && <FilesTab sources={status.sources} onError={setError} />}
-      {tab === "folders" && <FoldersTab sources={status.sources} onChange={onChange} onError={setError} />}
+      {tab === "folders" && <FoldersTab sources={status.sources} onChange={onChange} onSync={sync} onError={setError} />}
     </div>
   );
 }
@@ -308,7 +309,7 @@ function FilesTab({ sources, onError }: { sources: Source[]; onError: (e: string
 
 /* ---- folders (pick what feeds the index) -------------------------------- */
 
-function FoldersTab({ sources, onChange, onError }: { sources: Source[]; onChange: () => void; onError: (e: string) => void }) {
+function FoldersTab({ sources, onChange, onSync, onError }: { sources: Source[]; onChange: () => void; onSync: () => void; onError: (e: string) => void }) {
   const [picking, setPicking] = useState(false);
 
   async function remove(s: Source) {
@@ -327,10 +328,10 @@ function FoldersTab({ sources, onChange, onError }: { sources: Source[]; onChang
   return (
     <>
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-[12px] text-vsc-muted">Папки, которые индексируются для чтения, поиска и мозга.</p>
+        <p className="text-[12px] text-vsc-muted">Папки и файлы, которые индексируются для чтения, поиска и мозга.</p>
         <button onClick={() => setPicking(true)}
           className="flex items-center gap-1.5 rounded bg-vsc-accent px-2.5 py-1 text-[12px] text-white hover:opacity-90">
-          <Plus size={14} /> Добавить папку
+          <Plus size={14} /> Добавить
         </button>
       </div>
 
@@ -360,7 +361,15 @@ function FoldersTab({ sources, onChange, onError }: { sources: Source[]; onChang
         </div>
       )}
 
-      {picking && <FolderPicker onClose={() => setPicking(false)} onAdded={onChange} onError={onError} />}
+      {picking && (
+        <FolderPicker
+          onClose={() => setPicking(false)}
+          // Adding only registers the sources; kick off indexing right after so
+          // the owner doesn't have to press Sync themselves.
+          onAdded={() => { onChange(); onSync(); }}
+          onError={onError}
+        />
+      )}
     </>
   );
 }
@@ -373,7 +382,9 @@ function FolderPicker({ onClose, onAdded, onError }: { onClose: () => void; onAd
   const [files, setFiles] = useState<DriveFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [recursive, setRecursive] = useState(true);
-  const [adding, setAdding] = useState("");
+  const [saving, setSaving] = useState(false);
+  // Survives folder navigation — the whole point of picking in batches.
+  const [picked, setPicked] = useState<Map<string, PickedItem>>(new Map());
 
   const current = trail[trail.length - 1] ?? null;
 
@@ -401,17 +412,33 @@ function FolderPicker({ onClose, onAdded, onError }: { onClose: () => void; onAd
     return () => { cancelled = true; };
   }, [current, onError]);
 
-  async function add(f: DriveFolder, kind: "folder" | "file" = "folder") {
-    setAdding(f.id);
+  /** Toggle an item in the pending selection. Nothing is sent until "Добавить",
+   *  so the owner can roam the tree and collect items from several folders. */
+  function toggle(f: DriveFolder, kind: "folder" | "file") {
+    setPicked((prev) => {
+      const next = new Map(prev);
+      if (next.has(f.id)) next.delete(f.id);
+      else next.set(f.id, { folderId: f.id, name: f.name, kind });
+      return next;
+    });
+  }
+
+  async function submit() {
+    if (!picked.size) return;
+    setSaving(true);
     try {
-      // The POST also runs the first sync, so this can take a while.
+      // Registering only — indexing runs separately, so this returns at once
+      // even for a folder with thousands of files.
       const res = await fetch("/api/google/sources", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folderId: f.id, name: f.name, recursive, kind }),
+        body: JSON.stringify({ items: [...picked.values()], recursive }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      if (json.failed?.length) {
+        onError(json.failed.map((f: { name: string; error: string }) => `${f.name}: ${f.error}`).join("; "));
+      }
       invalidate("drive:status");
       invalidate("drive:files");
       onAdded();
@@ -419,7 +446,7 @@ function FolderPicker({ onClose, onAdded, onError }: { onClose: () => void; onAd
     } catch (e) {
       onError((e as Error).message);
     } finally {
-      setAdding("");
+      setSaving(false);
     }
   }
 
@@ -452,19 +479,29 @@ function FolderPicker({ onClose, onAdded, onError }: { onClose: () => void; onAd
                   <button onClick={() => setTrail([...trail, f])} className="min-w-0 flex-1 truncate text-left text-[13px] text-vsc-text">
                     {f.name}
                   </button>
-                  <button onClick={() => add(f, "folder")} disabled={!!adding}
-                    className="shrink-0 rounded border border-vsc-line px-2 py-1 text-[12px] text-vsc-muted hover:text-vsc-text disabled:opacity-50">
-                    {adding === f.id ? "Индексирую…" : "Вся папка"}
+                  <button onClick={() => toggle(f, "folder")}
+                    className={`shrink-0 rounded border px-2 py-1 text-[12px] ${
+                      picked.has(f.id)
+                        ? "border-vsc-accent bg-vsc-accent text-white"
+                        : "border-vsc-line text-vsc-muted hover:text-vsc-text"
+                    }`}>
+                    {picked.has(f.id) ? "✓ Папка" : "Вся папка"}
                   </button>
                 </div>
               ))}
               {files.map((f) => (
                 <div key={f.id} className="flex items-center gap-2 rounded px-2 py-2 hover:bg-vsc-hover">
                   <FileText size={15} className="shrink-0 text-vsc-muted" />
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-vsc-text">{f.name}</span>
-                  <button onClick={() => add(f, "file")} disabled={!!adding}
-                    className="shrink-0 rounded border border-vsc-line px-2 py-1 text-[12px] text-vsc-muted hover:text-vsc-text disabled:opacity-50">
-                    {adding === f.id ? "Индексирую…" : "Выбрать файл"}
+                  <button onClick={() => toggle(f, "file")} className="min-w-0 flex-1 truncate text-left text-[13px] text-vsc-text">
+                    {f.name}
+                  </button>
+                  <button onClick={() => toggle(f, "file")}
+                    className={`shrink-0 rounded border px-2 py-1 text-[12px] ${
+                      picked.has(f.id)
+                        ? "border-vsc-accent bg-vsc-accent text-white"
+                        : "border-vsc-line text-vsc-muted hover:text-vsc-text"
+                    }`}>
+                    {picked.has(f.id) ? "✓ Выбран" : "Выбрать"}
                   </button>
                 </div>
               ))}
@@ -472,12 +509,33 @@ function FolderPicker({ onClose, onAdded, onError }: { onClose: () => void; onAd
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-vsc-line px-4 py-3">
-          <label className="flex items-center gap-2 text-[12px] text-vsc-muted">
-            <input type="checkbox" checked={recursive} onChange={(e) => setRecursive(e.target.checked)} />
-            включая подпапки (для папок)
-          </label>
-          <button onClick={onClose} className="rounded px-3 py-1.5 text-[13px] text-vsc-muted hover:text-vsc-text">Закрыть</button>
+        <div className="border-t border-vsc-line px-4 py-3">
+          {picked.size > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1">
+              {[...picked.values()].map((p) => (
+                <button key={p.folderId} onClick={() => toggle({ id: p.folderId, name: p.name }, p.kind)}
+                  title="Убрать из выбора"
+                  className="flex items-center gap-1 rounded bg-vsc-line/60 px-2 py-0.5 text-[11px] text-vsc-text hover:bg-vsc-hover">
+                  {p.kind === "file" ? <FileText size={11} /> : <Folder size={11} />}
+                  <span className="max-w-40 truncate">{p.name}</span>
+                  <span className="text-vsc-muted">×</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-[12px] text-vsc-muted">
+              <input type="checkbox" checked={recursive} onChange={(e) => setRecursive(e.target.checked)} />
+              включая подпапки (для папок)
+            </label>
+            <div className="flex items-center gap-2">
+              <button onClick={onClose} className="rounded px-3 py-1.5 text-[13px] text-vsc-muted hover:text-vsc-text">Закрыть</button>
+              <button onClick={submit} disabled={!picked.size || saving}
+                className="rounded bg-vsc-accent px-3 py-1.5 text-[13px] text-white hover:opacity-90 disabled:opacity-50">
+                {saving ? "Добавляю…" : `Добавить${picked.size ? ` (${picked.size})` : ""}`}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
