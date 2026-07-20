@@ -63,7 +63,8 @@ export type BrainData = z.infer<typeof brainData>;
  * проиндексированные файлы Google Drive (имена + выжимки текста).
  * Новости / тренды GitHub / музыка сюда НЕ входят — это не личные данные.
  */
-export async function collectBrainContext(): Promise<{ context: string; sources: string[] }> {
+export async function collectBrainContext(mode: Mode = "balanced"): Promise<{ context: string; sources: string[] }> {
+  const modeSpec = MODE_SPEC[mode];
   const parts: string[] = [];
   const sources: string[] = [];
   const add = (title: string, body: string, src: string) => {
@@ -157,7 +158,7 @@ export async function collectBrainContext(): Promise<{ context: string; sources:
   } catch { /* skip */ }
 
   try {
-    const drive = await driveBrainContext(60);
+    const drive = await driveBrainContext(modeSpec.driveFiles, modeSpec.driveChars);
     if (drive) {
       parts.push(drive);
       sources.push("Google Drive");
@@ -196,7 +197,7 @@ export function buildBrainPrompt(context: string, mode: Mode = "balanced"): stri
     IMPORTANCE_RUBRIC,
     "",
     "- Категории: предпочитай базовые work|project|idea|people|finance|learn|life|other. Если сущность явно не влезает — придумай СВОЮ короткую категорию (одно слово латиницей, напр. health, travel) и используй её последовательно для похожих узлов.",
-    "- source.panel — одна из: tasks, notes, calendar, mail, telegram, notion, bitrix, projects, subscriptions, news, other; source.ref — заголовок/название исходной записи.",
+    "- source.panel — одна из: tasks, notes, calendar, mail, telegram, notion, bitrix, drive, projects, subscriptions, news, other; source.ref — заголовок/название исходной записи.",
     `- РЁБРА ОБЯЗАТЕЛЬНЫ: ${spec.edges} (проект ↔ его задачи, человек ↔ переписка, подписка ↔ инструмент, тема ↔ заметка). Пустой массив edges — это ошибка. Не оставляй изолированных узлов. label ребра — краткая суть связи.`,
     "- id — короткие slug-строки латиницей (n1, n2 … или осмысленные).",
     "",
@@ -310,7 +311,7 @@ export function buildBrainAugmentPrompt(shortcuts: string, context: string, mode
     "",
     "Требования:",
     `- Верни только новые узлы (${spec.delta}). НЕ повторяй и НЕ пересказывай существующие: если сущность уже есть в шорткатах (даже под чуть другим названием) — не добавляй её.`,
-    "- Каждый новый узел: короткий label, категория, importance 1–5, summary в 1–2 предложения, source (panel: tasks|notes|calendar|mail|telegram|notion|bitrix|projects|subscriptions|news|other, ref: заголовок записи).",
+    "- Каждый новый узел: короткий label, категория, importance 1–5, summary в 1–2 предложения, source (panel: tasks|notes|calendar|mail|telegram|notion|bitrix|drive|projects|subscriptions|news|other, ref: заголовок записи).",
     mode === "free"
       ? "- Шум (рассылки, промо, уведомления) заводить можно, но строго importance 1–2 — он должен осесть в фоне графа."
       : "- НЕ ЗАВОДИ УЗЛЫ ДЛЯ ШУМА: рассылки, промо, уведомления сервисов, одноразовые письма, случайные сообщения без темы. Если сущность живёт один день и ни с чем не связана — её не надо. Лучше вернуть 2 сильных узла, чем 12 мусорных.",
@@ -447,7 +448,7 @@ export async function searchBrain(query: string, limit = 10): Promise<string> {
 /** Полная генерация графа из всех источников (без сохранения). */
 export async function generateBrainData(mode: Mode = "balanced"): Promise<{ data: BrainData; sources: string[] }> {
   const spec = MODE_SPEC[mode];
-  const { context, sources } = await collectBrainContext();
+  const { context, sources } = await collectBrainContext(mode);
   const answer = await askAI(buildBrainPrompt(context, mode), {
     temperature: spec.temperature,
     maxTokens: spec.maxTokens,
@@ -494,7 +495,7 @@ export async function augmentLatestBrain(mode: Mode = "balanced"): Promise<Augme
   if (!snapshot || !snapshot.data.nodes.length) {
     return { skipped: "нет снапшота — сначала собери мозг полностью", added: 0, edges: 0, labels: [] };
   }
-  const { context } = await collectBrainContext();
+  const { context } = await collectBrainContext(mode);
   const answer = await askAI(buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context, mode), {
     // Дельта короче полной сборки — половины бюджета режима хватает.
     temperature: Math.max(0.2, spec.temperature - 0.1),
@@ -526,7 +527,7 @@ export async function expandBrainCategory(category: string, mode: Mode = "balanc
   if (!targets.length) {
     return { skipped: `в мозге нет узлов категории/темы «${category}»`, added: 0, edges: 0, labels: [] };
   }
-  const { context } = await collectBrainContext();
+  const { context } = await collectBrainContext(mode);
   const prompt = [
     `Ты ДЕТАЛИЗИРУЕШЬ часть «второго мозга» — узлы категории/темы «${category}».`,
     "",

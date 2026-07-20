@@ -41,6 +41,9 @@ export interface ModeSpec {
   temperature: number;
   /** Свободному режиму нужен запас на длинный JSON. */
   maxTokens: number;
+  /** Сколько файлов Drive класть в контекст и по сколько символов из каждого. */
+  driveFiles: number;
+  driveChars: number;
 }
 
 export const MODE_SPEC: Record<BrainMode, ModeSpec> = {
@@ -55,6 +58,8 @@ export const MODE_SPEC: Record<BrainMode, ModeSpec> = {
     edges: "Связывай только там, где связь реальна и очевидна: примерно 1–1.5 ребра на узел.",
     temperature: 0.2,
     maxTokens: 4000,
+    driveFiles: 30,
+    driveChars: 400,
   },
   balanced: {
     full: "12–40 узлов",
@@ -66,6 +71,8 @@ export const MODE_SPEC: Record<BrainMode, ModeSpec> = {
     edges: "Примерно 1–2 ребра на узел.",
     temperature: 0.4,
     maxTokens: 6000,
+    driveFiles: 80,
+    driveChars: 700,
   },
   free: {
     full: "40–120 узлов",
@@ -79,6 +86,8 @@ export const MODE_SPEC: Record<BrainMode, ModeSpec> = {
     edges: "Связывай густо: 2–3 ребра на узел, включая неочевидные ассоциации между темами.",
     temperature: 0.6,
     maxTokens: 12000,
+    driveFiles: 250,
+    driveChars: 1500,
   },
 };
 

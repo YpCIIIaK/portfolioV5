@@ -640,21 +640,33 @@ export async function readDriveFile(fileId: string): Promise<{ name: string; tex
  * The assistant's own context stays filenames-only (see driveContext) — it can
  * always call read_drive_file when it needs the body.
  */
-export async function driveBrainContext(limit = 60): Promise<string> {
+export async function driveBrainContext(limit = 60, chars = 500): Promise<string> {
   if (!supabaseConfigured()) return "";
   try {
     const sources = await listSources();
     if (!sources.length) return "";
+    // Файлы с текстом идут первыми: пустая выжимка даёт модели только имя,
+    // а места в контексте занимает столько же.
     const files = await sbSelect<DriveIndexRow>(
       "ws_drive_index",
-      `${INDEX_FIELDS}&order=modified_time.desc.nullslast&limit=${limit}`,
+      `${INDEX_FIELDS}&excerpt=neq.&order=modified_time.desc.nullslast&limit=${limit}`,
     );
-    if (!files.length) return "";
-    const lines = files.map((f) => {
-      const body = f.excerpt ? `: ${f.excerpt.replace(/\s+/g, " ").slice(0, 500)}` : "";
-      return `- ${f.name}${body}`;
-    });
-    return `GOOGLE DRIVE (папки: ${sources.map((s) => s.name).join(", ")}):\n${lines.join("\n")}`;
+    // Сколько ещё ждёт скачивания текста — без этого «мозг мало берёт с диска»
+    // выглядит как баг, хотя индекс просто не дособран.
+    const pending = await sbSelect<{ id: string }>(
+      "ws_drive_index",
+      "select=id&needs_text=is.true&limit=1000",
+    );
+
+    if (!files.length) {
+      return pending.length
+        ? `GOOGLE DRIVE: индекс ещё собирается, текст скачан для 0 файлов (в очереди ${pending.length}). Файлы не учитывай.`
+        : "";
+    }
+
+    const lines = files.map((f) => `- ${f.name}: ${f.excerpt.replace(/\s+/g, " ").slice(0, chars)}`);
+    const tail = pending.length ? ` — ещё ${pending.length} файлов ждут индексации текста` : "";
+    return `GOOGLE DRIVE (папки: ${sources.map((s) => s.name).join(", ")}; файлов с текстом: ${files.length}${tail}):\n${lines.join("\n")}`;
   } catch {
     return "";
   }

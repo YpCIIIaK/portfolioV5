@@ -94,6 +94,7 @@ const SOURCE_FILE: Record<string, string> = {
   telegram: "workspace/telegram.tsx",
   notion: "workspace/notion.tsx",
   bitrix: "workspace/bitrix.tsx",
+  drive: "workspace/drive.tsx",
   projects: "workspace/projects.tsx",
   subscriptions: "workspace/subscriptions.tsx",
   news: "workspace/news.tsx",
