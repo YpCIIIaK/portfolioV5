@@ -46,6 +46,12 @@ export interface ModeSpec {
   driveChars: number;
   /** Потолок всего контекста в символах (~4 симв. на токен). */
   contextChars: number;
+  /**
+   * Доля бюджета контекста, гарантированная Диску (0–1). Без неё бюджет делился
+   * поровну между разделами, и Диск на сотню файлов получал столько же, сколько
+   * заметки на две записи, — то есть срезался почти целиком.
+   */
+  driveShare: number;
 }
 
 export const MODE_SPEC: Record<BrainMode, ModeSpec> = {
@@ -63,6 +69,7 @@ export const MODE_SPEC: Record<BrainMode, ModeSpec> = {
     driveFiles: 30,
     driveChars: 400,
     contextChars: 60000,
+    driveShare: 0.3,
   },
   balanced: {
     full: "12–40 узлов",
@@ -76,7 +83,8 @@ export const MODE_SPEC: Record<BrainMode, ModeSpec> = {
     maxTokens: 6000,
     driveFiles: 80,
     driveChars: 700,
-    contextChars: 120000,
+    contextChars: 160000,
+    driveShare: 0.45,
   },
   free: {
     full: "40–120 узлов",
@@ -89,10 +97,13 @@ export const MODE_SPEC: Record<BrainMode, ModeSpec> = {
       "Лучше лишний узел, чем потерянный факт.",
     edges: "Связывай густо: 2–3 ребра на узел, включая неочевидные ассоциации между темами.",
     temperature: 0.6,
-    maxTokens: 12000,
-    driveFiles: 250,
-    driveChars: 1500,
-    contextChars: 240000,
+    maxTokens: 24000,
+    // Свободный режим упирается не в деньги, а в качество картины: лучше
+    // отдать модели весь диск целиком, чем экономить символы.
+    driveFiles: 1000,
+    driveChars: 6000,
+    contextChars: 900000,
+    driveShare: 0.7,
   },
 };
 

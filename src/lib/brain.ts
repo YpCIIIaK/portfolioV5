@@ -67,6 +67,8 @@ export async function collectBrainContext(mode: Mode = "balanced"): Promise<{ co
   const modeSpec = MODE_SPEC[mode];
   const parts: string[] = [];
   const sources: string[] = [];
+  // Индекс раздела с Диском в parts — ему полагается отдельная доля бюджета.
+  let driveIndex = -1;
   const add = (title: string, body: string, src: string) => {
     if (body) { parts.push(`${title}:\n${body}`); sources.push(src); }
   };
@@ -77,11 +79,11 @@ export async function collectBrainContext(mode: Mode = "balanced"): Promise<{ co
   try {
     const drive = await driveBrainContext(modeSpec.driveFiles, modeSpec.driveChars);
     if (drive) {
-      parts.push(drive);
+      driveIndex = parts.push(drive) - 1;
       sources.push("Google Drive");
     }
   } catch (e) {
-    parts.push(`GOOGLE DRIVE: ошибка чтения — ${(e as Error).message.slice(0, 200)}`);
+    driveIndex = parts.push(`GOOGLE DRIVE: ошибка чтения — ${(e as Error).message.slice(0, 200)}`) - 1;
   }
 
   if (supabaseConfigured()) {
@@ -173,35 +175,44 @@ export async function collectBrainContext(mode: Mode = "balanced"): Promise<{ co
   // Общий потолок. Раньше его не было вовсе: контекст мог вырасти до сотен
   // тысяч символов, и обрезал его уже провайдер — с конца и молча. Режем сами,
   // с хвоста каждого раздела, чтобы ни один источник не пропал целиком.
-  const context = capContext(parts, modeSpec.contextChars);
+  const context = capContext(parts, modeSpec.contextChars, driveIndex, modeSpec.driveShare);
   return { context, sources };
 }
 
-/**
- * Ужать разделы под общий лимит. Урезаем пропорционально: раздел, влезающий в
- * свою долю, остаётся целым, остальные обрезаются по границе строки, чтобы не
- * рвать запись посередине.
- */
-function capContext(parts: string[], limit: number): string {
-  const joined = parts.join("\n\n");
-  if (joined.length <= limit) return joined;
+/** Обрезать раздел по границе строки, чтобы не рвать запись посередине. */
+function trimPart(p: string, budget: number): string {
+  if (p.length <= budget) return p;
+  const cut = p.slice(0, budget);
+  const lastBreak = cut.lastIndexOf("\n");
+  const body = lastBreak > budget * 0.5 ? cut.slice(0, lastBreak) : cut;
+  return `${body}\n… (раздел обрезан по лимиту контекста)`;
+}
 
-  const share = Math.floor(limit / Math.max(1, parts.length));
-  // Сначала соберём излишек с тех, кто меньше своей доли, и раздадим остальным.
-  const small = parts.filter((p) => p.length <= share);
+/**
+ * Ужать разделы под общий лимит. Диску выделяется отдельная доля (driveShare):
+ * раньше бюджет делился поровну по числу разделов, и Диск на сотню файлов
+ * получал столько же, сколько заметки на две записи, — при десятке источников
+ * от него оставались считанные проценты. Всё, что Диск не выбрал из своей доли,
+ * возвращается остальным, и наоборот.
+ */
+function capContext(parts: string[], limit: number, driveIndex: number, driveShare: number): string {
+  if (parts.join("\n\n").length <= limit) return parts.join("\n\n");
+
+  const rest = parts.filter((_, i) => i !== driveIndex);
+  const drive = driveIndex >= 0 ? parts[driveIndex] : "";
+
+  // Диск берёт свою долю, но не больше, чем занимает на самом деле.
+  const driveBudget = driveIndex >= 0 ? Math.min(drive.length, Math.floor(limit * driveShare)) : 0;
+  const restBudget = limit - driveBudget;
+
+  const share = Math.floor(restBudget / Math.max(1, rest.length));
+  const small = rest.filter((p) => p.length <= share);
   const surplus = small.reduce((n, p) => n + (share - p.length), 0);
-  const bigCount = parts.length - small.length;
+  const bigCount = rest.length - small.length;
   const bigShare = share + (bigCount ? Math.floor(surplus / bigCount) : 0);
 
-  return parts
-    .map((p) => {
-      if (p.length <= bigShare) return p;
-      const cut = p.slice(0, bigShare);
-      const lastBreak = cut.lastIndexOf("\n");
-      const body = lastBreak > bigShare * 0.5 ? cut.slice(0, lastBreak) : cut;
-      return `${body}\n… (раздел обрезан по лимиту контекста)`;
-    })
-    .join("\n\n");
+  const trimmed = parts.map((p, i) => (i === driveIndex ? trimPart(p, driveBudget) : trimPart(p, bigShare)));
+  return trimmed.join("\n\n");
 }
 
 /**
