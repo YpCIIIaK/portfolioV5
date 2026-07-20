@@ -137,6 +137,7 @@ export function DrivePanel() {
 function DriveConnected({ status, tab, setTab, onChange }: { status: Status; tab: Tab; setTab: (t: Tab) => void; onChange: () => void }) {
   const [error, setError] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [note, setNote] = useState("");
 
   async function disconnect() {
     if (!confirm("Отключить Google Drive? Индекс и выбранные папки будут удалены. Файлы на Диске не тронутся.")) return;
@@ -149,13 +150,18 @@ function DriveConnected({ status, tab, setTab, onChange }: { status: Status; tab
   async function sync() {
     setSyncing(true);
     setError("");
+    setNote("");
     try {
       const res = await fetch("/api/google/sync", { method: "POST" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      const results: { source: string; error?: string; pending?: number }[] = json.results ?? [];
       // A source can fail on its own without failing the run — surface that.
-      const failed = (json.results ?? []).filter((r: { error?: string }) => r.error);
-      if (failed.length) setError(failed.map((r: { source: string; error: string }) => `${r.source}: ${r.error}`).join("; "));
+      const failed = results.filter((r) => r.error);
+      if (failed.length) setError(failed.map((r) => `${r.source}: ${r.error}`).join("; "));
+      // Excerpts are time-boxed: a big folder needs several runs to finish.
+      const pending = results.reduce((n, r) => n + (r.pending ?? 0), 0);
+      if (pending) setNote(`Осталось дочитать ${pending} файлов — нажми «Синхронизировать» ещё раз.`);
       invalidate("drive:status");
       invalidate("drive:files");
       onChange();
@@ -210,6 +216,7 @@ function DriveConnected({ status, tab, setTab, onChange }: { status: Status; tab
       </div>
 
       {error && <p className="mb-3 text-[13px] text-vsc-yellow">{error}</p>}
+      {note && <p className="mb-3 text-[13px] text-vsc-muted">{note}</p>}
       {tab === "files" && <FilesTab sources={status.sources} onError={setError} />}
       {tab === "folders" && <FoldersTab sources={status.sources} onChange={onChange} onError={setError} />}
     </div>

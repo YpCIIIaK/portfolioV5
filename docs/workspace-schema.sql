@@ -207,8 +207,15 @@ create table if not exists public.ws_drive_index (
   excerpt       text not null default '',
   synced_at     timestamptz not null default now()
 );
+-- Excerpts are fetched one HTTP request per file, so a big folder can't finish
+-- them in a single run. Metadata lands immediately; `needs_text` marks what
+-- still owes a download, and each sync drains the queue under a time budget.
+alter table public.ws_drive_index add column if not exists needs_text boolean not null default true;
+
 create unique index if not exists ws_drive_index_file_idx
   on public.ws_drive_index (source_id, file_id);
+create index if not exists ws_drive_index_needs_text_idx
+  on public.ws_drive_index (source_id) where needs_text;
 create index if not exists ws_drive_index_modified_idx
   on public.ws_drive_index (modified_time desc);
 alter table public.ws_drive_index enable row level security;

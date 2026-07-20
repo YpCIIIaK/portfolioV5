@@ -23,6 +23,19 @@ const SCOPES = ["https://www.googleapis.com/auth/drive.readonly"];
 
 export const FOLDER_MIME = "application/vnd.google-apps.folder";
 
+/** Ceiling per attached folder. Metadata for this many files is cheap (~15 API
+ *  calls per 3k); the text excerpts are what cost time, so they're backfilled
+ *  across runs rather than downloaded in one go. */
+export const MAX_FILES_PER_SOURCE = 3000;
+
+/** How long one sync run may spend fetching excerpts before it stops and leaves
+ *  the rest for the next run. Comfortably under the route's maxDuration=300. */
+const TEXT_BUDGET_MS = 200_000;
+
+/** Parallel excerpt downloads. Drive tolerates this easily and it turns a
+ *  multi-hour serial crawl into something that finishes. */
+const TEXT_CONCURRENCY = 8;
+
 export function googleConfigured(): boolean {
   return !!CLIENT_ID && !!CLIENT_SECRET && supabaseConfigured();
 }
@@ -213,7 +226,7 @@ export async function listFolders(parent?: string): Promise<DriveFile[]> {
  *  recursion is on us; without it only the folder's own files are indexed. */
 export async function listFilesRecursive(
   folderId: string,
-  maxFiles = 500,
+  maxFiles = MAX_FILES_PER_SOURCE,
   recursive = true,
 ): Promise<DriveFile[]> {
   const out: DriveFile[] = [];
@@ -365,15 +378,34 @@ export interface DriveIndexRow {
   excerpt: string;
 }
 
+export interface SyncStats {
+  added: number;
+  updated: number;
+  removed: number;
+  skipped: number;
+  /** Excerpts fetched this run. */
+  texts: number;
+  /** Files still waiting for their text — pick them up on the next run. */
+  pending: number;
+}
+
 /**
- * Sync one source. First run walks the folder; later runs replay the changes
- * feed and only touch what moved. File bodies stay on Drive — we store an
- * excerpt (and only for text-ish files) so the assistant has something to read.
+ * Sync one source, in two phases.
+ *
+ * Phase 1 (metadata) is cheap — one Drive call per 200 files — so the index
+ * always ends up complete: every file is listed and searchable by name after a
+ * single run, even for a 3k-file folder.
+ *
+ * Phase 2 (excerpts) is the expensive half: one HTTP download per file. It runs
+ * under a wall-clock budget and marks whatever it didn't reach as `needs_text`,
+ * so the next run continues where this one stopped. That's what keeps a big
+ * folder from timing out forever without ever committing progress.
+ *
+ * First run walks the folder; later runs replay the changes feed.
  */
-export async function syncSource(
-  source: DriveSource,
-): Promise<{ added: number; updated: number; removed: number; skipped: number }> {
-  const stats = { added: 0, updated: 0, removed: 0, skipped: 0 };
+export async function syncSource(source: DriveSource): Promise<SyncStats> {
+  const startedAt = Date.now();
+  const stats: SyncStats = { added: 0, updated: 0, removed: 0, skipped: 0, texts: 0, pending: 0 };
 
   const indexed = await sbSelect<DriveIndexRow>(
     "ws_drive_index",
@@ -387,7 +419,7 @@ export async function syncSource(
   if (!source.page_token) {
     // Cold start: full walk, and pin a token so the next run is incremental.
     nextToken = await getStartPageToken();
-    files = await listFilesRecursive(source.folder_id, 500, source.recursive);
+    files = await listFilesRecursive(source.folder_id, MAX_FILES_PER_SOURCE, source.recursive);
   } else {
     const { changes, nextToken: t } = await listChanges(source.page_token);
     nextToken = t;
@@ -408,6 +440,7 @@ export async function syncSource(
     }
   }
 
+  /* -- phase 1: metadata, no downloads -- */
   for (const file of files) {
     if (file.mimeType === FOLDER_MIME) continue;
     const known = byFileId.get(file.id);
@@ -417,7 +450,6 @@ export async function syncSource(
         (!file.md5Checksum && known.modified_time === file.modifiedTime));
     if (unchanged) continue;
 
-    const excerpt = await fileText(file, 4000).catch(() => "");
     const row = {
       source_id: source.id,
       file_id: file.id,
@@ -427,7 +459,8 @@ export async function syncSource(
       md5: file.md5Checksum ?? null,
       size: file.size ? Number(file.size) : null,
       web_view_link: file.webViewLink ?? null,
-      excerpt,
+      // Binary types never get an excerpt, so don't queue them for a download.
+      needs_text: isReadable(file.mimeType),
       synced_at: new Date().toISOString(),
     };
 
@@ -438,13 +471,40 @@ export async function syncSource(
         await sbUpdate("ws_drive_index", `id=eq.${known.id}`, row);
         stats.updated++;
       } else {
-        await sbInsert("ws_drive_index", row);
+        await sbInsert("ws_drive_index", { ...row, excerpt: "" });
         stats.added++;
       }
     } catch {
       stats.skipped++;
     }
   }
+
+  /* -- phase 2: excerpts, time-boxed and resumable -- */
+  const queued = await sbSelect<DriveIndexRow & { needs_text: boolean }>(
+    "ws_drive_index",
+    `select=id,file_id,name,mime_type&source_id=eq.${source.id}&needs_text=is.true&limit=2000`,
+  );
+
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < queued.length && Date.now() - startedAt < TEXT_BUDGET_MS) {
+      const row = queued[cursor++];
+      try {
+        const excerpt = await fileText(
+          { id: row.file_id, name: row.name, mimeType: row.mime_type },
+          4000,
+        );
+        await sbUpdate("ws_drive_index", `id=eq.${row.id}`, { excerpt, needs_text: false });
+        stats.texts++;
+      } catch {
+        // Don't retry forever on a file Drive won't give us.
+        await sbUpdate("ws_drive_index", `id=eq.${row.id}`, { needs_text: false }).catch(() => {});
+        stats.skipped++;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: TEXT_CONCURRENCY }, worker));
+  stats.pending = Math.max(0, queued.length - cursor);
 
   const total = await sbSelect<{ id: string }>("ws_drive_index", `select=id&source_id=eq.${source.id}`);
   await sbUpdate("ws_drive_sources", `id=eq.${source.id}`, {
