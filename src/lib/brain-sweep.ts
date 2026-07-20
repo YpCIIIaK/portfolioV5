@@ -21,7 +21,7 @@
  */
 
 import { listAllIndexedFiles } from "@/lib/google";
-import { augmentLatestBrain, latestBrainSnapshot } from "@/lib/brain";
+import { augmentLatestBrain, latestBrainSnapshot, type BrainData } from "@/lib/brain";
 
 /**
  * Файлов в пачке. Подобрано под то, что читается ЦЕЛИКОМ: восемь документов —
@@ -50,6 +50,13 @@ export interface SweepStep {
   added: number;
   edges: number;
   labels: string[];
+  /**
+   * Граф после этой итерации. Возвращается каждый раз, чтобы панель росла на
+   * глазах: на восемнадцати итерациях смотреть десять минут в пустой холст и
+   * ждать финала — worse, чем лишние килобайты по сети. Это тот же объём, что
+   * ушёл бы на перезапрос снапшота, но без второго round-trip.
+   */
+  data?: BrainData;
   /** Заполняется, когда пачку разобрать не вышло: обход при этом НЕ прерывается. */
   error?: string;
 }
@@ -123,6 +130,7 @@ export async function sweepStep(cursor: number): Promise<SweepStep> {
       added: r.added,
       edges: r.edges,
       labels: r.labels,
+      data: r.data,
       // `skipped` — это «нечего было брать», а не сбой: показываем, но обход идёт дальше.
       error: r.skipped,
     };

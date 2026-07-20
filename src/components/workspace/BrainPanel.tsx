@@ -222,7 +222,8 @@ export function BrainPanel() {
   // Полный обход: прогресс и флаг остановки. Обход длинный (десятки итераций),
   // поэтому его должно быть видно и его должно быть можно прервать.
   const [sweep, setSweep] = useState<{
-    iteration: number; iterations: number; added: number; edges: number; batch: string[]; note: string;
+    iteration: number; iterations: number; added: number; edges: number;
+    batch: string[]; labels: string[]; note: string;
   } | null>(null);
   const sweepStop = useRef(false);
   // План чистки: показываем, что удалится, ДО удаления — снапшот один и отката нет.
@@ -790,9 +791,18 @@ export function BrainPanel() {
         // Пачка могла не задаться — это не повод ронять весь обход, но и молчать
         // о ней нельзя: в конце покажем, сколько пачек прошло мимо.
         if (step.error) problems.push(`${step.iteration}: ${step.error}`);
+        // Граф обновляем сразу — обход на два десятка итераций иначе выглядит
+        // как зависшая вкладка. Выделение НЕ сбрасываем: можно ходить по узлам,
+        // пока обход идёт. Пришедший граф — это то, что уже лежит на сервере,
+        // так что dirty не поднимаем.
+        if (step.data) {
+          setGraph(step.data);
+          setSnapshots((s) => s.map((x) => (x.id === snapshotId ? { ...x, data: step.data, updated_at: new Date().toISOString() } : x)));
+        }
         setSweep({
           iteration: step.iteration, iterations: step.iterations,
           added, edges, batch: step.batch ?? [],
+          labels: step.labels ?? [],
           note: step.error ?? "",
         });
         if (step.done) {
@@ -803,11 +813,11 @@ export function BrainPanel() {
           break;
         }
       }
-      // Граф перечитываем один раз в конце: тянуть его на каждой итерации —
-      // это десятки лишних мегабайт по сети ради промежуточных кадров.
+      // Граф уже приезжал с каждой итерацией; в конце перечитываем список
+      // снапшотов, чтобы подхватить время обновления и не разойтись с сервером.
       const rows = await wsList<BrainSnapshot>("brain");
       setSnapshots(rows);
-      if (rows.length) { setGraph(rows[0].data); setSnapshotId(rows[0].id); setDirty(false); setSelectedId(null); }
+      if (rows.length) { setGraph(rows[0].data); setSnapshotId(rows[0].id); setDirty(false); }
     } catch (e) {
       setError(`${(e as Error).message} · остановлено на файле ${cursor} из ${plan.files}`);
     } finally {
@@ -1186,7 +1196,15 @@ export function BrainPanel() {
               style={{ width: `${Math.round((sweep.iteration / Math.max(1, sweep.iterations)) * 100)}%` }}
             />
           </div>
-          <div className="truncate text-[11px] text-vsc-muted">{sweep.batch.join(", ")}</div>
+          <div className="truncate text-[11px] text-vsc-muted">Читаю: {sweep.batch.join(", ")}</div>
+          {/* Что завелось на прошлой пачке — «+6 узлов» само по себе не говорит,
+              взяла ли модель суть файла или отписалась общими словами. */}
+          {!!sweep.labels.length && (
+            <div className="mt-1 truncate text-[11px] text-vsc-text/70">
+              Завелось: {sweep.labels.slice(0, 12).join(", ")}
+              {sweep.labels.length > 12 ? ` и ещё ${sweep.labels.length - 12}` : ""}
+            </div>
+          )}
           {sweep.note && <div className="mt-1 text-[11px] text-amber-300/80">{sweep.note}</div>}
         </div>
       )}
