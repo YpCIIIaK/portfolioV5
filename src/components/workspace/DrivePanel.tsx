@@ -26,6 +26,7 @@ interface DriveFolder { id: string; name: string; parents?: string[] }
 interface PickedItem { folderId: string; name: string; kind: "folder" | "file" }
 interface IndexFile {
   id: string;
+  source_id: string;
   file_id: string;
   name: string;
   mime_type: string;
@@ -236,12 +237,17 @@ function FilesTab({ sources, version, onError }: { sources: Source[]; version: n
   const [items, setItems] = useState<IndexFile[]>(() => getCached<IndexFile[]>("drive:files") ?? []);
   const [loading, setLoading] = useState(() => !getCached("drive:files"));
   const [open, setOpen] = useState<string | null>(null);
+  // Фильтр по папке-источнику: с несколькими папками общий список мешается.
+  const [sourceId, setSourceId] = useState("");
+  const shown = sourceId ? items.filter((f) => f.source_id === sourceId) : items;
 
   const run = useCallback(async (query: string) => {
     setLoading(true);
     try {
       // An empty query returns the freshest files — cheap "recent" view.
-      const res = await fetch(`/api/google/search?q=${encodeURIComponent(query || "")}`);
+      // The limit is generous on purpose: with a small default a folder added
+      // just now sinks below the fold and looks like it never synced.
+      const res = await fetch(`/api/google/search?limit=300&q=${encodeURIComponent(query || "")}`);
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
       const list = (json.files as IndexFile[]) ?? [];
@@ -272,18 +278,30 @@ function FilesTab({ sources, version, onError }: { sources: Source[]; version: n
 
   return (
     <>
-      <form onSubmit={(e) => { e.preventDefault(); run(q); }} className="mb-3 flex gap-2">
+      <form onSubmit={(e) => { e.preventDefault(); run(q); }} className="mb-2 flex gap-2">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск по именам и содержимому…"
           className="flex-1 rounded border border-vsc-line bg-vsc-sidebar px-3 py-1.5 text-[13px] text-vsc-text outline-none focus:border-vsc-accent" />
+        <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}
+          className="rounded border border-vsc-line bg-vsc-sidebar px-2 py-1.5 text-[13px] text-vsc-text outline-none focus:border-vsc-accent">
+          <option value="">Все папки</option>
+          {sources.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
         <button type="submit" className="rounded bg-vsc-accent px-3 py-1.5 text-[13px] text-white hover:opacity-90">Найти</button>
       </form>
+      {!loading && items.length > 0 && (
+        <p className="mb-2 text-[11px] text-vsc-muted">
+          Показано: {shown.length}
+          {sourceId ? ` из ${items.length} (фильтр по папке)` : ""}
+          {" · без текста: "}{shown.filter((f) => !f.excerpt).length}
+        </p>
+      )}
       {loading ? (
         <p className="text-[13px] text-vsc-muted">Загрузка…</p>
-      ) : items.length === 0 ? (
+      ) : shown.length === 0 ? (
         <p className="text-[13px] text-vsc-muted">Ничего не найдено. Если папку подключили только что — нажми «Синхронизировать».</p>
       ) : (
         <div className="divide-y divide-vsc-line">
-          {items.map((f) => (
+          {shown.map((f) => (
             <div key={f.id} className="px-1 py-2.5 hover:bg-vsc-hover">
               <div className="flex items-center gap-3">
                 <FileText size={15} className="shrink-0 text-vsc-muted" />
