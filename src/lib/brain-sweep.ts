@@ -22,6 +22,7 @@
 
 import { listAllIndexedFiles } from "@/lib/google";
 import { augmentLatestBrain, latestBrainSnapshot, type BrainData } from "@/lib/brain";
+import { sbSelect, sbUpsert } from "@/lib/supabase";
 
 /**
  * Файлов в пачке. Подобрано под то, что читается ЦЕЛИКОМ: восемь документов —
@@ -30,12 +31,55 @@ import { augmentLatestBrain, latestBrainSnapshot, type BrainData } from "@/lib/b
  */
 const BATCH = 8;
 
+/** Что именно обходим: всё подряд или только неразобранное. */
+export type SweepScope = "all" | "new";
+
 export interface SweepPlan {
   /** Всего файлов в индексе. */
   files: number;
   /** Сколько итераций займёт обход целиком. */
   iterations: number;
+  /** Файлов, которых обход ещё не видел (или которые изменились с тех пор). */
+  newFiles: number;
+  newIterations: number;
   batch: number;
+}
+
+/**
+ * Что уже разобрано: file_id → md5 той версии, которая ушла в мозг.
+ *
+ * Сравнение по md5, а не по факту «файл встречался»: отредактированный документ
+ * — это новый материал, и он должен вернуться в очередь. Отсутствие md5 у файла
+ * (Drive не отдаёт его для Google Docs) трактуем как «версия не отслеживается»,
+ * такой файл считается разобранным навсегда — иначе каждый обход перечитывал бы
+ * все документы Google заново.
+ */
+async function loadSeen(): Promise<Map<string, string>> {
+  try {
+    const rows = await sbSelect<{ file_id: string; md5: string }>("ws_brain_seen", "select=file_id,md5&limit=5000");
+    return new Map(rows.map((r) => [r.file_id, r.md5 ?? ""]));
+  } catch {
+    // Таблицы может не быть (миграция не применена) — тогда обход просто
+    // работает как раньше, по всему Диску, а не падает.
+    return new Map();
+  }
+}
+
+async function markSeen(files: { file_id: string; md5: string | null }[]): Promise<void> {
+  await Promise.all(
+    files.map((f) =>
+      sbUpsert("ws_brain_seen", { file_id: f.file_id, md5: f.md5 ?? "", seen_at: new Date().toISOString() }, "file_id")
+        .catch(() => { /* отметка — не повод ронять обход */ }),
+    ),
+  );
+}
+
+/** Неразобранные файлы в стабильном порядке. */
+function unseenOf(
+  files: { file_id: string; name: string; md5: string | null }[],
+  seen: Map<string, string>,
+) {
+  return files.filter((f) => !seen.has(f.file_id) || seen.get(f.file_id) !== (f.md5 ?? ""));
 }
 
 export interface SweepStep {
@@ -63,8 +107,15 @@ export interface SweepStep {
 
 /** Сколько итераций займёт обход — это же число показывается до старта. */
 export async function planSweep(): Promise<SweepPlan> {
-  const files = await listAllIndexedFiles();
-  return { files: files.length, iterations: Math.ceil(files.length / BATCH), batch: BATCH };
+  const [files, seen] = await Promise.all([listAllIndexedFiles(), loadSeen()]);
+  const fresh = unseenOf(files, seen);
+  return {
+    files: files.length,
+    iterations: Math.ceil(files.length / BATCH),
+    newFiles: fresh.length,
+    newIterations: Math.ceil(fresh.length / BATCH),
+    batch: BATCH,
+  };
 }
 
 /**
@@ -101,20 +152,30 @@ async function buildCarry(processed: number, total: number): Promise<string> {
  * N секунд» — значит однажды упереться в таймаут посреди запроса к модели и
  * потерять и пачку, и деньги за неё, не сдвинув курсор.
  */
-export async function sweepStep(cursor: number): Promise<SweepStep> {
-  const files = await listAllIndexedFiles();
-  const total = files.length;
+export async function sweepStep(cursor: number, scope: SweepScope = "all"): Promise<SweepStep> {
+  const [all, seen] = await Promise.all([listAllIndexedFiles(), loadSeen()]);
+
+  // В режиме «только новое» курсор не нужен и был бы вреден: очередь тает по
+  // ходу обхода (разобранное уходит в ws_brain_seen), и любой сохранённый
+  // индекс в неё уже не попадает. Поэтому всегда берём голову очереди.
+  const pool = scope === "new" ? unseenOf(all, seen) : all;
+  const total = pool.length;
   const iterations = Math.ceil(total / BATCH);
-  const from = Math.max(0, Math.min(cursor, total));
+  const from = scope === "new" ? 0 : Math.max(0, Math.min(cursor, total));
 
   const base = { files: total, iterations, iteration: Math.floor(from / BATCH) + 1 };
   if (from >= total) {
     return { ...base, done: true, cursor: total, batch: [], added: 0, edges: 0, labels: [] };
   }
 
-  const slice = files.slice(from, from + BATCH);
+  const slice = pool.slice(from, from + BATCH);
   const next = from + slice.length;
-  const carry = await buildCarry(from, total);
+  const carry = await buildCarry(scope === "new" ? all.length - total : from, all.length);
+  const names = slice.map((f) => f.name);
+  // Отмечаем ДО разбора и независимо от его исхода — по той же причине, по
+  // которой двигается курсор: файл, на котором спотыкается модель или Drive,
+  // иначе встаёт стеной и очередь «только новое» не сдвинется никогда.
+  await markSeen(slice);
 
   try {
     const r = await augmentLatestBrain("total", {
@@ -126,7 +187,7 @@ export async function sweepStep(cursor: number): Promise<SweepStep> {
       ...base,
       done: next >= total,
       cursor: next,
-      batch: slice.map((f) => f.name),
+      batch: names,
       added: r.added,
       edges: r.edges,
       labels: r.labels,
@@ -135,13 +196,11 @@ export async function sweepStep(cursor: number): Promise<SweepStep> {
       error: r.skipped,
     };
   } catch (e) {
-    // Курсор двигаем ДАЖЕ при ошибке. Иначе один файл, на котором спотыкается
-    // модель или Drive, встаёт стеной и обход в него утыкается бесконечно.
     return {
       ...base,
       done: next >= total,
       cursor: next,
-      batch: slice.map((f) => f.name),
+      batch: names,
       added: 0,
       edges: 0,
       labels: [],

@@ -636,11 +636,13 @@ export async function searchDrive(query: string, limit = 20): Promise<DriveIndex
  * file is touched mid-sweep, and the cursor would silently skip or repeat
  * files. `file_id` never changes.
  */
-export async function listAllIndexedFiles(): Promise<{ file_id: string; name: string }[]> {
+export async function listAllIndexedFiles(): Promise<{ file_id: string; name: string; md5: string | null }[]> {
   if (!supabaseConfigured()) return [];
-  return sbSelect<{ file_id: string; name: string }>(
+  // md5 нужен, чтобы отличить «файл уже разобран» от «файл разобран, но с тех
+  // пор изменился»: второй должен вернуться в очередь обхода.
+  return sbSelect<{ file_id: string; name: string; md5: string | null }>(
     "ws_drive_index",
-    "select=file_id,name&order=file_id.asc&limit=5000",
+    "select=file_id,name,md5&order=file_id.asc&limit=5000",
   );
 }
 

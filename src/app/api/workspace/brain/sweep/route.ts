@@ -41,11 +41,12 @@ export async function POST(req: Request) {
   const bad = await guard();
   if (bad) return bad;
 
-  const body = (await req.json().catch(() => ({}))) as { cursor?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { cursor?: unknown; scope?: unknown };
   const cursor = typeof body.cursor === "number" && Number.isFinite(body.cursor) ? Math.max(0, Math.floor(body.cursor)) : 0;
+  const scope = body.scope === "new" ? "new" : "all";
 
   try {
-    return NextResponse.json(await sweepStep(cursor));
+    return NextResponse.json(await sweepStep(cursor, scope));
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }

@@ -379,3 +379,19 @@ create unique index if not exists ws_brain_blocklist_pattern_idx
 
 alter table ws_brain_blocklist enable row level security;
 -- Политик нет намеренно: anon-ключ доступа не получает, сервер ходит под service_role.
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Разобранные полным обходом файлы Диска.
+--
+-- Без этой отметки «Дополнить» после обхода перечитывал бы весь Диск заново:
+-- сотню файлов целиком, каждый раз, ради двух новых. Здесь помнится, какая
+-- ВЕРСИЯ файла уже ушла в мозг — по md5, поэтому изменённый файл сам вернётся
+-- в очередь, а нетронутый больше не читается.
+create table if not exists ws_brain_seen (
+  file_id text primary key,
+  md5     text not null default '',
+  seen_at timestamptz not null default now()
+);
+
+alter table ws_brain_seen enable row level security;
+-- Политик нет намеренно: anon-ключ доступа не получает, сервер ходит под service_role.

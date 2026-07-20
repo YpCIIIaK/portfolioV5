@@ -449,10 +449,25 @@ export function BrainPanel() {
         }
       }
 
-      // На отдалении линий в кадре втрое больше, и они сливаются в серую сетку,
-      // которая забивает сами узлы. Гасим их тем сильнее, чем дальше отъехали:
-      // на общем плане важна форма графа, а не каждая отдельная связь.
-      // Выделенные не трогаем — иначе теряется смысл клика по узлу издалека.
+      /* ---- детализация по зуму (LOD) ---------------------------------------
+       *
+       * Каша возникает на ОБОИХ концах зума, и по разным причинам.
+       *
+       * Далеко: в кадре весь граф, подписи наезжают друг на друга, линии
+       * сливаются в серую сетку. Нужен силуэт — опоры и форма долей, без текста.
+       *
+       * Близко: ты зашёл внутрь кластера смотреть детали, а опорный узел со
+       * своим десятком связей продолжает перечёркивать кадр и подписываться
+       * крупным шрифтом. На этом масштабе он уже не ориентир — ориентир тут
+       * мелочь, ради которой и приближались. Поэтому тяжёлые гасим зеркально.
+       *
+       * `far` 0→1: 0 — максимальное отдаление. `deep` 0→1: 1 — упёрлись вплотную.
+       */
+      const far = Math.min(1, Math.max(0, (scale - 0.42) / 0.28));
+      const deep = Math.min(1, Math.max(0, (scale - 1.45) / 0.75));
+
+      // Линии на отдалении гасим целиком: на общем плане важна форма графа, а не
+      // каждая связь. Выделенные не трогаем — иначе теряется смысл клика издалека.
       const zoomFade = Math.min(1, Math.max(0.22, (scale - 0.28) / 0.62));
 
       for (const e of g.edges) {
@@ -462,9 +477,14 @@ export function BrainPanel() {
         // Связь весит столько же, сколько её более лёгкий конец: линия между
         // двумя мусорными узлами не должна чертить холст наравне с опорной.
         const ew = Math.min(wmap.get(e.from) ?? 0.5, wmap.get(e.to) ?? 0.5);
+        // Вблизи убираем «лучи» опорных узлов: их у хаба десятки, и они
+        // перечёркивают ровно то, ради чего приближались. Смотрим по ТЯЖЁЛОМУ
+        // концу — именно он разводит лучи веером через весь кадр.
+        const heavyEnd = Math.max(wmap.get(e.from) ?? 0.5, wmap.get(e.to) ?? 0.5);
+        const deepFade = heavyEnd >= 0.78 ? 1 - deep * 0.8 : 1;
         ctx.strokeStyle = active
           ? "rgba(79,193,255,0.75)"
-          : `rgba(140,140,150,${((0.08 + ew * 0.26) * zoomFade).toFixed(3)})`;
+          : `rgba(140,140,150,${((0.08 + ew * 0.26) * zoomFade * deepFade).toFixed(3)})`;
         ctx.lineWidth = active ? 1.6 : 0.6 + ew * 0.9;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
@@ -524,11 +544,25 @@ export function BrainPanel() {
         // Подписи — главный источник каши. Мелочь подписываем только под
         // курсором / в выделении / в поиске, иначе холст забивается текстом.
         if (focused || (nw >= NOISE && !dim)) {
-          ctx.globalAlpha = dim ? 0.3 : focused ? 1 : 0.45 + nw * 0.55;
-          ctx.fillStyle = "rgba(225,225,235,0.95)";
-          ctx.font = `${nw >= 0.78 ? "600 12" : nw >= 0.5 ? "11" : "10"}px system-ui, sans-serif`;
-          ctx.textAlign = "center";
-          ctx.fillText(n.label.slice(0, nw >= 0.5 ? 32 : 20), b.x, b.y + r + 12);
+          let la = dim ? 0.3 : focused ? 1 : 0.45 + nw * 0.55;
+          // Наведённое и найденное показываем всегда: LOD убирает лишнее, но не
+          // должен прятать то, на что человек прямо сейчас смотрит.
+          if (!focused) {
+            // Далеко — подписаны только опоры, остальное молчит: получается
+            // силуэт графа, а не сплошной текст.
+            if (nw < 0.8) la *= far;
+            // Близко — наоборот, замолкают опоры: их название и так известно,
+            // а место на экране нужно деталям.
+            if (nw >= 0.78) la *= 1 - deep * 0.9;
+          }
+          // Ниже этого порога буквы уже нечитаемы и работают как грязь.
+          if (la > 0.05) {
+            ctx.globalAlpha = la;
+            ctx.fillStyle = "rgba(225,225,235,0.95)";
+            ctx.font = `${nw >= 0.78 ? "600 12" : nw >= 0.5 ? "11" : "10"}px system-ui, sans-serif`;
+            ctx.textAlign = "center";
+            ctx.fillText(n.label.slice(0, nw >= 0.5 ? 32 : 20), b.x, b.y + r + 12);
+          }
         }
         ctx.globalAlpha = 1;
       }
@@ -758,7 +792,7 @@ export function BrainPanel() {
    */
   const runSweep = async () => {
     setError(""); setInfo(""); setAddedLabels([]);
-    let plan: { files: number; iterations: number };
+    let plan: { files: number; iterations: number; newFiles: number; newIterations: number };
     try {
       const res = await fetch("/api/workspace/brain/sweep");
       plan = await res.json();
@@ -768,12 +802,30 @@ export function BrainPanel() {
       return;
     }
     if (!plan.files) { setError("В индексе Диска нет файлов — подключи папки и дождись синка."); return; }
-    // Обход платный и долгий: сорок итераций не должны стартовать молча.
-    if (!confirm(`Прочитать все ${plan.files} файлов Диска целиком? Это ${plan.iterations} итераций и займёт время.`)) return;
+
+    // Уже разобранное не перечитываем: после полного обхода «дополнить» — это
+    // несколько новых файлов, а не сотня старых по второму разу. Полный проход
+    // остаётся доступен явным отказом — он нужен, когда сменилась модель или
+    // хочется пересобрать картину с нуля.
+    const partial = plan.newFiles > 0 && plan.newFiles < plan.files;
+    let scope: "all" | "new" = "all";
+    if (partial) {
+      scope = confirm(
+        `Новых или изменённых файлов: ${plan.newFiles} (${plan.newIterations} итер.).\n\n` +
+        `ОК — прочитать только их.\nОтмена — перечитать все ${plan.files} заново (${plan.iterations} итер.).`,
+      ) ? "new" : "all";
+    } else if (plan.newFiles === 0) {
+      // Всё разобрано — молча перечитывать сотню файлов было бы неожиданно дорого.
+      if (!confirm(`Все ${plan.files} файлов уже разобраны. Перечитать заново? Это ${plan.iterations} итераций.`)) return;
+    } else if (!confirm(`Прочитать все ${plan.files} файлов Диска целиком? Это ${plan.iterations} итераций и займёт время.`)) {
+      return;
+    }
+
+    const planned = scope === "new" ? plan.newIterations : plan.iterations;
 
     sweepStop.current = false;
     setBusy("sweep");
-    let cursor = 0, added = 0, edges = 0;
+    let cursor = 0, added = 0, edges = 0, step_i = 0;
     const problems: string[] = [];
     try {
       for (;;) {
@@ -781,11 +833,14 @@ export function BrainPanel() {
         const res = await fetch("/api/workspace/brain/sweep", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cursor }),
+          body: JSON.stringify({ cursor, scope }),
         });
         const step = await res.json();
         if (!res.ok) throw new Error(step.error || `HTTP ${res.status}`);
         cursor = step.cursor;
+        // Номер итерации считаем сами: в режиме «только новое» очередь на сервере
+        // тает по ходу обхода, и его собственный счётчик всегда показывал бы 1.
+        step_i++;
         added += step.added ?? 0;
         edges += step.edges ?? 0;
         // Пачка могла не задаться — это не повод ронять весь обход, но и молчать
@@ -800,14 +855,14 @@ export function BrainPanel() {
           setSnapshots((s) => s.map((x) => (x.id === snapshotId ? { ...x, data: step.data, updated_at: new Date().toISOString() } : x)));
         }
         setSweep({
-          iteration: step.iteration, iterations: step.iterations,
+          iteration: step_i, iterations: Math.max(planned, step_i),
           added, edges, batch: step.batch ?? [],
           labels: step.labels ?? [],
           note: step.error ?? "",
         });
         if (step.done) {
           setInfo(
-            `Обход завершён: ${plan.files} файлов, +${added} узл., +${edges} связ.` +
+            `Обход завершён: ${scope === "new" ? plan.newFiles : plan.files} файлов, +${added} узл., +${edges} связ.` +
             (problems.length ? ` Пачек с ошибкой: ${problems.length}.` : ""),
           );
           break;
@@ -819,7 +874,9 @@ export function BrainPanel() {
       setSnapshots(rows);
       if (rows.length) { setGraph(rows[0].data); setSnapshotId(rows[0].id); setDirty(false); }
     } catch (e) {
-      setError(`${(e as Error).message} · остановлено на файле ${cursor} из ${plan.files}`);
+      // Разобранное уже отмечено на сервере, поэтому повторный запуск продолжит
+      // с этого места — об этом стоит сказать, иначе выглядит как потеря работы.
+      setError(`${(e as Error).message} · прервано на итерации ${step_i}, разобранное сохранено — запусти обход ещё раз`);
     } finally {
       setBusy("");
       setSweep(null);
