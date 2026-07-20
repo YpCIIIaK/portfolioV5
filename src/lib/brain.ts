@@ -512,14 +512,14 @@ export function buildBrainAugmentPrompt(
     "",
     ...(picked
       ? [
-          "ВАЖНО: пользователь выбрал эти файлы ВРУЧНУЮ и ждёт, что ты разберёшь именно их.",
-          "Не отмахивайся оценкой «незначимо»: раз файл выбран — он значим. Вытащи из него конкретику:",
+          "ВАЖНО: пользователь выбрал эти материалы ВРУЧНУЮ и ждёт, что ты разберёшь именно их.",
+          "Не отмахивайся оценкой «незначимо»: раз выбрано — значимо. Вытащи из каждого конкретику:",
           "сущности, инструменты, методики, промпты, формулы, имена, решения — и заведи узлы на них.",
           "Вернуть пустую дельту здесь можно ТОЛЬКО если всё содержимое уже есть в шорткатах.",
           "",
         ]
       : []),
-    picked ? "ВЫБРАННЫЕ ФАЙЛЫ (полный текст):" : "СВЕЖИЕ ДАННЫЕ:",
+    picked ? "ВЫБРАННОЕ (полный текст):" : "СВЕЖИЕ ДАННЫЕ:",
     context || "(источники пусты)",
   ].join("\n");
 }
@@ -715,24 +715,76 @@ ${file.text}`);
 }
 
 /**
+ * Контекст из конкретных проектов — вторая половина точечного дополнения.
+ *
+ * В общем проходе проекты идут списком по 300 символов описания, и импортированное
+ * с гитхаба (где описание — это фактически README) обрезается до первого абзаца.
+ * Здесь описание берётся целиком.
+ */
+async function pickedProjectsContext(ids: string[]): Promise<{ context: string; sources: string[] }> {
+  const parts: string[] = [];
+  const sources: string[] = [];
+  if (!ids.length) return { context: "", sources };
+
+  try {
+    const list = await sbSelect<{ id: string; title: string; description: string; tags: string; repo_url: string | null }>(
+      "ws_projects",
+      // in.(…) вместо запроса на каждый id — один round-trip. Кавычки внутри id
+      // невозможны (uuid), но encodeURIComponent всё равно обязателен для скобок.
+      `select=id,title,description,tags,repo_url&id=in.(${encodeURIComponent(ids.slice(0, 20).join(","))})`,
+    );
+    for (const p of list) {
+      const body = p.description.trim();
+      if (!body) {
+        sources.push(`${p.title} (без описания)`);
+        continue;
+      }
+      parts.push(
+        [
+          `ПРОЕКТ «${p.title}»${p.tags ? ` (${p.tags})` : ""}${p.repo_url ? ` — ${p.repo_url}` : ""}:`,
+          body,
+        ].join("\n"),
+      );
+      sources.push(p.title);
+    }
+  } catch (e) {
+    sources.push(`проекты (ошибка: ${(e as Error).message.slice(0, 60)})`);
+  }
+
+  return { context: parts.join("\n\n"), sources };
+}
+
+/**
  * Инкремент: дополнить последний снапшот только новым из источников.
  *
- * С `fileIds` работает точечно — читает целиком именно эти файлы Диска и ничего
- * больше. Это ответ на «модель прочитала пласт по игре и всё равно ничего не
- * взяла»: когда файл один, ей некуда деться.
+ * С `fileIds`/`projectIds` работает точечно — читает целиком именно эти файлы
+ * Диска и проекты и ничего больше. Это ответ на «модель прочитала пласт по игре
+ * и всё равно ничего не взяла»: когда файл один, ей некуда деться.
  */
 export async function augmentLatestBrain(
   mode: Mode = "balanced",
-  opts: { fileIds?: string[] } = {},
+  opts: { fileIds?: string[]; projectIds?: string[] } = {},
 ): Promise<AugmentResult> {
   const spec = MODE_SPEC[mode];
   const snapshot = await latestBrainSnapshot();
   if (!snapshot || !snapshot.data.nodes.length) {
     return { skipped: "нет снапшота — сначала собери мозг полностью", added: 0, edges: 0, labels: [] };
   }
-  const picked = opts.fileIds?.length ? await pickedFilesContext(opts.fileIds) : null;
+  // Источники точечного дополнения складываются: можно выбрать и файлы, и проекты.
+  const hasPicks = !!(opts.fileIds?.length || opts.projectIds?.length);
+  let picked: { context: string; sources: string[] } | null = null;
+  if (hasPicks) {
+    const [f, p] = await Promise.all([
+      pickedFilesContext(opts.fileIds ?? []),
+      pickedProjectsContext(opts.projectIds ?? []),
+    ]);
+    picked = {
+      context: [f.context, p.context].filter(Boolean).join("\n\n"),
+      sources: [...f.sources, ...p.sources],
+    };
+  }
   if (picked && !picked.context) {
-    return { skipped: "из выбранных файлов не удалось прочитать текст", added: 0, edges: 0, labels: [], sources: picked.sources };
+    return { skipped: "из выбранного не удалось прочитать текст", added: 0, edges: 0, labels: [], sources: picked.sources };
   }
   const { context, sources } = picked ?? (await collectBrainContext(mode));
   const blocked = (await listBlocklist()).map((b) => b.pattern);

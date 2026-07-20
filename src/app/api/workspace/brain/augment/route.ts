@@ -42,17 +42,22 @@ async function run(req: Request) {
   }
 
   // Режим приходит телом (панель) или ?mode= (планировщик); по умолчанию средний.
-  const body = (await req.json().catch(() => ({}))) as { mode?: string; fileIds?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { mode?: string; fileIds?: unknown; projectIds?: unknown };
   const mode = brainMode(body.mode ?? new URL(req.url).searchParams.get("mode"));
 
-  // Точечное дополнение по вручную выбранным файлам Диска. Потолок в 20 файлов
-  // держится в brain.ts — здесь только отбрасываем всё, что не строка.
-  const fileIds = Array.isArray(body.fileIds)
-    ? body.fileIds.filter((x): x is string => typeof x === "string" && !!x).slice(0, 20)
-    : [];
+  // Точечное дополнение по вручную выбранным файлам Диска и проектам. Потолок
+  // в 20 держится в brain.ts — здесь только отбрасываем всё, что не строка.
+  const ids = (v: unknown) =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x).slice(0, 20) : [];
+  const fileIds = ids(body.fileIds);
+  // id проекта уходит в PostgREST-фильтр `id=in.(…)` — пускаем только uuid,
+  // чтобы запятая или скобка в значении не переписали условие целиком.
+  const projectIds = ids(body.projectIds).filter((x) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x),
+  );
 
   try {
-    const r = await augmentLatestBrain(mode, { fileIds });
+    const r = await augmentLatestBrain(mode, { fileIds, projectIds });
     if (r.skipped) return NextResponse.json({ ok: true, skipped: r.skipped });
 
     if (r.added) {
