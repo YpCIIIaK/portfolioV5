@@ -12,6 +12,7 @@
  */
 
 import { supabaseConfigured, sbSelect, sbInsert, sbUpdate, sbDelete } from "@/lib/supabase";
+import { isDocumentMime, documentToText } from "@/lib/office";
 
 const OAUTH = "https://oauth2.googleapis.com";
 const API = "https://www.googleapis.com/drive/v3";
@@ -315,7 +316,7 @@ const EXPORT_AS: Record<string, string> = {
 const READABLE = /^(text\/|application\/(json|xml|javascript|x-yaml))/;
 
 export function isReadable(mimeType: string): boolean {
-  return mimeType in EXPORT_AS || READABLE.test(mimeType);
+  return mimeType in EXPORT_AS || READABLE.test(mimeType) || isDocumentMime(mimeType);
 }
 
 /** Plain text of a file, capped. Returns "" for binaries we can't read. */
@@ -329,6 +330,13 @@ export async function fileText(file: DriveFile, maxChars = 20_000): Promise<stri
 
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
   if (!res.ok) return "";
+
+  // docx/xlsx/pdf приходят бинарём — их текст достаём распаковкой/парсером,
+  // читать их как строку бессмысленно.
+  if (isDocumentMime(file.mimeType)) {
+    const buf = Buffer.from(await res.arrayBuffer());
+    return sanitize(await documentToText(file.mimeType, buf)).slice(0, maxChars);
+  }
   return sanitize(await res.text()).slice(0, maxChars);
 }
 
