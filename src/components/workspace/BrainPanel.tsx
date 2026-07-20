@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2, Search } from "lucide-react";
+import { BRAIN_MODES, BRAIN_MODE_LABEL, BRAIN_MODE_HINT, brainMode, type BrainMode } from "@/lib/brain-modes";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
 import {
@@ -135,6 +136,23 @@ export function BrainPanel() {
   // Список привязки в карточке узла: открыт/закрыт + строка фильтра.
   const [linkPicker, setLinkPicker] = useState(false);
   const [linkQuery, setLinkQuery] = useState("");
+  // Свобода сборки: сколько узлов тянуть и насколько терпеть мелочи.
+  // Запоминаем между сессиями — это настройка, а не разовый выбор.
+  const [mode, setModeState] = useState<BrainMode>("balanced");
+  useEffect(() => {
+    // Через микротаску: localStorage недоступен при SSR, а синхронный setState
+    // в теле эффекта даёт каскадный рендер (тот же приём, что в других панелях).
+    let cancelled = false;
+    (async () => {
+      await Promise.resolve();
+      if (!cancelled) setModeState(brainMode(localStorage.getItem("brain:mode")));
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const setMode = (m: BrainMode) => {
+    setModeState(m);
+    localStorage.setItem("brain:mode", m);
+  };
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -470,7 +488,11 @@ export function BrainPanel() {
   const augment = async () => {
     setBusy("augment"); setError(""); setInfo("");
     try {
-      const res = await fetch("/api/workspace/brain/augment", { method: "POST" });
+      const res = await fetch("/api/workspace/brain/augment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
       const text = await res.text();
       let json: { data?: BrainState; id?: string; added?: number; edges?: number; skipped?: string; error?: string } = {};
       try { json = JSON.parse(text); } catch { /* оставляем пустым */ }
@@ -498,7 +520,11 @@ export function BrainPanel() {
   const generate = async () => {
     setBusy("generate"); setError(""); setInfo("");
     try {
-      const res = await fetch("/api/workspace/brain/generate", { method: "POST" });
+      const res = await fetch("/api/workspace/brain/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
       // Сервер может ответить не-JSON (например, текст 504 от Vercel при таймауте).
       const text = await res.text();
       let json: { data?: BrainState; sources?: string[]; error?: string } = {};
@@ -736,6 +762,18 @@ export function BrainPanel() {
           {busy === "augment" ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
           Дополнить
         </button>
+        {/* Свобода сборки — влияет и на «Собрать», и на «Дополнить». */}
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value as BrainMode)}
+          disabled={demo || !owner || busy !== ""}
+          title={BRAIN_MODE_HINT[mode]}
+          className="rounded border border-vsc-line bg-vsc-sidebar px-2 py-1.5 text-[12.5px] text-vsc-text outline-none focus:border-vsc-accent disabled:opacity-40"
+        >
+          {BRAIN_MODES.map((m) => (
+            <option key={m} value={m}>{BRAIN_MODE_LABEL[m]}</option>
+          ))}
+        </select>
         <button
           onClick={addNode}
           disabled={demo}

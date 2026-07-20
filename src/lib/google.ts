@@ -634,6 +634,32 @@ export async function readDriveFile(fileId: string): Promise<{ name: string; tex
   return { name: row.name, text };
 }
 
+/**
+ * Richer snapshot for the brain builder: filenames PLUS excerpt text, because
+ * the graph needs to know what a document is about, not just that it exists.
+ * The assistant's own context stays filenames-only (see driveContext) — it can
+ * always call read_drive_file when it needs the body.
+ */
+export async function driveBrainContext(limit = 60): Promise<string> {
+  if (!supabaseConfigured()) return "";
+  try {
+    const sources = await listSources();
+    if (!sources.length) return "";
+    const files = await sbSelect<DriveIndexRow>(
+      "ws_drive_index",
+      `${INDEX_FIELDS}&order=modified_time.desc.nullslast&limit=${limit}`,
+    );
+    if (!files.length) return "";
+    const lines = files.map((f) => {
+      const body = f.excerpt ? `: ${f.excerpt.replace(/\s+/g, " ").slice(0, 500)}` : "";
+      return `- ${f.name}${body}`;
+    });
+    return `GOOGLE DRIVE (папки: ${sources.map((s) => s.name).join(", ")}):\n${lines.join("\n")}`;
+  } catch {
+    return "";
+  }
+}
+
 /** Compact snapshot for the AI aggregator — filenames only, like notionContext. */
 export async function driveContext(): Promise<string> {
   if (!supabaseConfigured()) return "";

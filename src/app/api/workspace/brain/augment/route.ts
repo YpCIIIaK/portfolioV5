@@ -3,7 +3,7 @@ import { requireOwner } from "@/lib/auth";
 import { aiConfigured } from "@/lib/ai";
 import { supabaseConfigured } from "@/lib/supabase";
 import { notifyOwner } from "@/lib/notify";
-import { augmentLatestBrain } from "@/lib/brain";
+import { augmentLatestBrain, brainMode } from "@/lib/brain";
 
 export const runtime = "nodejs";
 // Холодный сбор контекста + генерация — как у полного билда мозга.
@@ -41,8 +41,12 @@ async function run(req: Request) {
     return NextResponse.json({ error: "AI не настроен (OPENROUTER_API_KEY)" }, { status: 503 });
   }
 
+  // Режим приходит телом (панель) или ?mode= (планировщик); по умолчанию средний.
+  const body = (await req.json().catch(() => ({}))) as { mode?: string };
+  const mode = brainMode(body.mode ?? new URL(req.url).searchParams.get("mode"));
+
   try {
-    const r = await augmentLatestBrain();
+    const r = await augmentLatestBrain(mode);
     if (r.skipped) return NextResponse.json({ ok: true, skipped: r.skipped });
 
     if (r.added) {

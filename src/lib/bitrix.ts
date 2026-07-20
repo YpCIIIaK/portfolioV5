@@ -62,10 +62,15 @@ interface RawTask {
   group?: { name?: string } | null;
 }
 
-export async function fetchTasks(limit = 50): Promise<BxTask[]> {
+/**
+ * `includeDone` нужен мозгу: граф знаний строится и по закрытым задачам —
+ * они показывают, чем человек занимался. В панели же завершённые скрыты,
+ * чтобы список задач оставался рабочим.
+ */
+export async function fetchTasks(limit = 50, includeDone = false): Promise<BxTask[]> {
   const result = await call<{ tasks: RawTask[] }>("tasks.task.list", {
     order: { ID: "desc" },
-    filter: { "!STATUS": 5 }, // hide completed by default; UI can still show status
+    filter: includeDone ? {} : { "!STATUS": 5 },
     select: ["ID", "TITLE", "STATUS", "DEADLINE", "CREATED_DATE", "RESPONSIBLE_ID", "CREATED_BY", "GROUP_ID"],
     limit,
   });

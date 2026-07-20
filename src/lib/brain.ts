@@ -5,6 +5,7 @@ import { supabaseConfigured, sbSelect, sbInsert, sbUpdate } from "@/lib/supabase
 import { bitrixConfigured, fetchTasks } from "@/lib/bitrix";
 import { telegramConfigured, fetchDialogs } from "@/lib/telegram";
 import { notionConnected, notionStatus, searchNotion, pageContent, fetchNotionTasks } from "@/lib/notion";
+import { driveBrainContext } from "@/lib/google";
 
 /**
  * «Второй мозг» — граф знаний, который ИИ собирает из всего подключённого
@@ -12,6 +13,10 @@ import { notionConnected, notionStatus, searchNotion, pageContent, fetchNotionTa
  * Здесь — серверная схема данных графа и промпт генерации. Снапшоты графа
  * лежат в ws_brain (CRUD через общий /api/workspace/[kind]).
  */
+
+// Режимы вынесены в отдельный модуль — константы нужны и на клиенте.
+export { BRAIN_MODES, BRAIN_MODE_LABEL, brainMode, type BrainMode } from "@/lib/brain-modes";
+import { MODE_SPEC, type BrainMode as Mode } from "@/lib/brain-modes";
 
 /** Базовые категории — у них фиксированные цвета в UI. Модель может добавлять свои. */
 export const BRAIN_CATEGORIES = ["work", "project", "idea", "people", "finance", "learn", "life", "other"] as const;
@@ -53,8 +58,9 @@ export type BrainData = z.infer<typeof brainData>;
 /**
  * Максимально полный ЛИЧНЫЙ контекст для мозга — читаем всё, что подключено:
  * задачи (вкл. сделанные), календарь (прошлое и будущее), заметки целиком,
- * проекты, подписки, Bitrix, все диалоги Telegram, почту без фильтров и весь
- * доступный Notion (список страниц + содержимое свежих + задачи из базы).
+ * проекты, подписки, Bitrix, все диалоги Telegram, почту без фильтров, весь
+ * доступный Notion (список страниц + содержимое свежих + задачи из базы) и
+ * проиндексированные файлы Google Drive (имена + выжимки текста).
  * Новости / тренды GitHub / музыка сюда НЕ входят — это не личные данные.
  */
 export async function collectBrainContext(): Promise<{ context: string; sources: string[] }> {
@@ -100,8 +106,13 @@ export async function collectBrainContext(): Promise<{ context: string; sources:
 
   if (bitrixConfigured()) {
     try {
-      const bx = await fetchTasks(50);
-      add("BITRIX ЗАДАЧИ", bx.map((t) => `- ${t.title} (${t.status}${t.deadline ? `, до ${t.deadline}` : ""})`).join("\n"), `Bitrix (${bx.length})`);
+      // includeDone: закрытые задачи для графа так же ценны, как открытые.
+      const bx = await fetchTasks(60, true);
+      add(
+        "BITRIX ЗАДАЧИ (все, включая завершённые)",
+        bx.map((t) => `- ${t.title} (${t.status}${t.deadline ? `, до ${t.deadline}` : ""}${t.groupName ? `, проект: ${t.groupName}` : ""}${t.responsible ? `, отв.: ${t.responsible}` : ""})`).join("\n"),
+        `Bitrix (${bx.length})`,
+      );
     } catch { /* skip */ }
   }
 
@@ -145,6 +156,14 @@ export async function collectBrainContext(): Promise<{ context: string; sources:
     }
   } catch { /* skip */ }
 
+  try {
+    const drive = await driveBrainContext(60);
+    if (drive) {
+      parts.push(drive);
+      sources.push("Google Drive");
+    }
+  } catch { /* skip */ }
+
   return { context: parts.join("\n\n"), sources };
 }
 
@@ -163,19 +182,22 @@ const IMPORTANCE_RUBRIC = [
 ].join("\n");
 
 /** Строгий промпт: модель должна вернуть ТОЛЬКО JSON графа. */
-export function buildBrainPrompt(context: string): string {
+export function buildBrainPrompt(context: string, mode: Mode = "balanced"): string {
+  const spec = MODE_SPEC[mode];
   return [
     "Ты строишь «второй мозг» — граф знаний по личному рабочему пространству.",
     "Ниже полный снимок данных пользователя. Выдели сущности (проекты, задачи, люди, идеи, финансы, события, темы) как узлы и осмысленные связи между ними как рёбра.",
     "",
+    spec.rule,
+    "",
     "Требования:",
-    "- 12–40 узлов. Каждый узел: короткий label, категория, importance 1–5, summary в 1–2 предложения, source — откуда взято.",
+    `- ${spec.full}. Каждый узел: короткий label, категория, importance 1–5, summary в 1–2 предложения, source — откуда взято.`,
     "",
     IMPORTANCE_RUBRIC,
     "",
     "- Категории: предпочитай базовые work|project|idea|people|finance|learn|life|other. Если сущность явно не влезает — придумай СВОЮ короткую категорию (одно слово латиницей, напр. health, travel) и используй её последовательно для похожих узлов.",
     "- source.panel — одна из: tasks, notes, calendar, mail, telegram, notion, bitrix, projects, subscriptions, news, other; source.ref — заголовок/название исходной записи.",
-    "- РЁБРА ОБЯЗАТЕЛЬНЫ: примерно 1–2 ребра на узел (проект ↔ его задачи, человек ↔ переписка, подписка ↔ инструмент, тема ↔ заметка). Пустой массив edges — это ошибка. Не оставляй изолированных узлов. label ребра — краткая суть связи.",
+    `- РЁБРА ОБЯЗАТЕЛЬНЫ: ${spec.edges} (проект ↔ его задачи, человек ↔ переписка, подписка ↔ инструмент, тема ↔ заметка). Пустой массив edges — это ошибка. Не оставляй изолированных узлов. label ребра — краткая суть связи.`,
     "- id — короткие slug-строки латиницей (n1, n2 … или осмысленные).",
     "",
     "Ответь ТОЛЬКО валидным JSON без пояснений и markdown-ограждений, вида:",
@@ -276,17 +298,22 @@ export function buildBrainShortcuts(data: BrainData): string {
 }
 
 /** Промпт дельты: вернуть ТОЛЬКО новые узлы и новые связи (в т.ч. к существующим id). */
-export function buildBrainAugmentPrompt(shortcuts: string, context: string): string {
+export function buildBrainAugmentPrompt(shortcuts: string, context: string, mode: Mode = "balanced"): string {
+  const spec = MODE_SPEC[mode];
   return [
     "Ты ДОПОЛНЯЕШЬ существующий «второй мозг» — граф знаний по личному рабочему пространству.",
     "Ниже шорткаты уже существующих узлов (id | label | категория) и свежий снимок данных.",
     "",
     "Твоя задача: найти в данных ТОЛЬКО НОВОЕ — сущности, которых ещё нет среди шорткатов, — и связать их с существующими узлами.",
     "",
+    spec.rule,
+    "",
     "Требования:",
-    "- Верни только новые узлы (0–12 штук). НЕ повторяй и НЕ пересказывай существующие: если сущность уже есть в шорткатах (даже под чуть другим названием) — не добавляй её.",
+    `- Верни только новые узлы (${spec.delta}). НЕ повторяй и НЕ пересказывай существующие: если сущность уже есть в шорткатах (даже под чуть другим названием) — не добавляй её.`,
     "- Каждый новый узел: короткий label, категория, importance 1–5, summary в 1–2 предложения, source (panel: tasks|notes|calendar|mail|telegram|notion|bitrix|projects|subscriptions|news|other, ref: заголовок записи).",
-    "- НЕ ЗАВОДИ УЗЛЫ ДЛЯ ШУМА: рассылки, промо, уведомления сервисов, одноразовые письма, случайные сообщения без темы. Если сущность живёт один день и ни с чем не связана — её не надо. Лучше вернуть 2 сильных узла, чем 12 мусорных.",
+    mode === "free"
+      ? "- Шум (рассылки, промо, уведомления) заводить можно, но строго importance 1–2 — он должен осесть в фоне графа."
+      : "- НЕ ЗАВОДИ УЗЛЫ ДЛЯ ШУМА: рассылки, промо, уведомления сервисов, одноразовые письма, случайные сообщения без темы. Если сущность живёт один день и ни с чем не связана — её не надо. Лучше вернуть 2 сильных узла, чем 12 мусорных.",
     "- Дельта почти никогда не содержит узлов на 5 и редко на 4: новое обычно начинается с 2–3 и вырастает позже.",
     "",
     IMPORTANCE_RUBRIC,
@@ -418,9 +445,13 @@ export async function searchBrain(query: string, limit = 10): Promise<string> {
 }
 
 /** Полная генерация графа из всех источников (без сохранения). */
-export async function generateBrainData(): Promise<{ data: BrainData; sources: string[] }> {
+export async function generateBrainData(mode: Mode = "balanced"): Promise<{ data: BrainData; sources: string[] }> {
+  const spec = MODE_SPEC[mode];
   const { context, sources } = await collectBrainContext();
-  const answer = await askAI(buildBrainPrompt(context), { temperature: 0.4, maxTokens: 6000 });
+  const answer = await askAI(buildBrainPrompt(context, mode), {
+    temperature: spec.temperature,
+    maxTokens: spec.maxTokens,
+  });
   let data = parseBrainAnswer(answer);
   if (!data.nodes.length) throw new Error("модель вернула пустой граф");
 
@@ -436,8 +467,11 @@ export async function generateBrainData(): Promise<{ data: BrainData; sources: s
 }
 
 /** Полный пересбор с сохранением НОВЫМ снапшотом (не трогая старые). */
-export async function rebuildBrainSnapshot(titleSuffix = ""): Promise<{ title: string; nodes: number; edges: number }> {
-  const { data } = await generateBrainData();
+export async function rebuildBrainSnapshot(
+  titleSuffix = "",
+  mode: Mode = "balanced",
+): Promise<{ title: string; nodes: number; edges: number }> {
+  const { data } = await generateBrainData(mode);
   const title = `Мозг ${new Date().toLocaleDateString("ru-RU")}${titleSuffix ? ` ${titleSuffix}` : ""}`;
   await sbInsert("ws_brain", { title, data });
   return { title, nodes: data.nodes.length, edges: data.edges.length };
@@ -454,13 +488,18 @@ export interface AugmentResult {
 }
 
 /** Инкремент: дополнить последний снапшот только новым из источников. */
-export async function augmentLatestBrain(): Promise<AugmentResult> {
+export async function augmentLatestBrain(mode: Mode = "balanced"): Promise<AugmentResult> {
+  const spec = MODE_SPEC[mode];
   const snapshot = await latestBrainSnapshot();
   if (!snapshot || !snapshot.data.nodes.length) {
     return { skipped: "нет снапшота — сначала собери мозг полностью", added: 0, edges: 0, labels: [] };
   }
   const { context } = await collectBrainContext();
-  const answer = await askAI(buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context), { temperature: 0.3, maxTokens: 3000 });
+  const answer = await askAI(buildBrainAugmentPrompt(buildBrainShortcuts(snapshot.data), context, mode), {
+    // Дельта короче полной сборки — половины бюджета режима хватает.
+    temperature: Math.max(0.2, spec.temperature - 0.1),
+    maxTokens: Math.round(spec.maxTokens / 2),
+  });
   const delta = parseBrainAnswer(answer, new Set(snapshot.data.nodes.map((n) => n.id)));
   const { data, addedNodes, addedEdges, labels } = mergeBrainDelta(snapshot.data, delta);
   if (addedNodes || addedEdges) {
@@ -474,7 +513,8 @@ export async function augmentLatestBrain(): Promise<AugmentResult> {
  * модель видит её узлы С summary, остальной граф шорткатами, и добавляет
  * под-узлы с конкретикой из данных.
  */
-export async function expandBrainCategory(category: string): Promise<AugmentResult> {
+export async function expandBrainCategory(category: string, mode: Mode = "balanced"): Promise<AugmentResult> {
+  const spec = MODE_SPEC[mode];
   const snapshot = await latestBrainSnapshot();
   if (!snapshot || !snapshot.data.nodes.length) {
     return { skipped: "нет снапшота — сначала собери мозг полностью", added: 0, edges: 0, labels: [] };
@@ -496,7 +536,9 @@ export async function expandBrainCategory(category: string): Promise<AugmentResu
     "ОСТАЛЬНОЙ ГРАФ (шорткаты id | label | категория):",
     buildBrainShortcuts(snapshot.data),
     "",
-    "Добавь 3–15 НОВЫХ узлов-деталей: конкретные подзадачи, факты, люди, документы, суммы, даты из данных ниже, относящиеся к этим узлам. Свяжи каждый новый узел рёбрами с детализируемыми (и при необходимости между собой).",
+    spec.rule,
+    "",
+    `Добавь ${mode === "strict" ? "3–8" : mode === "free" ? "15–50" : "3–15"} НОВЫХ узлов-деталей: конкретные подзадачи, факты, люди, документы, суммы, даты из данных ниже, относящиеся к этим узлам. Свяжи каждый новый узел рёбрами с детализируемыми (и при необходимости между собой).`,
     "Категории новых узлов — та же или уточнённая; id — новые slug (nd1, nd2…). НЕ дублируй существующее.",
     "Узлы-детали почти всегда importance 2–3: деталь не может весить больше того, что она детализирует.",
     "",
@@ -507,7 +549,10 @@ export async function expandBrainCategory(category: string): Promise<AugmentResu
     "ДАННЫЕ:",
     context,
   ].join("\n");
-  const answer = await askAI(prompt, { temperature: 0.3, maxTokens: 3000 });
+  const answer = await askAI(prompt, {
+    temperature: Math.max(0.2, spec.temperature - 0.1),
+    maxTokens: Math.round(spec.maxTokens / 2),
+  });
   const delta = parseBrainAnswer(answer, new Set(snapshot.data.nodes.map((n) => n.id)));
   const { data, addedNodes, addedEdges, labels } = mergeBrainDelta(snapshot.data, delta);
   if (addedNodes || addedEdges) {

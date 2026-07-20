@@ -23,7 +23,7 @@ import { googleConnected, searchDrive, readDriveFile } from "@/lib/google";
 import { telegramConfigured, fetchDialogs, fetchMessageHistory } from "@/lib/telegram";
 import { githubConfigured, createRepo, createIssue, listRepos } from "@/lib/github";
 import { webFetch, webSearch } from "@/lib/web";
-import { rebuildBrainSnapshot, augmentLatestBrain, expandBrainCategory, brainOverview, searchBrain } from "@/lib/brain";
+import { rebuildBrainSnapshot, augmentLatestBrain, expandBrainCategory, brainOverview, searchBrain, brainMode, BRAIN_MODES } from "@/lib/brain";
 import { listWorkflows, findWorkflowByTitle, runSavedWorkflow } from "@/lib/workflow";
 import { describeWorkflow, stepLabel } from "@/lib/workflow-steps";
 import type { Priority } from "@/lib/workspace";
@@ -45,6 +45,15 @@ interface Tool {
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
+
+/** Общий параметр «свободы» для всех операций с мозгом. */
+const BRAIN_MODE_PARAM = {
+  type: "string",
+  enum: [...BRAIN_MODES],
+  description:
+    "Режим полноты: strict — только важное, мало узлов; balanced — по умолчанию; " +
+    "free — максимально полная картина по всем данным. Ставь free, если пользователь просит «подробно», «всё», «максимально полно».",
+};
 
 const TOOLS: Tool[] = [
   {
@@ -533,11 +542,11 @@ const TOOLS: Tool[] = [
     def: {
       name: "rebuild_brain",
       description: "Полностью пересобрать «второй мозг» (граф знаний): прочитать все источники и сохранить НОВЫМ снапшотом, старые остаются. Долгая операция.",
-      parameters: { type: "object", properties: {} },
+      parameters: { type: "object", properties: { mode: BRAIN_MODE_PARAM } },
     },
-    async run() {
+    async run(a) {
       if (!supabaseConfigured()) return "Supabase не настроен.";
-      const r = await rebuildBrainSnapshot("(ассистент)");
+      const r = await rebuildBrainSnapshot("(ассистент)", brainMode(a.mode));
       return `Мозг пересобран и сохранён снапшотом «${r.title}»: ${r.nodes} узлов, ${r.edges} связей.`;
     },
   },
@@ -545,11 +554,11 @@ const TOOLS: Tool[] = [
     def: {
       name: "augment_brain",
       description: "Дополнить последний снапшот «второго мозга» только новым из источников (инкремент, существующие узлы не пересобираются).",
-      parameters: { type: "object", properties: {} },
+      parameters: { type: "object", properties: { mode: BRAIN_MODE_PARAM } },
     },
-    async run() {
+    async run(a) {
       if (!supabaseConfigured()) return "Supabase не настроен.";
-      const r = await augmentLatestBrain();
+      const r = await augmentLatestBrain(brainMode(a.mode));
       if (r.skipped) return `Пропущено: ${r.skipped}.`;
       if (!r.added && !r.edges) return "Нового ничего нет — мозг актуален.";
       return `«${r.title}» дополнен: +${r.added} узл., +${r.edges} связ.${r.labels.length ? ` Новое: ${r.labels.join(", ")}.` : ""}`;
@@ -563,6 +572,7 @@ const TOOLS: Tool[] = [
         type: "object",
         properties: {
           category: { type: "string", description: "Категория (work, project, finance, …) или тема/название узла." },
+          mode: BRAIN_MODE_PARAM,
         },
         required: ["category"],
       },
@@ -571,7 +581,7 @@ const TOOLS: Tool[] = [
       if (!supabaseConfigured()) return "Supabase не настроен.";
       const category = str(a.category);
       if (!category) return "Не указана категория или тема.";
-      const r = await expandBrainCategory(category);
+      const r = await expandBrainCategory(category, brainMode(a.mode));
       if (r.skipped) return `Пропущено: ${r.skipped}.`;
       if (!r.added && !r.edges) return `По «${category}» деталей не нашлось.`;
       return `«${category}» детализирована: +${r.added} узл., +${r.edges} связ.${r.labels.length ? ` Новое: ${r.labels.join(", ")}.` : ""}`;
