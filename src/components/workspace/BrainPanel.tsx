@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2, Search } from "lucide-react";
+import { Brain, Sparkles, Plus, Save, Trash2, ExternalLink, Link2, X, Loader2, Search, ChevronDown, ChevronRight } from "lucide-react";
 import { BRAIN_MODES, BRAIN_MODE_LABEL, BRAIN_MODE_HINT, brainMode, type BrainMode } from "@/lib/brain-modes";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
@@ -136,6 +136,11 @@ export function BrainPanel() {
   // Список привязки в карточке узла: открыт/закрыт + строка фильтра.
   const [linkPicker, setLinkPicker] = useState(false);
   const [linkQuery, setLinkQuery] = useState("");
+  // Что добавил последний «Дополнить». Сворачиваемо: при 30 узлах список
+  // занял бы пол-экрана, но и прятать его целиком нельзя — иначе непонятно,
+  // что именно приросло.
+  const [addedLabels, setAddedLabels] = useState<string[]>([]);
+  const [addedOpen, setAddedOpen] = useState(true);
   // Свобода сборки: сколько узлов тянуть и насколько терпеть мелочи.
   // Запоминаем между сессиями — это настройка, а не разовый выбор.
   const [mode, setModeState] = useState<BrainMode>("balanced");
@@ -486,7 +491,7 @@ export function BrainPanel() {
 
   /** Инкремент: сервер дополняет ПОСЛЕДНИЙ снапшот только новым из источников. */
   const augment = async () => {
-    setBusy("augment"); setError(""); setInfo("");
+    setBusy("augment"); setError(""); setInfo(""); setAddedLabels([]);
     try {
       const res = await fetch("/api/workspace/brain/augment", {
         method: "POST",
@@ -494,7 +499,7 @@ export function BrainPanel() {
         body: JSON.stringify({ mode }),
       });
       const text = await res.text();
-      let json: { data?: BrainState; id?: string; added?: number; edges?: number; skipped?: string; error?: string } = {};
+      let json: { data?: BrainState; id?: string; added?: number; edges?: number; labels?: string[]; skipped?: string; error?: string } = {};
       try { json = JSON.parse(text); } catch { /* оставляем пустым */ }
       if (!res.ok) {
         if (res.status === 504 || /timeout|timed out/i.test(text)) throw new Error("Таймаут — попробуй ещё раз.");
@@ -510,6 +515,9 @@ export function BrainPanel() {
         setSnapshots((s) => s.map((x) => (x.id === json.id ? { ...x, data: json.data!, updated_at: new Date().toISOString() } : x)));
       }
       setInfo(`Дополнено: +${json.added ?? 0} узл., +${json.edges ?? 0} связ.`);
+      // Что именно добавилось — иначе «+7 узлов» ничего не говорит.
+      setAddedLabels(json.labels ?? []);
+      setAddedOpen((json.labels?.length ?? 0) <= 8);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -518,7 +526,7 @@ export function BrainPanel() {
   };
 
   const generate = async () => {
-    setBusy("generate"); setError(""); setInfo("");
+    setBusy("generate"); setError(""); setInfo(""); setAddedLabels([]);
     try {
       const res = await fetch("/api/workspace/brain/generate", {
         method: "POST",
@@ -830,6 +838,49 @@ export function BrainPanel() {
 
       {error && <div className="mb-2 rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[12px] text-red-300">{error}</div>}
       {info && <div className="mb-2 rounded border border-vsc-line bg-vsc-sidebar px-3 py-1.5 text-[12px] text-vsc-muted">{info}</div>}
+      {addedLabels.length > 0 && (
+        <div className="mb-2 rounded border border-vsc-line bg-vsc-sidebar text-[12px]">
+          <div className="flex items-center gap-2 px-3 py-1.5">
+            <button
+              onClick={() => setAddedOpen((v) => !v)}
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-vsc-text hover:text-vsc-accent"
+            >
+              {addedOpen ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
+              Добавлено узлов: {addedLabels.length}
+            </button>
+            <button
+              onClick={() => setAddedLabels([])}
+              title="Скрыть список"
+              className="shrink-0 rounded p-0.5 text-vsc-muted hover:text-vsc-text"
+            >
+              <X size={12} />
+            </button>
+          </div>
+          {addedOpen && (
+            <div className="max-h-52 overflow-auto border-t border-vsc-line px-2 py-1">
+              {addedLabels.map((label) => {
+                // Дельта отдаёт label'ы, а не id — ищем узел по имени.
+                const node = graph.nodes.find((n) => n.label === label);
+                return (
+                  <button
+                    key={label}
+                    onClick={() => node && focusNode(node.id)}
+                    disabled={!node}
+                    className="flex w-full items-center gap-2 rounded px-1 py-1 text-left hover:bg-vsc-hover disabled:cursor-default disabled:opacity-60"
+                  >
+                    <span
+                      className="h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{ background: node ? catColor(node.category) : "#666" }}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-vsc-text">{label}</span>
+                    {node && <span className="shrink-0 text-[10px] text-vsc-muted">{node.importance}★</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
       {linkFrom && (
         <div className="mb-2 rounded border border-vsc-line bg-vsc-sidebar px-3 py-1.5 text-[12px] text-vsc-muted">
           Режим связи: кликни второй узел, чтобы соединить с «{nodeLabel(linkFrom)}».{" "}
