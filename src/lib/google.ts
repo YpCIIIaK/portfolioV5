@@ -595,13 +595,25 @@ export async function syncAll(): Promise<Record<string, unknown>[]> {
 
 /* ---- search & assistant context ----------------------------------------- */
 
+const INDEX_FIELDS =
+  "select=id,source_id,file_id,name,mime_type,modified_time,web_view_link,excerpt";
+
+/** Search the index. An empty query lists the freshest files — that's what the
+ *  panel shows on open, so it must not come back empty. */
 export async function searchDrive(query: string, limit = 20): Promise<DriveIndexRow[]> {
-  if (!supabaseConfigured() || !query.trim()) return [];
-  const q = encodeURIComponent(`%${query.trim()}%`);
+  if (!supabaseConfigured()) return [];
+  const term = query.trim();
+  if (!term) {
+    return sbSelect<DriveIndexRow>(
+      "ws_drive_index",
+      `${INDEX_FIELDS}&order=modified_time.desc.nullslast&limit=${limit}`,
+    );
+  }
+  const q = encodeURIComponent(`%${term}%`);
   return sbSelect<DriveIndexRow>(
     "ws_drive_index",
-    `select=id,source_id,file_id,name,mime_type,modified_time,web_view_link,excerpt` +
-      `&or=(name.ilike.${q},excerpt.ilike.${q})&order=modified_time.desc&limit=${limit}`,
+    `${INDEX_FIELDS}&or=(name.ilike.${q},excerpt.ilike.${q})` +
+      `&order=modified_time.desc.nullslast&limit=${limit}`,
   );
 }
 

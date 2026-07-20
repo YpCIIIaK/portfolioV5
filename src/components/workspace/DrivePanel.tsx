@@ -140,6 +140,9 @@ function DriveConnected({ status, tab, setTab, onChange }: { status: Status; tab
   const [error, setError] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [note, setNote] = useState("");
+  // Bumped when a sync finishes, so the files list refetches instead of
+  // showing whatever it loaded before the index was populated.
+  const [version, setVersion] = useState(0);
 
   async function disconnect() {
     if (!confirm("Отключить Google Drive? Индекс и выбранные папки будут удалены. Файлы на Диске не тронутся.")) return;
@@ -166,6 +169,7 @@ function DriveConnected({ status, tab, setTab, onChange }: { status: Status; tab
       if (pending) setNote(`Осталось дочитать ${pending} файлов — нажми «Синхронизировать» ещё раз.`);
       invalidate("drive:status");
       invalidate("drive:files");
+      setVersion((v) => v + 1);
       onChange();
     } catch (e) {
       setError((e as Error).message);
@@ -219,7 +223,7 @@ function DriveConnected({ status, tab, setTab, onChange }: { status: Status; tab
 
       {error && <p className="mb-3 text-[13px] text-vsc-yellow">{error}</p>}
       {note && <p className="mb-3 text-[13px] text-vsc-muted">{note}</p>}
-      {tab === "files" && <FilesTab sources={status.sources} onError={setError} />}
+      {tab === "files" && <FilesTab sources={status.sources} version={version} onError={setError} />}
       {tab === "folders" && <FoldersTab sources={status.sources} onChange={onChange} onSync={sync} onError={setError} />}
     </div>
   );
@@ -227,7 +231,7 @@ function DriveConnected({ status, tab, setTab, onChange }: { status: Status; tab
 
 /* ---- files (search over the local index) -------------------------------- */
 
-function FilesTab({ sources, onError }: { sources: Source[]; onError: (e: string) => void }) {
+function FilesTab({ sources, version, onError }: { sources: Source[]; version: number; onError: (e: string) => void }) {
   const [q, setQ] = useState("");
   const [items, setItems] = useState<IndexFile[]>(() => getCached<IndexFile[]>("drive:files") ?? []);
   const [loading, setLoading] = useState(() => !getCached("drive:files"));
@@ -251,11 +255,12 @@ function FilesTab({ sources, onError }: { sources: Source[]; onError: (e: string
   }, [onError]);
 
   useEffect(() => {
-    if (getCached("drive:files")) return;
+    // `version` changes after a sync — reload even if something is cached.
+    if (version === 0 && getCached("drive:files")) return;
     let cancelled = false;
     (async () => { await Promise.resolve(); if (!cancelled) run(""); })();
     return () => { cancelled = true; };
-  }, [run]);
+  }, [run, version]);
 
   if (sources.length === 0) {
     return (
