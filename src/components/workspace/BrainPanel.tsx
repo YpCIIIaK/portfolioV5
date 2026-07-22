@@ -8,205 +8,26 @@ import { useEditor } from "@/lib/store";
 import {
   wsList, wsCreate, wsUpdate, wsDelete,
   DEMO_BRAIN,
-  type BrainState, type BrainNode, type BrainEdge, type BrainSnapshot, type BrainCategory,
+  type BrainState, type BrainNode, type BrainSnapshot,
 } from "@/lib/workspace";
 import { GuestBanner } from "./GuestBanner";
-
-/** Зеркало CleanPlan из brain.ts — сам brain.ts тянет Supabase и в клиент не импортируется. */
-interface CleanPlan {
-  nodes: { id: string; label: string; reason: string }[];
-  edges: number;
-  keptNodes: number;
-  keptEdges: number;
-}
+import {
+  CATEGORIES, catColor, catLabel, computeWeights, withCategoryHubs,
+  NOISE, SOURCE_FILE, type CleanPlan,
+} from "./brain/model";
+import { useBrainCanvas } from "./brain/useBrainCanvas";
+import { SourcePicker } from "./brain/SourcePicker";
 
 /**
  * «Второй мозг» — граф знаний, собранный ИИ из всего воркспейса (задачи,
  * заметки, календарь, почта, Telegram, Notion, …). Плавающие точки-узлы с
  * категорией/важностью и связями; каждый узел помнит источник. Граф можно
  * править руками, пересобирать ИИ и сохранять снапшоты состояния (ws_brain).
- */
-
-/** Базовые категории с фиксированными цветами; всё прочее ИИ добавляет сам. */
-const CATEGORIES: { key: string; label: string; color: string }[] = [
-  { key: "project", label: "Проекты", color: "#c586c0" },
-  { key: "work", label: "Работа", color: "#4fc1ff" },
-  { key: "idea", label: "Идеи", color: "#dcdcaa" },
-  { key: "people", label: "Люди", color: "#4ec9b0" },
-  { key: "finance", label: "Финансы", color: "#ce9178" },
-  { key: "learn", label: "Обучение", color: "#9cdcfe" },
-  { key: "life", label: "Жизнь", color: "#6a9955" },
-  { key: "other", label: "Прочее", color: "#858585" },
-];
-
-/** Палитра для категорий, которых нет в базовом списке, — цвет стабилен по имени. */
-const EXTRA_COLORS = ["#d16969", "#b5cea8", "#569cd6", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#e06c75"];
-
-function catColor(c: BrainCategory): string {
-  const base = CATEGORIES.find((x) => x.key === c);
-  if (base) return base.color;
-  let h = 0;
-  for (let i = 0; i < c.length; i++) h = (h * 31 + c.charCodeAt(i)) >>> 0;
-  return EXTRA_COLORS[h % EXTRA_COLORS.length];
-}
-
-const catLabel = (c: BrainCategory) => CATEGORIES.find((x) => x.key === c)?.label ?? c;
-
-/* ---- вес узла --------------------------------------------------------- */
-
-/**
- * Вес 0..1 — насколько узел «тяжёлый». Считается на лету из importance И
- * связности: узел, к которому сходится полграфа, весит больше одинокого с той
- * же важностью. Нормализация РАНГОВАЯ, а не по абсолютной шкале: если модель
- * наставила всем 4 (а она это любит), ранги всё равно разведут узлы по весу —
- * поэтому старые снапшоты чинятся без миграции данных.
- */
-function computeWeights(nodes: BrainNode[], edges: BrainEdge[]): Map<string, number> {
-  const degree = new Map<string, number>();
-  for (const e of edges) {
-    degree.set(e.from, (degree.get(e.from) ?? 0) + 1);
-    degree.set(e.to, (degree.get(e.to) ?? 0) + 1);
-  }
-  // Связность в log-шкале: 0→1 связь заметна, 8→9 уже почти нет.
-  const score = nodes.map((n) => ({
-    id: n.id,
-    s: Math.max(1, Math.min(5, n.importance)) + Math.log1p(degree.get(n.id) ?? 0) * 1.7,
-  }));
-
-  const out = new Map<string, number>();
-  if (!score.length) return out;
-  const sorted = [...score].sort((a, b) => a.s - b.s);
-  // Одинаковый score → одинаковый ранг, иначе узлы одной важности дрожали бы.
-  const rankOf = new Map<number, number>();
-  sorted.forEach((x, i) => { if (!rankOf.has(x.s)) rankOf.set(x.s, i); });
-  const last = Math.max(1, sorted.length - 1);
-  for (const x of score) {
-    // Ранг в степени: линейный давал «тяжёлыми» верхнюю четверть графа — два
-    // десятка узлов со свечением, то есть выделено всё и не выделено ничего.
-    // ^2.2 оставляет наверху единицы, середина оседает в спокойный фон.
-    const rank = Math.pow(rankOf.get(x.s)! / last, 2.2);
-    // Смешиваем ранг с абсолютом: ранг даёт контраст даже в плоском графе,
-    // абсолют не даёт «повысить» откровенный мусор в маленьком графе.
-    out.set(x.id, rank * 0.65 + Math.min(1, (x.s - 1) / 6) * 0.35);
-  }
-
-  // Явные опоры: 2–3 верхних узла графа поднимаем до максимума независимо от
-  // того, насколько плотно они сидят с соседями по рангу. Без этого «главный
-  // проект» и «второй проект» отличались от рядового узла на пару процентов
-  // веса — глазом неразличимо. Сколько именно опор — от размера графа, чтобы
-  // в графе из десяти узлов не выделилась треть.
-  const hubs = Math.min(3, Math.max(1, Math.round(nodes.length / 18)));
-  const top = [...score].sort((a, b) => b.s - a.s).slice(0, hubs);
-  top.forEach((x, i) => out.set(x.id, Math.max(out.get(x.id) ?? 0, 1 - i * 0.05)));
-
-  return out;
-}
-
-/* ---- центры категорий ------------------------------------------------- */
-
-/**
- * Узлы-центры категорий — чисто отображаемые, в снапшот не сохраняются.
  *
- * Модель заводит «финансы» как категорию, но узла, к которому эта категория
- * сходится, не создаёт: подписки, счета и траты висят отдельными точками, и
- * доля выглядит рассыпанной пылью. Здесь недостающий центр достраивается на
- * лету и к нему подтягивается то, что внутри категории ни с чем не связано, —
- * то есть ровно то, что «очевидно к нему идёт».
- *
- * Префикс отличает их от настоящих узлов: они не редактируются, не участвуют в
- * связывании и не попадают в сохраняемый граф.
+ * Панель — оркестратор: состояние, снапшоты и вызовы API живут здесь;
+ * физика/отрисовка холста — в ./brain/useBrainCanvas, чистая логика графа
+ * (веса, категории, центры) — в ./brain/model.
  */
-const HUB_PREFIX = "cat:";
-export const isHubId = (id: string) => id.startsWith(HUB_PREFIX);
-
-function withCategoryHubs(g: BrainState): BrainState {
-  const byCat = new Map<string, BrainNode[]>();
-  for (const n of g.nodes) {
-    const list = byCat.get(n.category) ?? [];
-    list.push(n);
-    byCat.set(n.category, list);
-  }
-
-  const nodes: BrainNode[] = [];
-  const edges: BrainEdge[] = [];
-
-  for (const [cat, members] of byCat) {
-    // Меньше четырёх — это не «доля», центр только добавит шума.
-    if (members.length < 4) continue;
-
-    const ids = new Set(members.map((n) => n.id));
-    // Связи ВНУТРИ категории: только они говорят, есть ли у доли своё ядро.
-    const inDegree = new Map<string, number>();
-    for (const e of g.edges) {
-      if (ids.has(e.from) && ids.has(e.to)) {
-        inDegree.set(e.from, (inDegree.get(e.from) ?? 0) + 1);
-        inDegree.set(e.to, (inDegree.get(e.to) ?? 0) + 1);
-      }
-    }
-    // Естественный центр уже есть — свой узел лучше выдуманного, не мешаем.
-    const natural = members.some((n) => (inDegree.get(n.id) ?? 0) >= members.length * 0.4);
-    if (natural) continue;
-
-    // Подтягиваем только сирот: у кого внутри категории нет ни одной связи.
-    // Тянуть всех — значит нарисовать сплошную звезду поверх готовых связей.
-    const orphans = members.filter((n) => !(inDegree.get(n.id) ?? 0));
-    if (orphans.length < 3) continue;
-
-    const hubId = `${HUB_PREFIX}${cat}`;
-    nodes.push({
-      id: hubId,
-      label: catLabel(cat),
-      category: cat,
-      importance: 5,
-      summary: "",
-      source: { panel: "other", ref: "" },
-    });
-    for (const o of orphans) {
-      edges.push({ id: `${hubId}:${o.id}`, from: hubId, to: o.id });
-    }
-  }
-
-  if (!nodes.length) return g;
-  return { nodes: [...g.nodes, ...nodes], edges: [...g.edges, ...edges] };
-}
-
-const radius = (w: number) => 3.5 + w * 11;
-/** Ниже этого веса узел — фон: гасим и прячем подпись, чтобы не забивал холст. */
-const NOISE = 0.28;
-
-/** Внутренние вкладки-источники: panel → id файла в IDE. */
-const SOURCE_FILE: Record<string, string> = {
-  tasks: "workspace/tasks.todo",
-  notes: "workspace/notes.md",
-  calendar: "workspace/calendar.tsx",
-  mail: "workspace/mail.tsx",
-  telegram: "workspace/telegram.tsx",
-  notion: "workspace/notion.tsx",
-  bitrix: "workspace/bitrix.tsx",
-  drive: "workspace/drive.tsx",
-  projects: "workspace/projects.tsx",
-  subscriptions: "workspace/subscriptions.tsx",
-  news: "workspace/news.tsx",
-};
-
-/* ---- физика: позиции/скорости живут вне React, в ref ------------------ */
-
-interface Body { x: number; y: number; vx: number; vy: number; phase: number }
-
-type Bodies = Map<string, Body>;
-
-function seedBody(i: number, total: number, w: number, h: number, node: BrainNode): Body {
-  // Стартуем по кругу (или с сохранённых координат), дальше разруливает физика.
-  const angle = (i / Math.max(1, total)) * Math.PI * 2;
-  const r = Math.min(w, h) * 0.3;
-  return {
-    x: node.x ?? w / 2 + Math.cos(angle) * r,
-    y: node.y ?? h / 2 + Math.sin(angle) * r,
-    vx: 0, vy: 0,
-    phase: Math.random() * Math.PI * 2,
-  };
-}
-
 export function BrainPanel() {
   const owner = useSession((s) => !!s.user?.owner);
   const openFile = useEditor((s) => s.openFile);
@@ -269,25 +90,15 @@ export function BrainPanel() {
     localStorage.setItem("brain:mode", m);
   };
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
   // Миникарта: на большом графе легко уехать в пустоту и потерять, где вообще
   // находишься. Здесь видно всю карту сразу и рамку текущего вида.
-  const miniRef = useRef<HTMLCanvasElement>(null);
   const [miniOn, setMiniOn] = useState(true);
-  /** Пересчёт «мир → миникарта» из последнего кадра: нужен, чтобы клик по
-   *  миникарте попал ровно туда, куда показывает нарисованная точка. */
-  const miniFit = useRef({ s: 1, ox: 0, oy: 0 });
-  const bodies = useRef<Bodies>(new Map());
+
   // Рисуем и считаем физику по графу С достроенными центрами категорий;
   // сохраняется и редактируется при этом `graph` — центры туда не просачиваются.
   const viewGraph = useMemo(() => withCategoryHubs(graph), [graph]);
-  const graphRef = useRef(viewGraph);
-  graphRef.current = viewGraph;
   // Веса пересчитываем только при смене графа — в кадре анимации это дорого.
   const weights = useMemo(() => computeWeights(viewGraph.nodes, viewGraph.edges), [viewGraph]);
-  const weightsRef = useRef(weights);
-  weightsRef.current = weights;
   // Число соседей — показываем его в списке привязки, чтобы было видно,
   // почему узел стоит выше: вес складывается из важности и связности.
   const degrees = useMemo(() => {
@@ -298,13 +109,6 @@ export function BrainPanel() {
     }
     return d;
   }, [graph.edges]);
-  const view = useRef({ ox: 0, oy: 0, scale: 1 });
-  const pointer = useRef({ dragId: null as string | null, panning: false, lastX: 0, lastY: 0, moved: false });
-  const hoverRef = useRef<string | null>(null);
-  const selectedRef = useRef(selectedId);
-  selectedRef.current = selectedId;
-  const linkFromRef = useRef(linkFrom);
-  linkFromRef.current = linkFrom;
 
   // Поиск: узлы, попавшие под запрос (по названию, сути, категории). null = поиск неактивен.
   const matched = useMemo(() => {
@@ -315,8 +119,34 @@ export function BrainPanel() {
     );
   }, [search, graph]);
   const matchedIds = useMemo(() => (matched ? new Set(matched.map((n) => n.id)) : null), [matched]);
-  const searchRef = useRef<Set<string> | null>(null);
-  searchRef.current = matchedIds;
+
+  /** Связать два узла. Дубликат (в любую сторону) молча игнорируем. */
+  const addEdge = useCallback((from: string, to: string) => {
+    if (from === to) return;
+    setGraph((g) => ({
+      ...g,
+      edges: g.edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from))
+        ? g.edges
+        : [...g.edges, { id: `e${Date.now()}`, from, to }],
+    }));
+    setDirty(true);
+  }, []);
+
+  const { canvasRef, wrapRef, miniRef, canvasHandlers, miniGo, focusNode, positions, resetBodies } = useBrainCanvas({
+    graph: viewGraph,
+    weights,
+    selectedId,
+    linkFrom,
+    matchedIds,
+    onSelect: useCallback((id: string | null) => {
+      setSelectedId(id);
+      if (!id) setLinkFrom(null);
+    }, []),
+    onLink: useCallback((from: string, to: string) => {
+      addEdge(from, to);
+      setLinkFrom(null);
+    }, [addEdge]),
+  });
 
   /* ---- загрузка ------------------------------------------------------- */
 
@@ -341,411 +171,6 @@ export function BrainPanel() {
     })();
     return () => { alive = false; };
   }, []);
-
-  /* ---- симуляция + отрисовка ------------------------------------------ */
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const wrap = wrapRef.current;
-    if (!canvas || !wrap) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let w = 0, h = 0;
-    const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
-      w = wrap.clientWidth; h = wrap.clientHeight;
-      canvas.width = Math.round(w * dpr);
-      canvas.height = Math.round(h * dpr);
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${h}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
-    resize();
-    const ro = new ResizeObserver(resize);
-    ro.observe(wrap);
-
-    let raf = 0;
-    let t = 0;
-    const tick = () => {
-      const g = graphRef.current;
-      const map = bodies.current;
-
-      // Синхронизируем тела с узлами (новые — засеять, удалённые — убрать).
-      g.nodes.forEach((n, i) => {
-        if (!map.has(n.id)) map.set(n.id, seedBody(i, g.nodes.length, w, h, n));
-      });
-      for (const id of [...map.keys()]) {
-        if (!g.nodes.some((n) => n.id === id)) map.delete(id);
-      }
-
-      // Силы: отталкивание всех от всех, пружины по рёбрам, кластеры, центр, дрейф.
-      const wmap = weightsRef.current;
-      const arr = g.nodes.map((n) => ({ n, b: map.get(n.id)!, w: wmap.get(n.id) ?? 0.5 }));
-      for (let i = 0; i < arr.length; i++) {
-        for (let j = i + 1; j < arr.length; j++) {
-          const a = arr[i].b, b = arr[j].b;
-          const dx = a.x - b.x, dy = a.y - b.y;
-          const d2 = Math.max(80, dx * dx + dy * dy);
-          // Тяжёлые расталкивают сильнее — вокруг них появляется воздух,
-          // а мелочь слипается плотнее и не растаскивает граф по холсту.
-          const same = arr[i].n.category === arr[j].n.category;
-          const f = (2600 * (0.55 + arr[i].w + arr[j].w) * (same ? 0.55 : 1)) / d2;
-          const d = Math.sqrt(d2);
-          a.vx += (dx / d) * f; a.vy += (dy / d) * f;
-          b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
-        }
-      }
-
-      // Кластеры: узлы одной категории тянутся к общему центру масс, так граф
-      // распадается на читаемые «доли» вместо равномерного облака точек.
-      const centroids = new Map<string, { x: number; y: number; n: number }>();
-      for (const { n, b } of arr) {
-        const c = centroids.get(n.category) ?? { x: 0, y: 0, n: 0 };
-        c.x += b.x; c.y += b.y; c.n++;
-        centroids.set(n.category, c);
-      }
-      for (const { n, b, w } of arr) {
-        const c = centroids.get(n.category)!;
-        if (c.n < 2) continue;
-        // Лёгкие липнут к своей доле охотнее; тяжёлые держат позицию сами.
-        const pull = 0.012 * (1.3 - w);
-        b.vx += (c.x / c.n - b.x) * pull;
-        b.vy += (c.y / c.n - b.y) * pull;
-      }
-      for (const e of g.edges) {
-        const a = map.get(e.from), b = map.get(e.to);
-        if (!a || !b) continue;
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-        const f = (d - 130) * 0.004;
-        a.vx += (dx / d) * f; a.vy += (dy / d) * f;
-        b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
-      }
-      t += 0.016;
-      for (const { n, b, w: nw } of arr) {
-        // Тяжёлые тянет к центру сильнее (ядро графа), лёгкие уплывают к краю.
-        // «Дыхание» им наоборот приглушаем, чтобы опорные узлы не дрожали.
-        const gravity = 0.0004 + nw * 0.0012;
-        const drift = 0.03 * (1.15 - nw);
-        b.vx += (w / 2 - b.x) * gravity + Math.cos(t * 0.6 + b.phase) * drift;
-        b.vy += (h / 2 - b.y) * gravity + Math.sin(t * 0.5 + b.phase) * drift;
-        if (pointer.current.dragId !== n.id) {
-          b.vx *= 0.86; b.vy *= 0.86;
-          b.x += b.vx; b.y += b.vy;
-        } else {
-          b.vx = 0; b.vy = 0;
-        }
-      }
-
-      // Отрисовка.
-      const { ox, oy, scale } = view.current;
-      ctx.clearRect(0, 0, w, h);
-      ctx.save();
-      ctx.translate(ox, oy);
-      ctx.scale(scale, scale);
-
-      const sel = selectedRef.current;
-      const hover = hoverRef.current;
-      const neighbors = new Set<string>();
-      if (sel) {
-        neighbors.add(sel);
-        for (const e of g.edges) {
-          if (e.from === sel) neighbors.add(e.to);
-          if (e.to === sel) neighbors.add(e.from);
-        }
-      }
-
-      /* ---- детализация по зуму (LOD) ---------------------------------------
-       *
-       * Каша возникает на ОБОИХ концах зума, и по разным причинам.
-       *
-       * Далеко: в кадре весь граф, подписи наезжают друг на друга, линии
-       * сливаются в серую сетку. Нужен силуэт — опоры и форма долей, без текста.
-       *
-       * Близко: ты зашёл внутрь кластера смотреть детали, а опорный узел со
-       * своим десятком связей продолжает перечёркивать кадр и подписываться
-       * крупным шрифтом. На этом масштабе он уже не ориентир — ориентир тут
-       * мелочь, ради которой и приближались. Поэтому тяжёлые гасим зеркально.
-       *
-       * `far` 0→1: 0 — максимальное отдаление. `deep` 0→1: 1 — упёрлись вплотную.
-       */
-      const far = Math.min(1, Math.max(0, (scale - 0.42) / 0.28));
-      const deep = Math.min(1, Math.max(0, (scale - 1.45) / 0.75));
-
-      // Линии на отдалении гасим целиком: на общем плане важна форма графа, а не
-      // каждая связь. Выделенные не трогаем — иначе теряется смысл клика издалека.
-      const zoomFade = Math.min(1, Math.max(0.22, (scale - 0.28) / 0.62));
-
-      for (const e of g.edges) {
-        const a = map.get(e.from), b = map.get(e.to);
-        if (!a || !b) continue;
-        const active = sel && (e.from === sel || e.to === sel);
-        // Связь весит столько же, сколько её более лёгкий конец: линия между
-        // двумя мусорными узлами не должна чертить холст наравне с опорной.
-        const ew = Math.min(wmap.get(e.from) ?? 0.5, wmap.get(e.to) ?? 0.5);
-        // Вблизи убираем «лучи» опорных узлов: их у хаба десятки, и они
-        // перечёркивают ровно то, ради чего приближались. Смотрим по ТЯЖЁЛОМУ
-        // концу — именно он разводит лучи веером через весь кадр.
-        const heavyEnd = Math.max(wmap.get(e.from) ?? 0.5, wmap.get(e.to) ?? 0.5);
-        const deepFade = heavyEnd >= 0.78 ? 1 - deep * 0.8 : 1;
-        ctx.strokeStyle = active
-          ? "rgba(79,193,255,0.75)"
-          : `rgba(140,140,150,${((0.08 + ew * 0.26) * zoomFade * deepFade).toFixed(3)})`;
-        ctx.lineWidth = active ? 1.6 : 0.6 + ew * 0.9;
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-        if (active && e.label) {
-          ctx.fillStyle = "rgba(200,200,210,0.85)";
-          ctx.font = "10px system-ui, sans-serif";
-          ctx.textAlign = "center";
-          ctx.fillText(e.label, (a.x + b.x) / 2, (a.y + b.y) / 2 - 4);
-        }
-      }
-
-      const matches = searchRef.current;
-      for (const { n, b, w: nw } of arr) {
-        const r = radius(nw);
-        // Поиск важнее выделения: гасим всё, что не совпало; иначе — обычная логика соседей.
-        const dim = matches ? !matches.has(n.id) : sel ? !neighbors.has(n.id) : false;
-        const hit = matches?.has(n.id) ?? false;
-        const focused = n.id === sel || n.id === hover || hit;
-        const color = catColor(n.category);
-        // Лёгкие узлы полупрозрачны — остаются как фон/контекст, но не спорят
-        // за внимание с тяжёлыми. Под курсором и в поиске проявляются полностью.
-        const weightAlpha = focused ? 1 : 0.3 + Math.min(1, nw / NOISE) * 0.7 * (0.55 + nw * 0.45);
-        ctx.globalAlpha = dim ? 0.12 : weightAlpha;
-        // Свечение тяжёлых узлов.
-        if (nw >= 0.78 && !dim) {
-          const glow = ctx.createRadialGradient(b.x, b.y, r * 0.4, b.x, b.y, r * 2.4);
-          glow.addColorStop(0, color + "55");
-          glow.addColorStop(1, "transparent");
-          ctx.fillStyle = glow;
-          ctx.beginPath();
-          ctx.arc(b.x, b.y, r * 2.4, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        // Центр категории рисуем кольцом, а не точкой: он не сущность, а место
-        // сбора, и не должен выглядеть как узел, который можно открыть.
-        if (isHubId(n.id)) {
-          ctx.fillStyle = color + "22";
-          ctx.beginPath();
-          ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 1.4;
-          ctx.stroke();
-        } else {
-          ctx.fillStyle = color;
-          ctx.beginPath();
-          ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        if (hit || n.id === sel || n.id === hover || n.id === linkFromRef.current) {
-          ctx.strokeStyle = n.id === linkFromRef.current ? "#dcdcaa" : hit ? "#4fc1ff" : "#ffffff";
-          ctx.lineWidth = hit ? 2.2 : 1.6;
-          ctx.stroke();
-        }
-        // Подписи — главный источник каши. Мелочь подписываем только под
-        // курсором / в выделении / в поиске, иначе холст забивается текстом.
-        if (focused || (nw >= NOISE && !dim)) {
-          let la = dim ? 0.3 : focused ? 1 : 0.45 + nw * 0.55;
-          // Наведённое и найденное показываем всегда: LOD убирает лишнее, но не
-          // должен прятать то, на что человек прямо сейчас смотрит.
-          if (!focused) {
-            // Далеко — подписаны только опоры, остальное молчит: получается
-            // силуэт графа, а не сплошной текст.
-            if (nw < 0.8) la *= far;
-            // Близко — наоборот, замолкают опоры: их название и так известно,
-            // а место на экране нужно деталям.
-            if (nw >= 0.78) la *= 1 - deep * 0.9;
-          }
-          // Ниже этого порога буквы уже нечитаемы и работают как грязь.
-          if (la > 0.05) {
-            ctx.globalAlpha = la;
-            ctx.fillStyle = "rgba(225,225,235,0.95)";
-            ctx.font = `${nw >= 0.78 ? "600 12" : nw >= 0.5 ? "11" : "10"}px system-ui, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.fillText(n.label.slice(0, nw >= 0.5 ? 32 : 20), b.x, b.y + r + 12);
-          }
-        }
-        ctx.globalAlpha = 1;
-      }
-      ctx.restore();
-
-      /* ---- миникарта ------------------------------------------------------
-       * Рисуется тем же кадром: отдельный цикл ради ста точек — лишняя работа,
-       * а рассинхрон с основным холстом сразу заметен глазом.
-       */
-      const mini = miniRef.current;
-      if (mini && arr.length) {
-        const mctx = mini.getContext("2d");
-        const mw = mini.clientWidth, mh = mini.clientHeight;
-        if (mctx && mw && mh) {
-          const dpr = window.devicePixelRatio || 1;
-          if (mini.width !== Math.round(mw * dpr)) {
-            mini.width = Math.round(mw * dpr);
-            mini.height = Math.round(mh * dpr);
-          }
-          mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-          mctx.clearRect(0, 0, mw, mh);
-
-          // Границы по узлам, а не по холсту: граф уплывает, и карта должна
-          // ехать за ним, иначе точки собьются в угол.
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-          for (const { b } of arr) {
-            if (b.x < minX) minX = b.x; if (b.x > maxX) maxX = b.x;
-            if (b.y < minY) minY = b.y; if (b.y > maxY) maxY = b.y;
-          }
-          const pad = 30;
-          const s = Math.min((mw - 8) / Math.max(1, maxX - minX + pad * 2), (mh - 8) / Math.max(1, maxY - minY + pad * 2));
-          const ox = 4 - (minX - pad) * s, oy = 4 - (minY - pad) * s;
-          miniFit.current = { s, ox, oy };
-          const mx = (x: number) => x * s + ox, my = (y: number) => y * s + oy;
-
-          for (const { n, b, w: nw } of arr) {
-            const hit = matches?.has(n.id) ?? false;
-            // Найденное поиском на карте видно сразу — иначе, чтобы понять, куда
-            // ехать за совпадением, пришлось бы возить основной вид наугад.
-            const faded = matches ? !hit : false;
-            // Связи на миникарте не рисуем вовсе: в таком масштабе они дают
-            // сплошную заливку, из которой не читается ничего.
-            mctx.globalAlpha = faded ? 0.12 : 0.25 + nw * 0.75;
-            mctx.fillStyle = hit ? "#4fc1ff" : catColor(n.category);
-            mctx.beginPath();
-            mctx.arc(mx(b.x), my(b.y), Math.max(1, (hit ? 2 : 1) + nw * 2.5), 0, Math.PI * 2);
-            mctx.fill();
-            // Выделенный узел помечаем всегда: это точка отсчёта на карте.
-            if (n.id === sel) {
-              mctx.globalAlpha = 1;
-              mctx.strokeStyle = "#ffffff";
-              mctx.lineWidth = 1.2;
-              mctx.stroke();
-            }
-          }
-          mctx.globalAlpha = 1;
-
-          // Рамка текущего вида — то, ради чего карта и нужна.
-          // Мировые координаты левого верхнего угла экрана — это -offset/scale.
-          const vx = mx(-view.current.ox / view.current.scale);
-          const vy = my(-view.current.oy / view.current.scale);
-          mctx.strokeStyle = "rgba(79,193,255,0.9)";
-          mctx.lineWidth = 1;
-          mctx.strokeRect(vx, vy, (w / view.current.scale) * s, (h / view.current.scale) * s);
-        }
-      }
-
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
-  }, []);
-
-  /* ---- указатель: drag / pan / zoom / select --------------------------- */
-
-  const toWorld = useCallback((clientX: number, clientY: number) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const { ox, oy, scale } = view.current;
-    return { x: (clientX - rect.left - ox) / scale, y: (clientY - rect.top - oy) / scale };
-  }, []);
-
-  const nodeAt = useCallback((wx: number, wy: number): string | null => {
-    const g = graphRef.current;
-    for (let i = g.nodes.length - 1; i >= 0; i--) {
-      const n = g.nodes[i];
-      const b = bodies.current.get(n.id);
-      if (!b) continue;
-      // +5: мелкие узлы иначе почти невозможно попасть курсором.
-      const r = radius(weightsRef.current.get(n.id) ?? 0.5) + 5;
-      if ((b.x - wx) ** 2 + (b.y - wy) ** 2 <= r * r) return n.id;
-    }
-    return null;
-  }, []);
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    (e.target as Element).setPointerCapture(e.pointerId);
-    const { x, y } = toWorld(e.clientX, e.clientY);
-    const id = nodeAt(x, y);
-    pointer.current = { dragId: id, panning: !id, lastX: e.clientX, lastY: e.clientY, moved: false };
-  };
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    const p = pointer.current;
-    const dx = e.clientX - p.lastX, dy = e.clientY - p.lastY;
-    if (p.dragId) {
-      const b = bodies.current.get(p.dragId);
-      if (b) { b.x += dx / view.current.scale; b.y += dy / view.current.scale; }
-      if (Math.abs(dx) + Math.abs(dy) > 1) p.moved = true;
-    } else if (p.panning) {
-      view.current.ox += dx; view.current.oy += dy;
-      if (Math.abs(dx) + Math.abs(dy) > 1) p.moved = true;
-    } else {
-      const { x, y } = toWorld(e.clientX, e.clientY);
-      hoverRef.current = nodeAt(x, y);
-    }
-    p.lastX = e.clientX; p.lastY = e.clientY;
-  };
-
-  const onPointerUp = (e: React.PointerEvent) => {
-    const p = pointer.current;
-    if (!p.moved) {
-      const { x, y } = toWorld(e.clientX, e.clientY);
-      const id = nodeAt(x, y);
-      // Центр категории — не настоящий узел: связь с ним ушла бы в снапшот
-      // ссылкой в никуда, поэтому связывание на нём просто не срабатывает.
-      if (id && !isHubId(id) && linkFromRef.current && id !== linkFromRef.current) {
-        // Режим связывания: второй клик создаёт ребро.
-        const from = linkFromRef.current;
-        setGraph((g) => ({
-          ...g,
-          edges: g.edges.some((ed) => (ed.from === from && ed.to === id) || (ed.from === id && ed.to === from))
-            ? g.edges
-            : [...g.edges, { id: `e${Date.now()}`, from, to: id }],
-        }));
-        setDirty(true);
-        setLinkFrom(null);
-      } else {
-        setSelectedId(id);
-        if (!id) setLinkFrom(null);
-      }
-    }
-    pointer.current = { dragId: null, panning: false, lastX: 0, lastY: 0, moved: false };
-  };
-
-  /**
-   * Прыжок по миникарте: центрируем вид на точке, куда ткнули.
-   *
-   * Работает и на зажатой кнопке — тащишь по карте, основной вид едет следом.
-   * Масштаб при этом не трогаем: карта отвечает на «где я», а не «насколько
-   * близко», и внезапный зум под пальцем сбивал бы ориентацию.
-   */
-  const miniGo = (e: React.PointerEvent) => {
-    if (e.buttons === 0 && e.type === "pointermove") return;
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const { s, ox, oy } = miniFit.current;
-    if (!s) return;
-    const wx = (e.clientX - rect.left - ox) / s;
-    const wy = (e.clientY - rect.top - oy) / s;
-    const wrap = wrapRef.current;
-    if (!wrap) return;
-    const v = view.current;
-    v.ox = wrap.clientWidth / 2 - wx * v.scale;
-    v.oy = wrap.clientHeight / 2 - wy * v.scale;
-  };
-
-  const onWheel = (e: React.WheelEvent) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    const v = view.current;
-    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-    const next = Math.min(2.5, Math.max(0.35, v.scale * factor));
-    // Зум к курсору: точка под мышью остаётся на месте.
-    v.ox = mx - ((mx - v.ox) / v.scale) * next;
-    v.oy = my - ((my - v.oy) / v.scale) * next;
-    v.scale = next;
-  };
 
   /* ---- действия -------------------------------------------------------- */
 
@@ -992,7 +417,7 @@ export function BrainPanel() {
         }
         throw new Error(json.error || `HTTP ${res.status}: ${text.slice(0, 120)}`);
       }
-      bodies.current.clear();
+      resetBodies();
       setGraph(json.data);
       setSelectedId(null);
       setDirty(true);
@@ -1012,11 +437,14 @@ export function BrainPanel() {
     setBusy("save"); setError("");
     try {
       // Впечатываем текущие координаты, чтобы снапшот восстанавливался как был.
+      // Сохраняем `graph`, а не viewGraph: достроенные центры категорий —
+      // отображаемая условность и в снапшот попадать не должны.
+      const pos = positions();
       const withPos: BrainState = {
-        ...graphRef.current,
-        nodes: graphRef.current.nodes.map((n) => {
-          const b = bodies.current.get(n.id);
-          return b ? { ...n, x: Math.round(b.x), y: Math.round(b.y) } : n;
+        ...graph,
+        nodes: graph.nodes.map((n) => {
+          const b = pos.get(n.id);
+          return b ? { ...n, x: b.x, y: b.y } : n;
         }),
       };
       if (snapshotId && !asNew) {
@@ -1037,7 +465,7 @@ export function BrainPanel() {
 
   const loadSnapshot = (id: string) => {
     if (id === "new") {
-      bodies.current.clear();
+      resetBodies();
       setGraph({ nodes: [], edges: [] });
       setSnapshotId("");
       setTitle("Мой мозг");
@@ -1047,7 +475,7 @@ export function BrainPanel() {
     }
     const row = snapshots.find((s) => s.id === id);
     if (!row) return;
-    bodies.current.clear();
+    resetBodies();
     setGraph(row.data);
     setSnapshotId(row.id);
     setTitle(row.title);
@@ -1103,18 +531,6 @@ export function BrainPanel() {
     setDirty(true);
   };
 
-  /** Связать два узла. Дубликат (в любую сторону) молча игнорируем. */
-  const addEdge = (from: string, to: string) => {
-    if (from === to) return;
-    setGraph((g) => ({
-      ...g,
-      edges: g.edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from))
-        ? g.edges
-        : [...g.edges, { id: `e${Date.now()}`, from, to }],
-    }));
-    setDirty(true);
-  };
-
   const openSource = (n: BrainNode) => {
     if (!n.source) return;
     if (n.source.url) { window.open(n.source.url, "_blank", "noopener"); return; }
@@ -1144,18 +560,6 @@ export function BrainPanel() {
       .sort((a, b) => (weights.get(b.id) ?? 0) - (weights.get(a.id) ?? 0) || a.label.localeCompare(b.label))
       .slice(0, 50);
   }, [selected, selectedEdges, graph.nodes, linkQuery, weights]);
-
-  /** Навести камеру на узел (центрировать) и выделить его. */
-  const focusNode = (id: string) => {
-    const b = bodies.current.get(id);
-    const wrap = wrapRef.current;
-    if (b && wrap) {
-      const { scale } = view.current;
-      view.current.ox = wrap.clientWidth / 2 - b.x * scale;
-      view.current.oy = wrap.clientHeight / 2 - b.y * scale;
-    }
-    setSelectedId(id);
-  };
 
   return (
     <div className="flex h-[calc(100vh-120px)] flex-col px-4 pb-4">
@@ -1510,10 +914,7 @@ export function BrainPanel() {
           <canvas
             ref={canvasRef}
             className="block cursor-grab touch-none active:cursor-grabbing"
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onWheel={onWheel}
+            {...canvasHandlers}
           />
           {!graph.nodes.length && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-8 text-center text-[13px] text-vsc-muted">
@@ -1706,181 +1107,6 @@ export function BrainPanel() {
             )}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Выбор конкретных материалов для точечного дополнения: файлы Диска и проекты,
- * импортированные с гитхаба.
- *
- * Обычный «Дополнить» читает выжимки с сотни файлов и описания проектов по 300
- * символов, и модель сама решает, что важно, — на большом пласте она регулярно
- * проходит мимо. Здесь выбранное читается ЦЕЛИКОМ, и промпт прямо говорит: это
- * выбрали руками, разбирай.
- *
- * Отметки по вкладкам независимы и переживают переключение — можно набрать пачку
- * файлов, уйти в проекты, добрать там и отправить всё одним заходом.
- */
-function SourcePicker({
-  onClose, onConfirm,
-}: {
-  onClose: () => void;
-  onConfirm: (fileIds: string[], projectIds: string[]) => void;
-}) {
-  const [tab, setTab] = useState<"drive" | "projects">("drive");
-  const [files, setFiles] = useState<{ file_id: string; name: string; excerpt?: string }[]>([]);
-  const [projects, setProjects] = useState<{ id: string; title: string; description: string; tags: string }[]>([]);
-  const [pickedFiles, setPickedFiles] = useState<Set<string>>(new Set());
-  const [pickedProjects, setPickedProjects] = useState<Set<string>>(new Set());
-  const [q, setQ] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-    const t = setTimeout(async () => {
-      try {
-        const url = tab === "drive"
-          ? `/api/google/search?q=${encodeURIComponent(q)}&limit=200`
-          : "/api/workspace/projects";
-        const res = await fetch(url);
-        const json = await res.json();
-        if (!alive) return;
-        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-        if (tab === "drive") setFiles(json.files ?? []);
-        else setProjects(json.items ?? json.projects ?? []);
-        setError("");
-      } catch (e) {
-        if (alive) setError((e as Error).message);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    }, tab === "drive" && q ? 250 : 0); // дебаунс только для набора текста, первый показ — сразу
-    return () => { alive = false; clearTimeout(t); };
-  }, [q, tab]);
-
-  const toggle = (set: Set<string>, apply: (s: Set<string>) => void, id: string) => {
-    const next = new Set(set);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    apply(next);
-  };
-
-  // Проекты фильтруем на клиенте: их десятки, отдельный серверный поиск избыточен.
-  const needle = q.trim().toLowerCase();
-  const shownProjects = needle
-    ? projects.filter((p) => `${p.title} ${p.tags} ${p.description}`.toLowerCase().includes(needle))
-    : projects;
-
-  const total = pickedFiles.size + pickedProjects.size;
-
-  const tabBtn = (id: "drive" | "projects", label: string, count: number) => (
-    <button
-      onClick={() => { setTab(id); setLoading(true); }}
-      className={`rounded px-2 py-1 text-[12px] ${
-        tab === id ? "bg-vsc-accent/15 text-vsc-text" : "text-vsc-muted hover:bg-vsc-hover"
-      }`}
-    >
-      {label}{count ? ` · ${count}` : ""}
-    </button>
-  );
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="flex h-[80vh] w-full max-w-2xl flex-col rounded border border-vsc-line bg-vsc-bg">
-        <div className="flex items-center justify-between border-b border-vsc-line px-3 py-2">
-          <span className="text-[13px] font-medium text-vsc-text">Что разобрать</span>
-          <button onClick={onClose} className="text-vsc-muted hover:text-vsc-text"><X size={16} /></button>
-        </div>
-
-        <div className="flex items-center gap-1 border-b border-vsc-line px-3 py-1.5">
-          {tabBtn("drive", "Диск", pickedFiles.size)}
-          {tabBtn("projects", "Проекты", pickedProjects.size)}
-        </div>
-
-        <div className="border-b border-vsc-line px-3 py-2">
-          <div className="flex items-center gap-2 rounded border border-vsc-line px-2">
-            <Search size={13} className="text-vsc-muted" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder={tab === "drive" ? "поиск по названию и содержимому…" : "поиск по проектам…"}
-              className="w-full bg-transparent py-1 text-[12px] text-vsc-text outline-none"
-            />
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-auto">
-          {loading && <div className="p-3 text-[12px] text-vsc-muted">Загружаю…</div>}
-          {error && <div className="p-3 text-[12px] text-red-300">{error}</div>}
-
-          {!loading && !error && tab === "drive" && files.map((f) => (
-            <button
-              key={f.file_id}
-              onClick={() => toggle(pickedFiles, setPickedFiles, f.file_id)}
-              className={`flex w-full items-start gap-2 border-b border-vsc-line px-3 py-2 text-left hover:bg-vsc-hover ${
-                pickedFiles.has(f.file_id) ? "bg-vsc-accent/10" : ""
-              }`}
-            >
-              <input type="checkbox" checked={pickedFiles.has(f.file_id)} readOnly className="mt-0.5 shrink-0" />
-              <span className="min-w-0">
-                <span className="block truncate text-[12px] text-vsc-text">{f.name}</span>
-                {f.excerpt && (
-                  <span className="block truncate text-[11px] text-vsc-muted">
-                    {f.excerpt.replace(/\s+/g, " ").slice(0, 120)}
-                  </span>
-                )}
-              </span>
-            </button>
-          ))}
-
-          {!loading && !error && tab === "projects" && shownProjects.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => toggle(pickedProjects, setPickedProjects, p.id)}
-              className={`flex w-full items-start gap-2 border-b border-vsc-line px-3 py-2 text-left hover:bg-vsc-hover ${
-                pickedProjects.has(p.id) ? "bg-vsc-accent/10" : ""
-              }`}
-            >
-              <input type="checkbox" checked={pickedProjects.has(p.id)} readOnly className="mt-0.5 shrink-0" />
-              <span className="min-w-0">
-                <span className="block truncate text-[12px] text-vsc-text">
-                  {p.title}
-                  {p.tags && <span className="ml-1.5 text-[11px] text-vsc-muted">{p.tags}</span>}
-                </span>
-                {p.description && (
-                  <span className="block truncate text-[11px] text-vsc-muted">
-                    {p.description.replace(/\s+/g, " ").slice(0, 120)}
-                  </span>
-                )}
-              </span>
-            </button>
-          ))}
-
-          {!loading && !error && !(tab === "drive" ? files.length : shownProjects.length) && (
-            <div className="p-3 text-[12px] text-vsc-muted">Ничего не найдено.</div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between border-t border-vsc-line px-3 py-2">
-          <span className="text-[12px] text-vsc-muted">
-            Выбрано: {total}
-            {(pickedFiles.size > 20 || pickedProjects.size > 20) ? " — возьмём первые 20 в каждом" : ""}
-          </span>
-          <div className="flex gap-2">
-            <button onClick={onClose} className="rounded px-2 py-1 text-[12px] text-vsc-muted hover:bg-vsc-hover">
-              Отмена
-            </button>
-            <button
-              onClick={() => onConfirm([...pickedFiles], [...pickedProjects])}
-              disabled={!total}
-              className="rounded border border-vsc-line px-2 py-1 text-[12px] text-vsc-text hover:bg-vsc-hover disabled:opacity-40"
-            >
-              Дополнить выбранным
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );
