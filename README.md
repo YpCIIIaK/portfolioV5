@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Портфолио-IDE
 
-## Getting Started
+Личный сайт, сделанный как VS Code: файловое дерево, вкладки, командная палитра,
+терминал, минимапа. Каждая «вкладка» — это раздел портфолио или живая панель.
+Поверх публичной части — приватный личный кабинет (workspace) с двумя десятками
+интеграций, доступный только владельцу после входа через GitHub.
 
-First, run the development server:
+**Стек:** Next.js 16 · React 19 · TypeScript · Tailwind 4 · Zustand · Supabase · OpenRouter
+
+## Публичная часть
+
+- **IDE-оболочка** — дерево файлов, вкладки, breadcrumb, командная палитра
+  (Ctrl+K), терминал, минимапа, темы, ачивки, тур для новичка.
+- **Разделы** — обо мне, резюме, навыки, опыт, проекты с интерактивными
+  песочницами (repo-anti-rot, multi-agent arena, chrome-расширения).
+- **Live-панели** — GitHub-статистика и контрибуции, рыночные котировки,
+  журнал, использование ИИ.
+- **Гостевая книга и форма контакта** — с уведомлениями владельцу.
+- Прямые ссылки на любой «файл» (`?file=…`), OG-картинки, sitemap.
+
+## Личный кабинет (workspace)
+
+GitHub OAuth + HMAC-cookie; полный доступ — только у владельца
+(`OWNER_GITHUB_ID`), гости видят демо-режим. Данные — в Supabase.
+
+- **База:** дашборд, заметки, календарь с напоминаниями, задачи, подписки, проекты.
+- **Интеграции:** почта (IMAP), Telegram, Notion, Bitrix24, Google Drive
+  (синк + поиск по содержимому), Яндекс.Музыка, новости.
+- **ИИ (OpenRouter):** ассистент с инструментами по всему воркспейсу,
+  диаграммы из текста, воркфлоу, выбор своей модели под каждую задачу.
+- **«Второй мозг»** — граф знаний, который ИИ собирает из всех источников
+  воркспейса: физика раскладки на canvas, миникарта, LOD по зуму, инкрементальное
+  дополнение, полный обход Диска, чистка и чёрный список тем.
+- **Инструменты:** Repo Health (принимает отчёты repo-janitor из CI) и
+  Figma → Code (REST-прокси + [плагин](figma-plugin/)).
+
+Подробно про архитектуру и настройку: [docs/workspace.md](docs/workspace.md),
+про инструменты: [docs/tools-integration.md](docs/tools-integration.md),
+схема БД: [docs/workspace-schema.sql](docs/workspace-schema.sql).
+
+## Запуск
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Без переменных окружения сайт полностью работает как публичное портфолио —
+workspace просто остаётся в демо-режиме. Шаблон всех переменных —
+в `.env.example`; минимум для кабинета: GitHub OAuth App, `OWNER_GITHUB_ID`,
+`AUTH_SECRET`, Supabase (см. [docs/workspace.md](docs/workspace.md), ~5 минут).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Структура
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+  app/            страницы + ~50 API-роутов (auth, workspace, интеграции, ИИ)
+  components/     IDE-оболочка и публичные панели
+    workspace/    панели личного кабинета
+    workspace/brain/  граф знаний: чистая логика, canvas-хук, модалки
+  lib/            доменная логика: auth, supabase, интеграции, brain, workflow
+docs/             архитектура, настройка, SQL-схема
+figma-plugin/     плагин Figma → Code
+scripts/          утилиты (Telegram-логин, webhook)
+```
