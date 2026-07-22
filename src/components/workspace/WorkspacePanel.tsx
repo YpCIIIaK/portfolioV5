@@ -82,7 +82,14 @@ export function WorkspacePanel() {
   }, [loaded, refresh]);
 
   useEffect(() => {
-    setCollapsed(loadCollapsed());
+    // Через микротаску: localStorage недоступен при SSR, а синхронный setState
+    // в теле эффекта даёт каскадный рендер (тот же приём, что в других панелях).
+    let cancelled = false;
+    (async () => {
+      await Promise.resolve();
+      if (!cancelled) setCollapsed(loadCollapsed());
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const toggleGroup = (key: string) => {
