@@ -6,6 +6,7 @@ import { useEditor } from "@/lib/store";
 import { fileById, DEFAULT_OPEN } from "@/lib/files";
 import { FileIcon } from "./FileIcon";
 import { BlockRenderer } from "./BlockRenderer";
+import { PanelBoundary } from "./PanelBoundary";
 import { ContactForm } from "./ContactForm";
 import { GuestbookPanel } from "./GuestbookPanel";
 import { GitHubPanel } from "./GitHubPanel";
@@ -56,6 +57,9 @@ export function Editor() {
           >
           <Breadcrumb id={file.id} />
           <BlockRenderer blocks={file.blocks} />
+          {/* Всё интерактивное — за оградой: любая панель ходит во внешний
+              сервис и может упасть, но ронять она должна только свою вкладку. */}
+          <PanelBoundary resetKey={file.id}>
           {file.id === "contact/contact.tsx" && (
             <div className="mx-auto max-w-3xl px-8 pb-12">
               <ContactForm />
@@ -127,6 +131,7 @@ export function Editor() {
           {file.id === "workspace/projects.tsx" && <ProjectsPanel />}
           {file.id === "tools/repo-health.tsx" && <RepoHealthPanel />}
           {file.id === "tools/figma.tsx" && <FigmaPanel />}
+          </PanelBoundary>
           </div>
           <Minimap blocks={file.blocks} />
         </div>
