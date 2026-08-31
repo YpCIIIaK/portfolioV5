@@ -1,5 +1,5 @@
 import { askAI } from "@/lib/ai";
-import { fetchInbox } from "@/lib/mail-server";
+import { fetchInbox, fetchMessage } from "@/lib/mail-server";
 import { sendTelegram, sendEmail } from "@/lib/notify";
 import { supabaseConfigured, sbSelect, sbInsert } from "@/lib/supabase";
 import { webFetch, webSearch } from "@/lib/web";
@@ -68,16 +68,22 @@ const RUNNERS: Record<string, StepRunner> = {
 
   async imap_read(p) {
     requireSupabase();
-    const limit = Number(p.limit) ?? 50;
-    const fromFilter = p.from_filter ?? "";
+    const limit = Number(p.limit) || 50;
+    const fromFilter = (p.from_filter ?? "").trim().toLowerCase();
     const emails = await fetchInbox(limit);
     const filtered = fromFilter
-      ? emails.filter(e => e.from.toLowerCase().includes(fromFilter.toLowerCase()))
+      ? emails.filter(e => e.from.toLowerCase().includes(fromFilter))
       : emails;
-    let text = `Найдено писем: ${filtered.length}\n`;
-    filtered.forEach((e, i) => {
-      text += `${i+1}. От: ${e.from}\n   Тема: ${e.subject}\n   Дата: ${e.date}\n\n`;
-    });
+    // Тела писем нужны для осмысленного резюме — тянем последовательно,
+    // но не бесконечно: максимум 10 писем за прогон, по 4000 символов.
+    const withBody = filtered.slice(0, 10);
+    let text = `Найдено писем: ${filtered.length}${filtered.length > 10 ? " (показаны первые 10)" : ""}\n`;
+    for (let i = 0; i < withBody.length; i++) {
+      const e = withBody[i];
+      const full = await fetchMessage(e.uid).catch(() => null);
+      const body = (full?.body ?? "").replace(/\s+/g, " ").trim().slice(0, 4000);
+      text += `\n--- Письмо ${i + 1} ---\nОт: ${e.from}\nТема: ${e.subject}\nДата: ${e.date}\n${body ? `Текст: ${body}` : "(текст недоступен)"}\n`;
+    }
     return text;
   },
 
@@ -181,7 +187,8 @@ export async function runWorkflow(data: WorkflowData, input = ""): Promise<RunRe
       break;
     }
     // Auto-connect: флаг включает подстановку выхода предыдущего шага в `{{input}}`.
-    if (step.connect_previous === "true") vars.input = vars.prev;
+    // UI сохраняет флаг в params (select-поле), старые версии — в самом шаге.
+    if (step.params.connect_previous === "true" || step.connect_previous === "true") vars.input = vars.prev;
     try {
       const params = renderParams(step, vars);
       const result = await runner(params);

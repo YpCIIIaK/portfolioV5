@@ -56,9 +56,13 @@ export async function fetchInbox(limit: number): Promise<MailSummary[]> {
       const out: MailSummary[] = [];
       for await (const msg of c.fetch(`${start}:*`, { uid: true, envelope: true, flags: true })) {
         const env = msg.envelope;
+        // Имя И адрес: «Immunefi <do-not-reply@bugs.immunefi.com>» — фильтрам
+        // воркфлоу нужен именно адрес, UI показывает красивую форму.
+        const name = env?.from?.[0]?.name || "";
+        const address = env?.from?.[0]?.address || "";
         out.push({
           uid: msg.uid,
-          from: env?.from?.[0]?.name || env?.from?.[0]?.address || "",
+          from: [name, address].filter(Boolean).join(" "),
           subject: env?.subject || "(без темы)",
           date: env?.date ? new Date(env.date).toISOString() : "",
           snippet: "",
