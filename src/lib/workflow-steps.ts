@@ -169,18 +169,6 @@ export const STEP_CATALOG: StepMeta[] = [
       { key: "text", label: "Текст", type: "textarea", required: true, placeholder: "{{prev}}" },
       { key: "bot_name", label: "Имя бота", type: "text", placeholder: "Название бота в списке" },
       { key: "chat_override", label: "Chat ID", type: "text", placeholder: "Override chat ID (опционально)" },
-    ],
-  },
-  {
-    type: "email",
-    label: "Почта",
-    icon: "Mail",
-    hint: "Отправить письмо владельцу через Resend.",
-    writes: true,
-    fields: [
-      { key: "subject", label: "Тема", type: "text", required: true, placeholder: "Сводка на {{date}}" },
-      { key: "text", label: "Текст письма", type: "textarea", required: true, placeholder: "Сводка письма" },
-      { key: "from", label: "Отправитель", type: "text", placeholder: "Portfolio <user@domain>" },
       { key: "connect_previous", label: "Берть выход prev шага", type: "select", options: [
         { value: "", label: "Не подключать" },
         { value: "true", label: "Включить" },
