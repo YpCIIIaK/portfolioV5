@@ -208,8 +208,21 @@ export async function runWorkflow(data: WorkflowData, input = ""): Promise<RunRe
 
 function renderParams(step: WorkflowStep, vars: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
+  // connect_previous: выход предыдущего шага подставляется в {{input}}, а если
+  // ни в одном параметре шага нет ни {{input}}, ни {{prev}} — дописывается в
+  // конец текстового параметра. Иначе флаг включён, а модель его не видит.
+  const connected = step.params.connect_previous === "true" || (step as { connect_previous?: string }).connect_previous === "true";
+  let usesPrev = false;
   for (const [key, value] of Object.entries(step.params)) {
     out[key] = renderTemplate(value, vars);
+    if (/\{\{\s*(input|prev)\s*\}\}/.test(value)) usesPrev = true;
+  }
+  if (connected && !usesPrev && vars.prev) {
+    const textKey = Object.keys(out).find((k) => {
+      const f = STEP_META.get(step.type)?.fields.find((fd) => fd.key === k);
+      return f?.type === "textarea" || f?.type === "text";
+    });
+    if (textKey && out[textKey]) out[textKey] += `\n\n${vars.prev}`;
   }
   return out;
 }
