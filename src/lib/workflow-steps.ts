@@ -101,8 +101,12 @@ export const STEP_CATALOG: StepMeta[] = [
     icon: "Sparkles",
     hint: "Отправить промпт модели и передать её ответ дальше по цепочке.",
     fields: [
-      { key: "prompt", label: "Промпт", type: "textarea", required: true, placeholder: "Сократи до трёх пунктов:\\n{{prev}}" },
+      { key: "prompt", label: "Промпт", type: "textarea", required: true, placeholder: "Сократи до трех пунктов" },
       { key: "system", label: "Роль (system)", type: "textarea", placeholder: "Ты — редактор. Пиши сухо и по делу." },
+      { key: "connect_previous", label: "Берть выход prev шага", type: "select", options: [
+        { value: "", label: "Не подключать" },
+        { value: "true", label: "Включить" },
+      ], },
     ],
   },
   {
@@ -113,8 +117,12 @@ export const STEP_CATALOG: StepMeta[] = [
     writes: true,
     fields: [
       { key: "subject", label: "Тема", type: "text", required: true, placeholder: "Сводка на {{date}}" },
-      { key: "text", label: "Текст письма", type: "textarea", required: true, placeholder: "{{prev}}" },
+      { key: "text", label: "Текст письма", type: "textarea", required: true, placeholder: "Сводка письма" },
       { key: "from", label: "Отправитель", type: "text", placeholder: "Portfolio <user@domain>" },
+      { key: "connect_previous", label: "Берть выход prev шага", type: "select", options: [
+        { value: "", label: "Не подключать" },
+        { value: "true", label: "Включить" },
+      ], },
     ],
   },
   {
@@ -135,7 +143,7 @@ export const STEP_CATALOG: StepMeta[] = [
     hint: "Отправить сообщение в Telegram владельца.",
     writes: true,
     fields: [
-      { key: "text", label: "Текст", type: "textarea", required: true, placeholder: "Итог за день:\n{{prev}}" },
+      { key: "text", label: "Текст", type: "textarea", required: true, placeholder: "Итог за день" },
       {
         key: "format",
         label: "Формат",
@@ -145,6 +153,10 @@ export const STEP_CATALOG: StepMeta[] = [
           { value: "plain", label: "Обычный текст" },
         ],
       },
+      { key: "connect_previous", label: "Берть выход prev шага", type: "select", options: [
+        { value: "", label: "Не подключать" },
+        { value: "true", label: "Включить" },
+      ], },
     ],
   },
   {
@@ -167,8 +179,12 @@ export const STEP_CATALOG: StepMeta[] = [
     writes: true,
     fields: [
       { key: "subject", label: "Тема", type: "text", required: true, placeholder: "Сводка на {{date}}" },
-      { key: "text", label: "Текст письма", type: "textarea", required: true, placeholder: "{{prev}}" },
+      { key: "text", label: "Текст письма", type: "textarea", required: true, placeholder: "Сводка письма" },
       { key: "from", label: "Отправитель", type: "text", placeholder: "Portfolio <user@domain>" },
+      { key: "connect_previous", label: "Берть выход prev шага", type: "select", options: [
+        { value: "", label: "Не подключать" },
+        { value: "true", label: "Включить" },
+      ], },
     ],
   },
   {
