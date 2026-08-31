@@ -118,6 +118,17 @@ export const STEP_CATALOG: StepMeta[] = [
     ],
   },
   {
+    type: "imap_read",
+    label: "Прочитать IMAP почту",
+    icon: "Mail",
+    hint: "Прочитать последние N писем из IMAP и передать дальше по цепочке",
+    writes: true,
+    fields: [
+      { key: "limit", label: "Лимит писем", type: "text", placeholder: "50" },
+      { key: "from_filter", label: "Фильтр отправителя", type: "text", placeholder: "email@domain.com (оставьте пустым, чтобы не фильтровать)" },
+    ],
+  },
+  {
     type: "telegram",
     label: "Telegram",
     icon: "Send",

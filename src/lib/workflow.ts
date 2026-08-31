@@ -1,4 +1,5 @@
 import { askAI } from "@/lib/ai";
+import { fetchInbox } from "@/lib/mail-server";
 import { sendTelegram, sendEmail } from "@/lib/notify";
 import { supabaseConfigured, sbSelect, sbInsert } from "@/lib/supabase";
 import { webFetch, webSearch } from "@/lib/web";
@@ -51,6 +52,21 @@ const RUNNERS: Record<string, StepRunner> = {
     const ok = await sendEmail(p.subject, p.text, p.from);
     if (!ok) throw new Error("Resend не настроен или отклонил письмо");
     return `Письмо отправлено: «${p.subject}»`;
+  },
+
+  async imap_read(p) {
+    requireSupabase();
+    const limit = Number(p.limit) ?? 50;
+    const fromFilter = p.from_filter ?? "";
+    const emails = await fetchInbox(limit);
+    const filtered = fromFilter
+      ? emails.filter(e => e.from.toLowerCase().includes(fromFilter.toLowerCase()))
+      : emails;
+    let text = `Найдено писем: ${filtered.length}\n`;
+    filtered.forEach((e, i) => {
+      text += `${i+1}. От: ${e.from}\n   Тема: ${e.subject}\n   Дата: ${e.date}\n\n`;
+    });
+    return text;
   },
 
   async task(p) {

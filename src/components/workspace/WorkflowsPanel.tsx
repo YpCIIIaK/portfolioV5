@@ -397,6 +397,13 @@ function StepCard({
           <Field key="from" field={{ key: "from", label: "Отправитель", type: "text", placeholder: "Portfolio <user@domain>" }} value={step.params.from ?? ""} readonly={readonly} onChange={(v) => set("from", v)} />
         )}
 
+        {step.type === "imap_read" && (
+          <>
+            <Field key="limit" field={{ key: "limit", label: "Лимит писем", type: "text", placeholder: "50" }} value={step.params.limit ?? "50"} readonly={readonly} onChange={(v) => set("limit", v)} />
+            <Field key="from_filter" field={{ key: "from_filter", label: "Фильтр отправителя", type: "text", placeholder: "email@domain.com" }} value={step.params.from_filter ?? ""} readonly={readonly} onChange={(v) => set("from_filter", v)} />
+          </>
+        )}
+
         {result && (
           <div className={`rounded border px-2 py-1.5 text-[12px] ${result.ok ? "border-vsc-line text-vsc-muted" : "border-vsc-red/40 text-vsc-red"}`}>
             <span className="whitespace-pre-wrap break-words">{result.output.slice(0, 1500)}</span>
