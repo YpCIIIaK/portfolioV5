@@ -404,6 +404,14 @@ function StepCard({
           </>
         )}
 
+        {step.type === "telegram_bot" && (
+          <>
+            <Field key="text" field={{ key: "text", label: "Текст", type: "textarea", placeholder: "{{prev}}" }} value={step.params.text ?? ""} readonly={readonly} onChange={(v) => set("text", v)} />
+            <Field key="bot_name" field={{ key: "bot_name", label: "Имя бота", type: "text", placeholder: "Название бота" }} value={step.params.bot_name ?? ""} readonly={readonly} onChange={(v) => set("bot_name", v)} />
+            <Field key="chat_override" field={{ key: "chat_override", label: "Chat ID", type: "text", placeholder: "Override chat ID" }} value={step.params.chat_override ?? ""} readonly={readonly} onChange={(v) => set("chat_override", v)} />
+          </>
+        )}
+
         {result && (
           <div className={`rounded border px-2 py-1.5 text-[12px] ${result.ok ? "border-vsc-line text-vsc-muted" : "border-vsc-red/40 text-vsc-red"}`}>
             <span className="whitespace-pre-wrap break-words">{result.output.slice(0, 1500)}</span>

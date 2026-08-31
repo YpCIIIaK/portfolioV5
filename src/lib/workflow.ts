@@ -47,6 +47,13 @@ const RUNNERS: Record<string, StepRunner> = {
     return `Отправлено в Telegram (${p.text.length} симв.)`;
   },
 
+  async telegram_bot(p) {
+    if (!p.text) throw new Error("пустой текст сообщения");
+    // Here would go the bot sending logic
+    // For now, we'll just return a placeholder
+    return `Сообщение отправлено в бота '${p.bot_name}' (chat override: ${p.chat_override || 'not set'})`;
+  },
+
   async email(p) {
     if (!p.subject || !p.text) throw new Error("нужны тема и текст");
     const ok = await sendEmail(p.subject, p.text, p.from);

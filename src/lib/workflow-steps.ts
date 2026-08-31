@@ -148,6 +148,18 @@ export const STEP_CATALOG: StepMeta[] = [
     ],
   },
   {
+    type: "telegram_bot",
+    label: "Telegram (бот)",
+    icon: "Send",
+    hint: "Отправить сообщение в Telegram через подключенного бота",
+    writes: true,
+    fields: [
+      { key: "text", label: "Текст", type: "textarea", required: true, placeholder: "{{prev}}" },
+      { key: "bot_name", label: "Имя бота", type: "text", placeholder: "Название бота в списке" },
+      { key: "chat_override", label: "Chat ID", type: "text", placeholder: "Override chat ID (опционально)" },
+    ],
+  },
+  {
     type: "email",
     label: "Почта",
     icon: "Mail",
@@ -156,18 +168,7 @@ export const STEP_CATALOG: StepMeta[] = [
     fields: [
       { key: "subject", label: "Тема", type: "text", required: true, placeholder: "Сводка на {{date}}" },
       { key: "text", label: "Текст письма", type: "textarea", required: true, placeholder: "{{prev}}" },
-    ],
-  },
-  {
-    type: "task",
-    label: "Создать задачу",
-    icon: "ListTodo",
-    hint: "Добавить задачу в раздел «Задачи».",
-    writes: true,
-    fields: [
-      { key: "title", label: "Название", type: "text", required: true, placeholder: "{{input}}" },
-      { key: "priority", label: "Приоритет", type: "select", options: PRIORITY_OPTIONS },
-      { key: "due", label: "Дедлайн", type: "text", placeholder: "YYYY-MM-DD" },
+      { key: "from", label: "Отправитель", type: "text", placeholder: "Portfolio <user@domain>" },
     ],
   },
   {
