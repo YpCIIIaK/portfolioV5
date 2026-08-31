@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Workflow as WorkflowIcon, Plus, Trash2, Play, ChevronUp, ChevronDown, History,
   Sparkles, Send, Mail, ListTodo, StickyNote, CalendarDays, Search, Globe, Brain, Type,
-  CircleCheck, CircleX, RotateCcw, Power,
+  CircleCheck, CircleX, RotateCcw, Power, List, LayoutGrid, ArrowRight, ChevronDown as Expand,
 } from "lucide-react";
 import { useCollection } from "./useCollection";
 import { wsCreate, wsUpdate, wsDelete, DEMO_WORKFLOWS } from "@/lib/workspace";
@@ -164,6 +164,22 @@ function WorkflowEditor({
   const [result, setResult] = useState<{ ok: boolean; steps: StepResult[] } | null>(null);
   const [runError, setRunError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
+  /** Вид цепочки: «список» — карточки со всеми полями, «блоки» — плитки со стрелками. */
+  const [view, setView] = useState<"list" | "blocks">("list");
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  // Восстановить выбор вида из localStorage (микротаской — см. фикс CI выше).
+  useEffect(() => {
+    queueMicrotask(() => {
+      const saved = localStorage.getItem("wf_view");
+      if (saved === "blocks" || saved === "list") setView(saved);
+    });
+  }, []);
+
+  const switchView = (v: "list" | "blocks") => {
+    setView(v);
+    try { localStorage.setItem("wf_view", v); } catch { /* приватный режим — не критично */ }
+  };
 
   const steps = workflow.data.steps;
 
@@ -243,6 +259,23 @@ function WorkflowEditor({
           >
             <History size={15} />
           </button>
+          {/* переключатель вида: список / блоки */}
+          <div className="flex items-center overflow-hidden rounded border border-vsc-line" title="Вид цепочки">
+            <button
+              onClick={() => switchView("list")}
+              title="Вид: список"
+              className={`p-1 ${view === "list" ? "bg-vsc-hover text-vsc-accent" : "text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"}`}
+            >
+              <List size={15} />
+            </button>
+            <button
+              onClick={() => switchView("blocks")}
+              title="Вид: блочный конструктор"
+              className={`p-1 ${view === "blocks" ? "bg-vsc-hover text-vsc-accent" : "text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text"}`}
+            >
+              <LayoutGrid size={15} />
+            </button>
+          </div>
         </div>
         <input
           value={workflow.description}
@@ -254,26 +287,39 @@ function WorkflowEditor({
       </div>
 
       {/* цепочка */}
-      <div className="space-y-2">
-        {steps.length === 0 && (
-          <p className="rounded-lg border border-dashed border-vsc-line px-3 py-6 text-center text-[13px] text-vsc-muted">
-            Цепочка пуста — добавь первый блок снизу.
-          </p>
-        )}
-        {steps.map((step, i) => (
-          <StepCard
-            key={step.id}
-            step={step}
-            index={i}
-            total={steps.length}
-            readonly={readonly}
-            result={result?.steps.find((r) => r.id === step.id) ?? null}
-            onChange={(params) => updateStep(step.id, params)}
-            onMove={(d) => moveStep(i, d)}
-            onRemove={() => removeStep(step.id)}
-          />
-        ))}
-      </div>
+      {view === "list" ? (
+        <div className="space-y-2">
+          {steps.length === 0 && (
+            <p className="rounded-lg border border-dashed border-vsc-line px-3 py-6 text-center text-[13px] text-vsc-muted">
+              Цепочка пуста — добавь первый блок снизу.
+            </p>
+          )}
+          {steps.map((step, i) => (
+            <StepCard
+              key={step.id}
+              step={step}
+              index={i}
+              total={steps.length}
+              readonly={readonly}
+              result={result?.steps.find((r) => r.id === step.id) ?? null}
+              onChange={(params) => updateStep(step.id, params)}
+              onMove={(d) => moveStep(i, d)}
+              onRemove={() => removeStep(step.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        <BlocksView
+          steps={steps}
+          readonly={readonly}
+          result={result?.steps ?? null}
+          expanded={expanded}
+          onToggle={(id) => setExpanded((cur) => (cur === id ? null : id))}
+          onChange={updateStep}
+          onMove={moveStep}
+          onRemove={removeStep}
+        />
+      )}
 
       {/* палитра блоков */}
       {!readonly && (
@@ -332,6 +378,117 @@ function WorkflowEditor({
       {showHistory && (
         <HistorySection workflow={workflow} readonly={readonly} onRestore={restore} />
       )}
+    </div>
+  );
+}
+
+/* ---- блочный вид ------------------------------------------------------- */
+
+/**
+ * «Блочный конструктор»: каждый шаг — плитка с иконкой и названием, между
+ * плитками стрелки (данные текут слева направо). Клик по плитке раскрывает
+ * её настройки прямо на месте; стрелки вверх/вниз и удаление — тоже тут.
+ */
+function BlocksView({
+  steps,
+  readonly,
+  result,
+  expanded,
+  onToggle,
+  onChange,
+  onMove,
+  onRemove,
+}: {
+  steps: WorkflowStep[];
+  readonly: boolean;
+  result: StepResult[] | null;
+  expanded: string | null;
+  onToggle: (id: string) => void;
+  onChange: (id: string, params: Record<string, string>) => void;
+  onMove: (index: number, delta: number) => void;
+  onRemove: (id: string) => void;
+}) {
+  if (steps.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed border-vsc-line px-3 py-6 text-center text-[13px] text-vsc-muted">
+        Цепочка пуста — добавь первый блок снизу.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {steps.map((step, i) => {
+        const meta = STEP_META.get(step.type);
+        const isOpen = expanded === step.id;
+        const stepResult = result?.find((r) => r.id === step.id) ?? null;
+        return (
+          <div key={step.id} className="flex items-center gap-1.5">
+            <div
+              className={`min-w-[120px] max-w-[220px] rounded-lg border bg-vsc-sidebar transition-colors ${
+                isOpen ? "border-vsc-accent" : "border-vsc-line hover:border-vsc-muted"
+              }`}
+            >
+              {/* плитка блока */}
+              <button
+                onClick={() => onToggle(step.id)}
+                className="flex w-full items-center gap-2 px-2.5 py-2 text-left"
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-vsc-hover text-[10px] text-vsc-muted">
+                  {i + 1}
+                </span>
+                <StepIcon name={meta?.icon ?? "Type"} />
+                <span className="min-w-0 flex-1 truncate text-[12px] text-vsc-text">
+                  {meta?.label ?? step.type}
+                </span>
+                {stepResult && (
+                  stepResult.ok
+                    ? <CircleCheck size={12} className="shrink-0 text-vsc-green" />
+                    : <CircleX size={12} className="shrink-0 text-vsc-red" />
+                )}
+                {!readonly && <Expand size={12} className={`shrink-0 text-vsc-muted transition-transform ${isOpen ? "rotate-180" : ""}`} />}
+              </button>
+
+              {/* раскрытые настройки */}
+              {isOpen && (
+                <div className="space-y-2 border-t border-vsc-line p-2.5">
+                  {meta?.fields.length === 0 && (
+                    <p className="text-[11px] text-vsc-muted">{meta.hint}</p>
+                  )}
+                  {meta?.fields.map((field) => (
+                    <Field
+                      key={field.key}
+                      field={field}
+                      value={step.params[field.key] ?? ""}
+                      readonly={readonly}
+                      onChange={(v) => onChange(step.id, { ...step.params, [field.key]: v })}
+                    />
+                  ))}
+                  {!readonly && (
+                    <div className="flex items-center gap-1 pt-1">
+                      <button onClick={() => onMove(i, -1)} disabled={i === 0} title="Выше" className="rounded p-1 text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text disabled:opacity-30"><ChevronUp size={13} /></button>
+                      <button onClick={() => onMove(i, 1)} disabled={i === steps.length - 1} title="Ниже" className="rounded p-1 text-vsc-muted hover:bg-vsc-hover hover:text-vsc-text disabled:opacity-30"><ChevronDown size={13} /></button>
+                      <button onClick={() => onRemove(step.id)} title="Удалить блок" className="ml-auto rounded p-1 text-vsc-muted hover:text-vsc-red"><Trash2 size={13} /></button>
+                    </div>
+                  )}
+                  {stepResult && (
+                    <div className={`rounded border px-2 py-1.5 text-[11px] ${stepResult.ok ? "border-vsc-line text-vsc-muted" : "border-vsc-red/40 text-vsc-red"}`}>
+                      <span className="whitespace-pre-wrap break-words">{stepResult.output.slice(0, 800)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* стрелка к следующему блоку */}
+            {i < steps.length - 1 && (
+              <span title={stepLabel(step.type) + " → " + stepLabel(steps[i + 1].type)} className="shrink-0 text-vsc-muted">
+                <ArrowRight size={14} />
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
