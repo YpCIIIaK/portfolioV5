@@ -217,12 +217,17 @@ function renderParams(step: WorkflowStep, vars: Record<string, string>): Record<
     out[key] = renderTemplate(value, vars);
     if (/\{\{\s*(input|prev)\s*\}\}/.test(value)) usesPrev = true;
   }
-  if (connected && !usesPrev && vars.prev) {
+  if (connected && vars.prev) {
     const textKey = Object.keys(out).find((k) => {
       const f = STEP_META.get(step.type)?.fields.find((fd) => fd.key === k);
       return f?.type === "textarea" || f?.type === "text";
     });
-    if (textKey && out[textKey]) out[textKey] += `\n\n${vars.prev}`;
+    if (textKey) {
+      // Пустое поле = плейсхолдер типа {{prev}} никто не заполнил — кладём выход
+      // предыдущего шага целиком. Непустое без подстановок — дописываем в конец.
+      if (!out[textKey]) out[textKey] = vars.prev;
+      else if (!usesPrev) out[textKey] += `\n\n${vars.prev}`;
+    }
   }
   return out;
 }
