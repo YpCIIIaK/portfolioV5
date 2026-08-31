@@ -175,10 +175,8 @@ export async function runWorkflow(data: WorkflowData, input = ""): Promise<RunRe
       ok = false;
       break;
     }
-    // Auto-connect to previous step output if flag is set
-    if (step.connect_previous === "true" && vars.prev !== undefined) {
-      params.input = vars.prev;
-    }
+    // Auto-connect: флаг включает подстановку выхода предыдущего шага в `{{input}}`.
+    if (step.connect_previous === "true") vars.input = vars.prev;
     try {
       const params = renderParams(step, vars);
       const result = await runner(params);

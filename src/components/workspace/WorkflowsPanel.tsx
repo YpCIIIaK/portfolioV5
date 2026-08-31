@@ -394,12 +394,11 @@ function StepCard({
         ))}
 
         {step.type === "email" && (
-          <Field key="from" field={{ key: "from", label: "Отправитель", type: "text", placeholder: "Portfolio <user@domain>" }} value={step.params.from ?? ""} readonly={readonly} onChange={(v) => set("from", v)} />
-          {step.connect_previous && (
-            <Field key="connect_previous" field={{ key: "connect_previous", label: "Берть выход prev", type: "select", placeholder: "Выбрать" }} value={step.params.connect_previous ?? ""} readonly={readonly} onChange={(v) => set("connect_previous", v)} />
-          )}
-
-
+          <>
+            <Field key="from" field={{ key: "from", label: "Отправитель", type: "text", placeholder: "Portfolio <user@domain>" }} value={step.params.from ?? ""} readonly={readonly} onChange={(v) => set("from", v)} />
+            <Field key="connect_previous" field={{ key: "connect_previous", label: "Берть выход prev", type: "select", placeholder: "Выбрать", options: [{ value: "", label: "Не подключать" }, { value: "true", label: "Включить" }] }} value={step.params.connect_previous ?? ""} readonly={readonly} onChange={(v) => set("connect_previous", v)} />
+          </>
+        )}
         {step.type === "imap_read" && (
           <>
             <Field key="limit" field={{ key: "limit", label: "Лимит писем", type: "text", placeholder: "50" }} value={step.params.limit ?? "50"} readonly={readonly} onChange={(v) => set("limit", v)} />
@@ -412,7 +411,7 @@ function StepCard({
             <Field key="text" field={{ key: "text", label: "Текст", type: "textarea", placeholder: "{{prev}}" }} value={step.params.text ?? ""} readonly={readonly} onChange={(v) => set("text", v)} />
             <Field key="bot_name" field={{ key: "bot_name", label: "Имя бота", type: "text", placeholder: "Название бота" }} value={step.params.bot_name ?? ""} readonly={readonly} onChange={(v) => set("bot_name", v)} />
             <Field key="chat_override" field={{ key: "chat_override", label: "Chat ID", type: "text", placeholder: "Override chat ID" }} value={step.params.chat_override ?? ""} readonly={readonly} onChange={(v) => set("chat_override", v)} />
-            {step.connect_previous && <Field key="connect_previous" field={{ key: "connect_previous", label: "Берть выход prev", type: "select", placeholder: "Выбрать" }} value={step.params.connect_previous ?? ""} readonly={readonly} onChange={(v) => set("connect_previous", v)} />}
+            <Field key="connect_previous" field={{ key: "connect_previous", label: "Берть выход prev", type: "select", placeholder: "Выбрать", options: [{ value: "", label: "Не подключать" }, { value: "true", label: "Включить" }] }} value={step.params.connect_previous ?? ""} readonly={readonly} onChange={(v) => set("connect_previous", v)} />
           </>
         )}
 
