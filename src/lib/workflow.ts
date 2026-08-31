@@ -48,7 +48,7 @@ const RUNNERS: Record<string, StepRunner> = {
 
   async email(p) {
     if (!p.subject || !p.text) throw new Error("нужны тема и текст");
-    const ok = await sendEmail(p.subject, p.text);
+    const ok = await sendEmail(p.subject, p.text, p.from);
     if (!ok) throw new Error("Resend не настроен или отклонил письмо");
     return `Письмо отправлено: «${p.subject}»`;
   },

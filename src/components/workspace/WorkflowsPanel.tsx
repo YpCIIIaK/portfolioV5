@@ -393,6 +393,10 @@ function StepCard({
           <Field key={field.key} field={field} value={step.params[field.key] ?? ""} readonly={readonly} onChange={(v) => set(field.key, v)} />
         ))}
 
+        {step.type === "email" && (
+          <Field key="from" field={{ key: "from", label: "Отправитель", type: "text", placeholder: "Portfolio <user@domain>" }} value={step.params.from ?? ""} readonly={readonly} onChange={(v) => set("from", v)} />
+        )}
+
         {result && (
           <div className={`rounded border px-2 py-1.5 text-[12px] ${result.ok ? "border-vsc-line text-vsc-muted" : "border-vsc-red/40 text-vsc-red"}`}>
             <span className="whitespace-pre-wrap break-words">{result.output.slice(0, 1500)}</span>

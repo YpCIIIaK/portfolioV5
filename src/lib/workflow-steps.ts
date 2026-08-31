@@ -101,8 +101,20 @@ export const STEP_CATALOG: StepMeta[] = [
     icon: "Sparkles",
     hint: "Отправить промпт модели и передать её ответ дальше по цепочке.",
     fields: [
-      { key: "prompt", label: "Промпт", type: "textarea", required: true, placeholder: "Сократи до трёх пунктов:\n{{prev}}" },
+      { key: "prompt", label: "Промпт", type: "textarea", required: true, placeholder: "Сократи до трёх пунктов:\\n{{prev}}" },
       { key: "system", label: "Роль (system)", type: "textarea", placeholder: "Ты — редактор. Пиши сухо и по делу." },
+    ],
+  },
+  {
+    type: "email",
+    label: "Почта",
+    icon: "Mail",
+    hint: "Отправить письмо владельцу через Resend.",
+    writes: true,
+    fields: [
+      { key: "subject", label: "Тема", type: "text", required: true, placeholder: "Сводка на {{date}}" },
+      { key: "text", label: "Текст письма", type: "textarea", required: true, placeholder: "{{prev}}" },
+      { key: "from", label: "Отправитель", type: "text", placeholder: "Portfolio <user@domain>" },
     ],
   },
   {

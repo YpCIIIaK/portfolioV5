@@ -33,7 +33,7 @@ const readme: FileNode = {
       t: "links",
       items: [
         { label: "GitHub", href: GITHUB },
-        { label: "repo-anti-rot", href: GITHUB + "/Hephaestus" },
+        { label: "repo-anti-rot", href: GITHUB + "/repo-janitor" },
         { label: "wifi-analyzer", href: GITHUB + "/wifi-analyse-full" },
       ],
     },
@@ -248,19 +248,20 @@ const repoAntiRot: FileNode = {
     {
       t: "metrics",
       items: [
-        { label: "Сканеры", value: "16 независимых сканеров" },
-        { label: "Тесты", value: "46 тестовых файлов (Vitest)" },
+        { label: "Сканеры", value: "26 независимых сканеров" },
+        { label: "Тесты", value: "850+ тестов (Vitest)" },
         { label: "Оценка", value: "0–100 балл + грейд A–F" },
       ],
     },
-    { t: "callout", text: "pnpm-монорепо из 4 частей: общий движок (@repo-anti-rot/core), CLI, обёртка GitHub Action и Next.js-дашборд. Работает одинаково на macOS / Linux / Windows (все пути через path/os.tmpdir, shell-агностично)." },
-    { t: "h2", text: "Что проверяют 16 сканеров" },
+    { t: "callout", text: "pnpm-монорепо из 4 частей: общий движок (@repo-anti-rot/core), CLI (опубликован в npm), обёртка GitHub Action и Next.js-дашборд. CI гоняет тесты на Ubuntu / macOS / Windows на каждый пуш — кроссплатформенность проверяется, а не декларируется." },
+    { t: "h2", text: "Что проверяют 26 сканеров" },
     { t: "ul", items: [
-      "Безопасность: committed secrets, leftover-debug, уязвимые зависимости (vulnerable-deps).",
-      "Зависимости: outdated-deps, dependency-funeral (заброшенные), lockfile-drift.",
-      "Мёртвый груз: dead-code, commented-code, todo-debt, repo-bloat (бинарный раздув).",
-      "Процесс и сообщество: stale-branch, bus-factor, project-hygiene, dockerfile, broken-doc-links, env-lifecycle.",
+      "Безопасность: committed secrets (включая историю git), insecure-code, workflow-security, leftover-debug, уязвимые зависимости через OSV.",
+      "Зависимости: outdated-deps, dependency-funeral (заброшенные), lockfile-drift, eol-runtime (протухшие рантаймы).",
+      "Мёртвый груз: dead-code (кросс-модульный), commented-code, todo-debt, skipped-tests, repo-bloat, duplicate-code.",
+      "Процесс и документация: stale-branch, bus-factor, project-hygiene, dockerfile, docs-drift, dead-links, broken-doc-links, license-risk, ci-health, config-conflict, env-lifecycle.",
     ] },
+    { t: "p", text: "Языки: JS/TS через AST, плюс Python, Go, Rust, Java, Ruby, PHP, C/C++, C#, Kotlin, Swift, Scala — глубина зависит от сканера. Точность важнее полноты: у каждого сканера есть и позитивные, и негативные тесты, а правила, дававшие ложные срабатывания на реальных проектах (pnpm, nest, babel, redux, vite), закрыты регрессионными тестами с их именами." },
     { t: "h2", text: "Архитектура: один движок, три обёртки" },
     {
       t: "code",
@@ -276,7 +277,7 @@ const repoAntiRot: FileNode = {
 const registry: Scanner[] = [
   secretsScanner, depsScanner, deadCodeScanner,
   todoDebtScanner, staleBranchScanner, busFactorScanner,
-  /* …17 total */
+  /* …26 total */
 ];
 
 export async function scan(ctx: RepoContext): Promise<Report> {
@@ -290,9 +291,87 @@ export async function scan(ctx: RepoContext): Promise<Report> {
   return { score: clamp(score, 0, 100), grade: toGrade(score), results };
 }`,
     },
-    { t: "p", text: "В дашборде: портфель репозиториев с трендами, AI-обогащение находок через same-origin прокси к OpenRouter (ключ только в localStorage), command palette (⌘K), расписание автосканов, score-drop webhook, экспорт в Markdown/CSV/JSON. Роут /api/scan дёргает собранный CLI, чтобы клонировать и просканировать любой репозиторий." },
-    { t: "tech", items: ["TypeScript", "Next.js", "pnpm monorepo", "Node.js CLI", "GitHub Action", "OSV / npm / PyPI", "Vitest", "OpenRouter"] },
-    { t: "links", items: [{ label: "Открыть на GitHub", href: GITHUB + "/repo-janitor" }] },
+    { t: "h2", text: "Три способа запустить" },
+    { t: "ul", items: [
+      "CLI из npm: npx repo-anti-rot scan --path . — форматы terminal / json / md / sarif.",
+      "GitHub Action: uses: YpCIIIaK/repo-janitor@v1 — порог fail-on роняет сборку по грейду, комментарий в PR с разбивкой по severity, SARIF уезжает в GitHub code scanning.",
+      "Дашборд: вставляешь git-URL — живой прогресс clone → сканеры → ИИ, отчёты в localStorage.",
+    ] },
+    { t: "h2", text: "Инженерные детали, которыми горжусь" },
+    { t: "ul", items: [
+      "Секреты редактируются до отправки в ИИ — инвариант закрыт тестом: сырой ключ не может попасть в evidence.",
+      "insecure-code игнорирует совпадения внутри строк, регулярок и комментариев: описание кода — не код.",
+      "dead-links никогда не стучится в приватные, loopback и зарезервированные адреса.",
+      "Таблица EOL-рантаймов зашита в пакет, а не тянется по сети: неизвестная версия — всегда молчание, устаревшая таблица недоговаривает вместо ложной тревоги.",
+      "Значок и карточка для README генерируются как SVG-эндпоинты, ссылка на публичный отчёт — по токену.",
+    ] },
+    { t: "p", text: "В дашборде: портфель репозиториев с трендами, tree-map по файлам и граф истории коммитов (видно, когда именно здоровье просело), детальная панель находки с AI-вердиктом и кнопкой «Create issue» (префилл формы GitHub — без токена и без API-вызова), command palette (⌘K), расписание автосканов, score-drop алерты на почту и вебхуком, экспорт в Markdown/CSV/JSON, интерфейс на двух языках." },
+    { t: "tech", items: ["TypeScript", "Next.js", "pnpm monorepo", "Node.js CLI", "GitHub Action", "SARIF", "OSV / npm / PyPI", "React Flow", "Vitest", "OpenRouter"] },
+    { t: "links", items: [
+      { label: "Открыть на GitHub", href: GITHUB + "/repo-janitor" },
+      { label: "Живой дашборд", href: "https://repo-anti-rot.onrender.com" },
+      { label: "Пакет в npm", href: "https://www.npmjs.com/package/repo-anti-rot" },
+    ] },
+  ],
+};
+
+const bountyScanner: FileNode = {
+  id: "projects/bounty-scanner.ts",
+  name: "bounty-scanner.ts",
+  language: "TypeScript",
+  blocks: [
+    { t: "h1", text: "Bounty Monitor" },
+    { t: "p", text: "Ежедневный скан рынка баг-баунти с дайджестом в Telegram. Cron в 06:00 UTC обходит пять площадок и ленты новостей, диффит результат со вчерашним снапшотом, ранжирует находки под конкретный профиль охотника и присылает разбор — уже отсортированный, с объяснением от ИИ, что изменилось на рынке." },
+    {
+      t: "metrics",
+      items: [
+        { label: "Источники", value: "5 площадок + RSS-ленты" },
+        { label: "Тесты", value: "68 тестов, без сети" },
+        { label: "Состояние", value: "Upstash Redis, snapshot-дифф" },
+      ],
+    },
+    { t: "h2", text: "Как устроен прогон" },
+    { t: "ul", items: [
+      "Источники тянутся параллельно через Promise.allSettled: Cantina, Immunefi, Sherlock, Code4rena, HackenProof — один упавший не валит скан, он просто помечается в дайджесте.",
+      "Приватные, invite-only и завершённые программы отсекаются на входе.",
+      "Дифф со снапшотом в Redis даёт три корзины: new / changed / removed.",
+      "Скоринг под профиль: без платы за вход и без KYC — выше; низкая плотность заявок — выше; EVM и cross-chain — выше; не-EVM, только-web и закрытые исходники — ниже.",
+      "Готовый топ уходит в OpenRouter за объяснением, дальше — Markdown-дайджест в Telegram со сплитом по 4096 символов.",
+    ] },
+    { t: "h2", text: "Самое интересное — поведение на краях" },
+    { t: "p", text: "Львиная доля кода и тестов здесь не про happy path, а про то, чтобы бот не врал. Каждый из этих случаев закрыт тестом:" },
+    { t: "ul", items: [
+      "Первый прогон заполняет базу и молчит — иначе в чат прилетит весь рынок как «новое».",
+      "Пустой ответ площадки не затирает снапшот: иначе назавтра весь рынок снова станет «новым».",
+      "Площадка передвинула дату записи всему каталогу — это не изменение. Fingerprint считается только по значимым полям: награда, плата, KYC, скоуп, срок.",
+      "Заявок стало на одну больше — молчим; порог от +10 за сутки.",
+      "ИИ упал — дайджест уходит без раздела ИИ. Telegram упал — снапшот всё равно сохраняется.",
+      "День без изменений всё равно даёт сообщение: тишина неотличима от поломки, поэтому вместо диффа уходит текущий топ рынка.",
+    ] },
+    { t: "h2", text: "Управление из самого бота" },
+    { t: "p", text: "Под дайджестом висит кнопка «Рескан» — веб-интерфейс открывать не нужно; плюс команды /scan, /bounty_status, /help. Работает через вебхук, а раз его адрес публичный — две защиты: подпись из заголовка Telegram и проверка chat id. Чужие апдейты игнорируются молча, без ответа." },
+    {
+      t: "code",
+      lang: "typescript",
+      collapsible: true,
+      caption: "Fingerprint по значимым полям: косметические правки каталога не поднимают ложную тревогу.",
+      code: `// Только то, ради чего стоит будить человека в 6 утра.
+function fingerprint(b: Bounty): string {
+  return [
+    b.maxReward, b.entryFee, b.kycRequired,
+    b.scope.slice().sort().join(","), b.deadline,
+  ].join("|");
+}
+
+const changed = current.filter((b) => {
+  const was = snapshot.get(b.id);
+  return was !== undefined && was !== fingerprint(b);
+});`,
+    },
+    { t: "callout", text: "Отдельная осторожность с ИИ: разбор идёт через cloaked-модель, которая логирует промпты, поэтому в неё уходят только публичные рыночные данные — ничего своего." },
+    { t: "p", text: "Тесты не ходят в сеть вообще. Живой прогон вынесен в отдельный smoke: он делает два скана подряд — первый наполняет базу, второй обязан дать нулевой дифф. Если источник вернул ноль записей, smoke печатает предупреждение: это и есть ранний сигнал, что форма чужого API поехала." },
+    { t: "tech", items: ["TypeScript", "Next.js", "Vercel Cron", "Upstash Redis", "Telegram Bot API", "OpenRouter", "Vitest", "RSS"] },
+    { t: "links", items: [{ label: "Открыть на GitHub", href: GITHUB + "/bounty-scanner" }] },
   ],
 };
 
@@ -805,7 +884,7 @@ export const tree: FolderNode = {
     {
       id: "projects",
       name: "projects",
-      children: [wifi, pcHealth, repoAntiRot, multiAgent, vortan, extSuite, repoVis, personalWorkspace],
+      children: [wifi, pcHealth, repoAntiRot, bountyScanner, multiAgent, vortan, extSuite, repoVis, personalWorkspace],
     } as FolderNode,
     {
       id: "experience",

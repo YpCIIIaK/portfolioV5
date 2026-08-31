@@ -185,7 +185,7 @@ export async function sendTelegramTyping(): Promise<void> {
 }
 
 /** Send an email to the owner via Resend. Returns success. */
-export async function sendEmail(subject: string, text: string): Promise<boolean> {
+export async function sendEmail(subject: string, text: string, from?: string): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
   if (!key) return false;
   try {
@@ -193,7 +193,7 @@ export async function sendEmail(subject: string, text: string): Promise<boolean>
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: process.env.RESEND_FROM ?? "Portfolio <onboarding@resend.dev>",
+        from: from ?? process.env.RESEND_FROM ?? "Portfolio <onboarding@resend.dev>",
         to: process.env.NOTIFY_EMAIL ?? "bigboyvova01@gmail.com",
         subject,
         text,
