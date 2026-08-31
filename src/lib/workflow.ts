@@ -49,9 +49,14 @@ const RUNNERS: Record<string, StepRunner> = {
 
   async telegram_bot(p) {
     if (!p.text) throw new Error("пустой текст сообщения");
-    // Here would go the bot sending logic
-    // For now, we'll just return a placeholder
-    return `Сообщение отправлено в бота '${p.bot_name}' (chat override: ${p.chat_override || 'not set'})`;
+    // Тот же бот, что и в «Telegram»-блоке (TELEGRAM_BOT_TOKEN); поле
+    // «Chat ID» позволяет отправить в другой чат, иначе — чат владельца.
+    const chatOverride = p.chat_override?.trim();
+    if (!process.env.TELEGRAM_BOT_TOKEN) throw new Error("TELEGRAM_BOT_TOKEN не настроен");
+    if (!chatOverride && !process.env.TELEGRAM_CHAT_ID) throw new Error("TELEGRAM_CHAT_ID не настроен");
+    const ok = await sendTelegram(p.text, "markdown", chatOverride);
+    if (!ok) throw new Error("Telegram отклонил сообщение (проверь Chat ID и что бот участник чата)");
+    return `Отправлено ботом${chatOverride ? ` в чат ${chatOverride}` : ""} (${p.text.length} симв.)`;
   },
 
   async email(p) {

@@ -129,23 +129,25 @@ function hardWrap(line: string, limit: number): string[] {
 export async function sendTelegram(
   text: string,
   format: "plain" | "markdown" = "plain",
+  chatOverride?: string,
 ): Promise<boolean> {
   const chunks = splitForTelegram(text);
   if (chunks.length > 1) {
     let ok = true;
-    for (const chunk of chunks) ok = (await sendTelegramChunk(chunk, format)) && ok;
+    for (const chunk of chunks) ok = (await sendTelegramChunk(chunk, format, chatOverride)) && ok;
     return ok;
   }
-  return sendTelegramChunk(text, format);
+  return sendTelegramChunk(text, format, chatOverride);
 }
 
 /** Одно сообщение — без нарезки (текст уже гарантированно влезает). */
 async function sendTelegramChunk(
   text: string,
   format: "plain" | "markdown" = "plain",
+  chatOverride?: string,
 ): Promise<boolean> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chat = process.env.TELEGRAM_CHAT_ID;
+  const chat = chatOverride?.trim() || process.env.TELEGRAM_CHAT_ID;
   if (!token || !chat) return false;
   const send = (body: Record<string, unknown>) =>
     fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
