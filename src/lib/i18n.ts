@@ -1,5 +1,6 @@
 "use client";
 
+import { PROFILE_EN } from "./profile";
 import { useEditor } from "./store";
 
 /**
@@ -12,6 +13,13 @@ import { useEditor } from "./store";
  * Code bodies and tech-tag arrays are intentionally left as-is.
  */
 export const EN: Record<string, string> = {
+  "Избранные проекты": "Selected projects",
+  "Подробнее": "Read more",
+  "WordPress: собственные темы, CPT, ACF PRO, CF7, Polylang": "WordPress: custom themes, CPT, ACF PRO, CF7, Polylang",
+  "2+ года: агентские проекты, HR-tech, стартап и собственные продукты": "2+ years: agency projects, HR-tech, a startup and my own products",
+  "Один из проектов по мультиагентным системам. Web-приложение: мульти-модельный чат, конфигурируемые DAG-пайплайны («Арена») и симуляция событий поверх OpenRouter + локальных моделей Ollama.": "A multi-agent project: multi-model chat, configurable DAG pipelines (Arena) and event simulation using OpenRouter and local Ollama models.",
+  "Оптимизация токенов: сжатие контекста, RAG, умное чтение файлов.": "Token optimization: context compression, RAG and selective file reading.",
+  "Архивный срез на 19.06.2026. Это не текущие расходы и не полный список используемых сегодня инструментов; актуальную работу описывают разделы опыта и проектов.": "Archived snapshot from June 19, 2026. These are not current expenses or a complete list of today's tools; see experience and projects for current work.",
   // ---- README ----
   "Фронтенд, выросший в фуллстек. Делаю интерфейсы, которые не бесят, и бэкенд, который их кормит данными в реальном времени. 2+ года в пет-проектах, двух стартапах и коммерческой разработке.":
     "A frontend dev who grew into fullstack. I build interfaces that don't get in the way, and backends that feed them data in real time. 2+ years across pet projects, two startups and commercial work.",
@@ -614,7 +622,7 @@ export const EN: Record<string, string> = {
 /** Translate a single string for the given language (falls back to the original). */
 export function translate(lang: "ru" | "en", text: string): string {
   if (lang === "ru") return text;
-  return EN[text] ?? text;
+  return PROFILE_EN[text] ?? EN[text] ?? text;
 }
 
 /** Hook returning a translate function bound to the current language. */

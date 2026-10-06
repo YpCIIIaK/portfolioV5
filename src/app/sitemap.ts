@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { allFiles, DEFAULT_OPEN } from "@/lib/files";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://ypciiiak.online";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();

@@ -4,13 +4,21 @@ import { fileById } from "@/lib/files";
 // Short Latin taglines per file — keeps the OG card font-safe (no Cyrillic glyphs)
 // and instantly readable when a link is shared on LinkedIn / Telegram / Slack.
 const TAGS: Record<string, string> = {
-  "README.md": "Frontend grown into fullstack",
+  "projects/readme-studio.tsx": "Visual README builder & animated SVG cards",
+  "projects/argus.ts": "Five AI agents collaborating in Discord",
+  "projects/property-inbox.tsx": "Real-time property inbox · React + Convex",
+  "projects/figma-copy.tsx": "Figma designs to React, HTML & Vue",
+  "projects/bounty-scanner.ts": "Daily bounty monitoring · Discord digests",
+  "projects/personal-workspace.tsx": "Portfolio IDE & private workspace",
+  "experience/factum.md": "Agency client work · Frontend + WordPress",
+
+  "README.md": "Frontend, full-stack & AI tools",
   ".vscode/settings.json": "Live settings.json that re-themes the site",
-  "about/about.md": "Who I am — Astana / remote",
+  "about/about.md": "Who I am — Kazakhstan / remote",
   "about/skills.json": "Tech stack: React · TS · Go · Node · AI",
   "projects/wifi-analyzer.go": "Privacy-first Wi-Fi & network analyzer · Go",
   "projects/pc-health-monitor.go": "Realtime PC health monitor · Go agent",
-  "projects/repo-anti-rot.ts": "Git repo health scanner · 16 scanners",
+  "projects/repo-anti-rot.ts": "Repository health · 27 polyglot checks",
   "projects/multi-agent-arena.ts": "An arena for AI agents · RAG + chains",
   "projects/vortan-crypto.tsx": "Crypto trading tools · Binance realtime",
   "projects/chrome-extensions-suite.tsx": "Chrome MV3 suite · privacy, RAM, UI skins",

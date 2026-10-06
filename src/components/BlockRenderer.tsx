@@ -3,6 +3,8 @@
 import { ExternalLink, Info } from "lucide-react";
 import type { Block } from "@/lib/types";
 import { useTr } from "@/lib/i18n";
+import { useEditor } from "@/lib/store";
+import { fileById } from "@/lib/files";
 import { CodeBlock } from "./CodeBlock";
 
 export function BlockRenderer({ blocks }: { blocks: Block[] }) {
@@ -18,6 +20,7 @@ export function BlockRenderer({ blocks }: { blocks: Block[] }) {
 
 function BlockView({ block: b }: { block: Block }) {
   const tr = useTr();
+  const openFile = useEditor((state) => state.openFile);
   switch (b.t) {
     case "h1":
       return (
@@ -104,8 +107,16 @@ function BlockView({ block: b }: { block: Block }) {
             <a
               key={i}
               href={l.href}
-              target="_blank"
+              target={l.href.startsWith("/?file=") ? undefined : "_blank"}
               rel="noreferrer"
+              onClick={(event) => {
+                if (!l.href.startsWith("/?file=") || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+                const id = new URL(l.href, window.location.origin).searchParams.get("file");
+                if (id && fileById(id)) {
+                  event.preventDefault();
+                  openFile(id);
+                }
+              }}
               className="flex items-center gap-1.5 rounded border border-vsc-line bg-[#2d2d2d] px-3 py-1.5 text-[12.5px] text-vsc-light-blue transition-colors hover:border-vsc-accent hover:text-vsc-bright"
             >
               <ExternalLink size={13} />

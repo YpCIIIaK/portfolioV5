@@ -1,3 +1,4 @@
+import { SUMMARY, AVAILABILITY, LANGUAGES, CONTACTS, SKILLS, PROJECTS, projectFiles, experienceFiles } from "./profile";
 import type { FolderNode, FileNode, TreeNode } from "./types";
 
 export const GITHUB = "https://github.com/YpCIIIaK";
@@ -11,30 +12,39 @@ const readme: FileNode = {
   name: "README.md",
   language: "Markdown",
   blocks: [
-    { t: "h1", text: "👋 Vladimir — Fullstack Developer" },
+    { t: "h1", text: "👋 Vladimir — Frontend / Full-Stack Developer" },
     {
       t: "p",
-      text: "Фронтенд, выросший в фуллстек. Делаю интерфейсы, которые не бесят, и бэкенд, который их кормит данными в реальном времени. 2+ года в пет-проектах, двух стартапах и коммерческой разработке.",
+      text: SUMMARY,
     },
     { t: "callout", text: "Совет: это VSCode. Открывай файлы слева, жми ⌘K / Ctrl+K для палитры команд, и попробуй терминал внизу — он живой." },
+    { t: "p", text: AVAILABILITY },
+    { t: "p", text: LANGUAGES },
+    { t: "links", items: CONTACTS },
+    { t: "h2", text: "Избранные проекты" },
+    ...PROJECTS.slice(0, 6).flatMap((project) => [
+      { t: "h3" as const, text: project.title },
+      { t: "p" as const, text: project.summary },
+      { t: "links" as const, items: [{ label: "Подробнее", href: "/?file=" + encodeURIComponent(project.id) }] },
+    ]),
     { t: "h2", text: "Чем занимаюсь" },
     {
       t: "ul",
       items: [
         "Frontend: React 18/19, TypeScript (strict), Next.js, Angular 19, Vue 3",
-        "Backend: Go (агенты сбора метрик), Node.js, PHP/Symfony, Python",
+        "Backend: Node.js / NestJS, Convex, PostgreSQL, Go, PHP / Symfony, Python",
         "Realtime: WebSocket с авто-реконнектом, мультиплексирование потоков",
         "AI: интеграция LLM через OpenRouter / Claude API, RAG, мультиагентные системы",
-        "Auth & данные: GitHub OAuth, сессии на подписанных cookie, Supabase/Postgres",
+        "WordPress: собственные темы, CPT, ACF PRO, CF7, Polylang",
       ],
     },
-    { t: "tech", items: ["TypeScript", "React", "Next.js", "Go", "Node.js", "Angular", "PHP/Symfony", "Python", "Supabase", "OAuth", "Docker"] },
+    { t: "tech", items: ["TypeScript", "React", "Next.js", "Node.js", "NestJS", "Convex", "WordPress", "PostgreSQL", "Python", "Docker"] },
     {
       t: "links",
       items: [
         { label: "GitHub", href: GITHUB },
-        { label: "repo-anti-rot", href: GITHUB + "/repo-janitor" },
-        { label: "wifi-analyzer", href: GITHUB + "/wifi-analyse-full" },
+        { label: "Readme Studio", href: "https://ypciiiak.github.io/custom-readme/" },
+        { label: "ARGUS", href: GITHUB + "/ARGUS" },
       ],
     },
   ],
@@ -48,7 +58,7 @@ const about: FileNode = {
     { t: "h1", text: "О себе" },
     {
       t: "p",
-      text: "Меня зовут Владимир. Базируюсь в Астане, открыт к удалёнке. Комфортно работаю и с визуальной частью (вёрстка, компоненты, состояния, анимации), и с логикой (API, агенты на Go, боты, интеграция ИИ).",
+      text: SUMMARY,
     },
     {
       t: "p",
@@ -64,6 +74,8 @@ const about: FileNode = {
         "AI-инженерия: мультиагентные системы, RAG, аналитика использования ИИ",
       ],
     },
+    { t: "p", text: AVAILABILITY },
+    { t: "p", text: LANGUAGES },
     { t: "h2", text: "Личное" },
     { t: "p", text: "Спорт: баскетбол, фитнес, горные лыжи, коньки/ролики, плавание и водное поло." },
     { t: "divider" },
@@ -77,15 +89,15 @@ const resume: FileNode = {
   language: "Markdown",
   blocks: [
     { t: "h1", text: "📄 Резюме" },
-    { t: "p", text: "Владимир — Fullstack Developer (React / TypeScript / Next.js / Go / AI). Астана, открыт к удалёнке и любому формату сотрудничества." },
+    { t: "p", text: SUMMARY },
     { t: "callout", text: "Нужен классический PDF? Открой печатную версию по ссылке ниже и нажми «Скачать PDF» — браузер сохранит файл со всеми стилями." },
     { t: "h2", text: "Кратко" },
     {
       t: "ul",
       items: [
-        "2+ года: пет-проекты, два стартапа, коммерческая разработка",
+        "2+ года: агентские проекты, HR-tech, стартап и собственные продукты",
         "Frontend: React 18/19, TypeScript strict, Next.js, Angular 19, Vue 3",
-        "Backend: Go, Node.js, PHP/Symfony, Python; realtime на WebSocket",
+        "Backend: Node.js / NestJS, Convex, PostgreSQL, Go, PHP / Symfony, Python",
         "AI: OpenRouter / Claude API, RAG, мультиагентные системы",
       ],
     },
@@ -94,7 +106,7 @@ const resume: FileNode = {
       items: [
         { label: "📥 Открыть печатную версию (PDF)", href: "/cv" },
         { label: "GitHub", href: GITHUB },
-        { label: "Email", href: "mailto:bigboyvova01@gmail.com" },
+        ...CONTACTS.filter((link) => link.label !== "GitHub"),
       ],
     },
   ],
@@ -109,24 +121,7 @@ const skills: FileNode = {
     {
       t: "code",
       lang: "json",
-      code: `{
-  "frontend": {
-    "languages": ["TypeScript 5.x (strict)", "JavaScript ES6+"],
-    "frameworks": ["React 18/19", "Next.js (App Router)", "Angular 19", "Vue 3"],
-    "state": ["Redux Toolkit", "Angular Signals", "RxJS 7", "useSyncExternalStore"],
-    "styling": ["Tailwind CSS", "SCSS / CSS Modules", "design tokens"],
-    "ux": ["⌘K command palette", "virtual scroll", "streaming UI", "dark/light themes"]
-  },
-  "backend": {
-    "go": ["gopsutil", "gorilla/websocket", "goroutines", "cross-compile win/linux"],
-    "node": ["commander CLI", "zod", "tsup", "@babel/parser", "simple-git"],
-    "php": ["Symfony 8", "Doctrine ORM 3.6", "REST", "webhooks"],
-    "python": ["боты", "автоматизация", "торговые инструменты"]
-  },
-  "realtime": ["WebSocket auto-reconnect", "exponential backoff", "multiplexed streams"],
-  "ai": ["OpenRouter", "Claude API", "RAG", "multi-agent chains"],
-  "infra": ["Docker", "GitHub Actions", "custom GitHub Action + SARIF", "pnpm workspaces"]
-}`,
+      code: JSON.stringify(SKILLS, null, 2),
     },
   ],
 };
@@ -238,142 +233,7 @@ func instantCPU(prev, cur procSample, numCPU int) float64 {
   ],
 };
 
-const repoAntiRot: FileNode = {
-  id: "projects/repo-anti-rot.ts",
-  name: "repo-anti-rot.ts",
-  language: "TypeScript",
-  blocks: [
-    { t: "h1", text: "Repo Anti-Rot" },
-    { t: "p", text: "Монитор «здоровья» и деградации репозитория. Сканирует кодовую базу на тихо накапливающийся «rot» — утёкшие секреты, заброшенные и уязвимые зависимости, стейл-ветки, стареющие TODO, мёртвый и закомментированный код, отключённые тесты, бинарный bloat — ставит балл и грейд A–F и показывает всё в дашборде. Опциональный AI-проход добавляет короткий вердикт к каждой находке через OpenRouter." },
-    {
-      t: "metrics",
-      items: [
-        { label: "Сканеры", value: "26 независимых сканеров" },
-        { label: "Тесты", value: "850+ тестов (Vitest)" },
-        { label: "Оценка", value: "0–100 балл + грейд A–F" },
-      ],
-    },
-    { t: "callout", text: "pnpm-монорепо из 4 частей: общий движок (@repo-anti-rot/core), CLI (опубликован в npm), обёртка GitHub Action и Next.js-дашборд. CI гоняет тесты на Ubuntu / macOS / Windows на каждый пуш — кроссплатформенность проверяется, а не декларируется." },
-    { t: "h2", text: "Что проверяют 26 сканеров" },
-    { t: "ul", items: [
-      "Безопасность: committed secrets (включая историю git), insecure-code, workflow-security, leftover-debug, уязвимые зависимости через OSV.",
-      "Зависимости: outdated-deps, dependency-funeral (заброшенные), lockfile-drift, eol-runtime (протухшие рантаймы).",
-      "Мёртвый груз: dead-code (кросс-модульный), commented-code, todo-debt, skipped-tests, repo-bloat, duplicate-code.",
-      "Процесс и документация: stale-branch, bus-factor, project-hygiene, dockerfile, docs-drift, dead-links, broken-doc-links, license-risk, ci-health, config-conflict, env-lifecycle.",
-    ] },
-    { t: "p", text: "Языки: JS/TS через AST, плюс Python, Go, Rust, Java, Ruby, PHP, C/C++, C#, Kotlin, Swift, Scala — глубина зависит от сканера. Точность важнее полноты: у каждого сканера есть и позитивные, и негативные тесты, а правила, дававшие ложные срабатывания на реальных проектах (pnpm, nest, babel, redux, vite), закрыты регрессионными тестами с их именами." },
-    { t: "h2", text: "Архитектура: один движок, три обёртки" },
-    {
-      t: "code",
-      lang: "typescript",
-      collapsible: true,
-      caption: "Расширяемый реестр сканеров: каждый — чистая функция, считающая взвешенный score. CLI / Action / дашборд переиспользуют один и тот же engine.",
-      code: `interface Scanner {
-  id: string;
-  weight: number;
-  run(ctx: RepoContext): Promise<Finding[]>;
-}
 
-const registry: Scanner[] = [
-  secretsScanner, depsScanner, deadCodeScanner,
-  todoDebtScanner, staleBranchScanner, busFactorScanner,
-  /* …26 total */
-];
-
-export async function scan(ctx: RepoContext): Promise<Report> {
-  const results = await Promise.all(
-    registry.map(async (s) => ({ s, findings: await s.run(ctx) }))
-  );
-  const score = results.reduce(
-    (acc, { s, findings }) => acc - penalty(findings) * s.weight,
-    100
-  );
-  return { score: clamp(score, 0, 100), grade: toGrade(score), results };
-}`,
-    },
-    { t: "h2", text: "Три способа запустить" },
-    { t: "ul", items: [
-      "CLI из npm: npx repo-anti-rot scan --path . — форматы terminal / json / md / sarif.",
-      "GitHub Action: uses: YpCIIIaK/repo-janitor@v1 — порог fail-on роняет сборку по грейду, комментарий в PR с разбивкой по severity, SARIF уезжает в GitHub code scanning.",
-      "Дашборд: вставляешь git-URL — живой прогресс clone → сканеры → ИИ, отчёты в localStorage.",
-    ] },
-    { t: "h2", text: "Инженерные детали, которыми горжусь" },
-    { t: "ul", items: [
-      "Секреты редактируются до отправки в ИИ — инвариант закрыт тестом: сырой ключ не может попасть в evidence.",
-      "insecure-code игнорирует совпадения внутри строк, регулярок и комментариев: описание кода — не код.",
-      "dead-links никогда не стучится в приватные, loopback и зарезервированные адреса.",
-      "Таблица EOL-рантаймов зашита в пакет, а не тянется по сети: неизвестная версия — всегда молчание, устаревшая таблица недоговаривает вместо ложной тревоги.",
-      "Значок и карточка для README генерируются как SVG-эндпоинты, ссылка на публичный отчёт — по токену.",
-    ] },
-    { t: "p", text: "В дашборде: портфель репозиториев с трендами, tree-map по файлам и граф истории коммитов (видно, когда именно здоровье просело), детальная панель находки с AI-вердиктом и кнопкой «Create issue» (префилл формы GitHub — без токена и без API-вызова), command palette (⌘K), расписание автосканов, score-drop алерты на почту и вебхуком, экспорт в Markdown/CSV/JSON, интерфейс на двух языках." },
-    { t: "tech", items: ["TypeScript", "Next.js", "pnpm monorepo", "Node.js CLI", "GitHub Action", "SARIF", "OSV / npm / PyPI", "React Flow", "Vitest", "OpenRouter"] },
-    { t: "links", items: [
-      { label: "Открыть на GitHub", href: GITHUB + "/repo-janitor" },
-      { label: "Живой дашборд", href: "https://repo-anti-rot.onrender.com" },
-      { label: "Пакет в npm", href: "https://www.npmjs.com/package/repo-anti-rot" },
-    ] },
-  ],
-};
-
-const bountyScanner: FileNode = {
-  id: "projects/bounty-scanner.ts",
-  name: "bounty-scanner.ts",
-  language: "TypeScript",
-  blocks: [
-    { t: "h1", text: "Bounty Monitor" },
-    { t: "p", text: "Ежедневный скан рынка баг-баунти с дайджестом в Telegram. Cron в 06:00 UTC обходит пять площадок и ленты новостей, диффит результат со вчерашним снапшотом, ранжирует находки под конкретный профиль охотника и присылает разбор — уже отсортированный, с объяснением от ИИ, что изменилось на рынке." },
-    {
-      t: "metrics",
-      items: [
-        { label: "Источники", value: "5 площадок + RSS-ленты" },
-        { label: "Тесты", value: "68 тестов, без сети" },
-        { label: "Состояние", value: "Upstash Redis, snapshot-дифф" },
-      ],
-    },
-    { t: "h2", text: "Как устроен прогон" },
-    { t: "ul", items: [
-      "Источники тянутся параллельно через Promise.allSettled: Cantina, Immunefi, Sherlock, Code4rena, HackenProof — один упавший не валит скан, он просто помечается в дайджесте.",
-      "Приватные, invite-only и завершённые программы отсекаются на входе.",
-      "Дифф со снапшотом в Redis даёт три корзины: new / changed / removed.",
-      "Скоринг под профиль: без платы за вход и без KYC — выше; низкая плотность заявок — выше; EVM и cross-chain — выше; не-EVM, только-web и закрытые исходники — ниже.",
-      "Готовый топ уходит в OpenRouter за объяснением, дальше — Markdown-дайджест в Telegram со сплитом по 4096 символов.",
-    ] },
-    { t: "h2", text: "Самое интересное — поведение на краях" },
-    { t: "p", text: "Львиная доля кода и тестов здесь не про happy path, а про то, чтобы бот не врал. Каждый из этих случаев закрыт тестом:" },
-    { t: "ul", items: [
-      "Первый прогон заполняет базу и молчит — иначе в чат прилетит весь рынок как «новое».",
-      "Пустой ответ площадки не затирает снапшот: иначе назавтра весь рынок снова станет «новым».",
-      "Площадка передвинула дату записи всему каталогу — это не изменение. Fingerprint считается только по значимым полям: награда, плата, KYC, скоуп, срок.",
-      "Заявок стало на одну больше — молчим; порог от +10 за сутки.",
-      "ИИ упал — дайджест уходит без раздела ИИ. Telegram упал — снапшот всё равно сохраняется.",
-      "День без изменений всё равно даёт сообщение: тишина неотличима от поломки, поэтому вместо диффа уходит текущий топ рынка.",
-    ] },
-    { t: "h2", text: "Управление из самого бота" },
-    { t: "p", text: "Под дайджестом висит кнопка «Рескан» — веб-интерфейс открывать не нужно; плюс команды /scan, /bounty_status, /help. Работает через вебхук, а раз его адрес публичный — две защиты: подпись из заголовка Telegram и проверка chat id. Чужие апдейты игнорируются молча, без ответа." },
-    {
-      t: "code",
-      lang: "typescript",
-      collapsible: true,
-      caption: "Fingerprint по значимым полям: косметические правки каталога не поднимают ложную тревогу.",
-      code: `// Только то, ради чего стоит будить человека в 6 утра.
-function fingerprint(b: Bounty): string {
-  return [
-    b.maxReward, b.entryFee, b.kycRequired,
-    b.scope.slice().sort().join(","), b.deadline,
-  ].join("|");
-}
-
-const changed = current.filter((b) => {
-  const was = snapshot.get(b.id);
-  return was !== undefined && was !== fingerprint(b);
-});`,
-    },
-    { t: "callout", text: "Отдельная осторожность с ИИ: разбор идёт через cloaked-модель, которая логирует промпты, поэтому в неё уходят только публичные рыночные данные — ничего своего." },
-    { t: "p", text: "Тесты не ходят в сеть вообще. Живой прогон вынесен в отдельный smoke: он делает два скана подряд — первый наполняет базу, второй обязан дать нулевой дифф. Если источник вернул ноль записей, smoke печатает предупреждение: это и есть ранний сигнал, что форма чужого API поехала." },
-    { t: "tech", items: ["TypeScript", "Next.js", "Vercel Cron", "Upstash Redis", "Telegram Bot API", "OpenRouter", "Vitest", "RSS"] },
-    { t: "links", items: [{ label: "Открыть на GitHub", href: GITHUB + "/bounty-scanner" }] },
-  ],
-};
 
 const multiAgent: FileNode = {
   id: "projects/multi-agent-arena.ts",
@@ -381,7 +241,7 @@ const multiAgent: FileNode = {
   language: "TypeScript",
   blocks: [
     { t: "h1", text: "Hephaestus — Multi-Agent LLM Arena" },
-    { t: "callout", text: "Текущий основной проект — в активной разработке. Web-приложение: мульти-модельный чат, конфигурируемые DAG-пайплайны («Арена») и симуляция событий поверх OpenRouter + локальных моделей Ollama." },
+    { t: "callout", text: "Один из проектов по мультиагентным системам. Web-приложение: мульти-модельный чат, конфигурируемые DAG-пайплайны («Арена») и симуляция событий поверх OpenRouter + локальных моделей Ollama." },
     { t: "h2", text: "Что внутри" },
     { t: "ul", items: [
       "Мульти-модельный чат: один промпт уходит сразу в несколько моделей — сравниваешь ответы.",
@@ -389,7 +249,7 @@ const multiAgent: FileNode = {
       "Спец-агенты с пресетами: classifier, analyst, researcher, synthesizer, summarizer (19 облачных + 5 Ollama-пресетов).",
       "Симуляция событий: политика/экономика/военное/технологии с кросс-доменным анализом.",
       "Ollama local: бесплатные локальные модели (Llama, Phi, Qwen) — 100% приватно, без затрат на API.",
-      "Оптимизация токенов: сжатие контекста, RAG, умное чтение файлов — до 80% экономии.",
+      "Оптимизация токенов: сжатие контекста, RAG, умное чтение файлов.",
       "RAG-база знаний на BM25-поиске по индексированным файлам проекта (с включением соседних чанков).",
       "AI-редактирование файлов прямо из чата/пайплайна, smart-fallback на резервные модели при таймауте.",
       "Аналитика расхода: токены, оценка стоимости, графики Waterfall/Gantt.",
@@ -511,197 +371,7 @@ const repoVis: FileNode = {
   ],
 };
 
-const personalWorkspace: FileNode = {
-  id: "projects/personal-workspace.tsx",
-  name: "personal-workspace.tsx",
-  language: "TypeScript React",
-  blocks: [
-    { t: "h1", text: "Личный кабинет с GitHub-аутентификацией" },
-    { t: "callout", text: "Этот самый сайт. Открой панель Extensions слева (иконка с кубиками) — там вход через GitHub, заметки, календарь и задачи. Гостям всё доступно в демо-режиме (read-only), владельцу — полный CRUD." },
-    { t: "p", text: "Приватный дашборд, встроенный прямо в IDE-метафору портфолио. Своя реализация OAuth-входа через GitHub (без NextAuth), разграничение прав owner/guest и хранение данных в Supabase. Цель — показать auth, работу с сессиями/токенами и аккуратное разделение доступа на реальной фиче, а не на туториале." },
 
-    { t: "h2", text: "Аутентификация без библиотек" },
-    { t: "ul", items: [
-      "GitHub OAuth вручную: authorize → callback → обмен code на access token → запрос профиля.",
-      "Защита от CSRF: одноразовый state в HttpOnly-cookie, сверка на колбэке.",
-      "Сессия — подписанный HMAC-SHA256 токен (Web Crypto) в HttpOnly+Secure+SameSite cookie. Тело cookie не доверяем без проверки подписи.",
-      "Владелец определяется сравнением GitHub id с OWNER_GITHUB_ID — любой другой валидный вход остаётся гостем.",
-    ] },
-    {
-      t: "code",
-      lang: "typescript",
-      collapsible: true,
-      caption: "Подпись и проверка сессии на Web Crypto — формат <payload>.<signature>, без внешних зависимостей.",
-      code: `export async function signSession(s: Session): Promise<string> {
-  const payload = b64url(new TextEncoder().encode(JSON.stringify(s)));
-  const key = await hmacKey(); // importKey(AUTH_SECRET, HMAC-SHA256)
-  const sig = await crypto.subtle.sign("HMAC", key, enc(payload));
-  return \`\${payload}.\${b64url(new Uint8Array(sig))}\`;
-}
-
-export async function verifySession(token?: string): Promise<Session | null> {
-  const [payload, sig] = (token ?? "").split(".");
-  const ok = await crypto.subtle.verify("HMAC", await hmacKey(), dec(sig), enc(payload));
-  if (!ok) return null;                       // подделанная/битая cookie
-  const s = JSON.parse(decode(payload)) as Session;
-  return s.exp * 1000 < Date.now() ? null : s; // протухшая сессия
-}`,
-    },
-
-    { t: "h2", text: "Данные и разграничение доступа" },
-    { t: "ul", items: [
-      "Supabase (PostgREST) как бэкенд: notes / tasks / events, доступ тонким fetch-клиентом на service-role — только на сервере, в браузер ключ не попадает.",
-      "Единый CRUD-роут /api/workspace/[kind]: каждый метод за requireOwner(), тела валидируются zod (whitelist полей).",
-      "RLS в Postgres включён без публичных политик: anon-ключ не читает и не пишет ничего, весь доступ — через серверную сессию.",
-      "Graceful degradation: без переменных окружения сайт работает как обычно, а кабинет показывает демо-данные.",
-    ] },
-    { t: "h2", text: "UI" },
-    { t: "p", text: "Фичи живут как вкладки внутри редактора (виртуальные «файлы»), запускаются из панели Extensions. Состояние сессии — отдельный zustand-стор, который тянет /api/auth/me и переключает интерфейс между демо и владельцем." },
-    { t: "tech", items: ["Next.js 16", "TypeScript", "GitHub OAuth", "Web Crypto (HMAC)", "Supabase / PostgREST", "zod", "zustand", "HttpOnly cookies"] },
-    { t: "links", items: [{ label: "Открыть на GitHub", href: GITHUB + "/portfolioV5" }] },
-  ],
-};
-
-const hrSearch: FileNode = {
-  id: "experience/hr-search-platform.md",
-  name: "hr-search-platform.md",
-  language: "Markdown",
-  blocks: [
-    { t: "h1", text: "Поисковый движок по базе кандидатов (стажировка)" },
-    { t: "p", text: "Роль: Backend / Search Engineer. HR-платформа для рекрутеров с полнотекстовым поиском по базе из 227k+ профилей кандидатов (импорт из LinkedIn-дампов). Работал с реальным продакшен-объёмом данных." },
-    { t: "callout", text: "227 249 живых документов в OpenSearch 2.12 (форк Elasticsearch 7.10), PostgreSQL как источник истины. Не учебный датасет — настоящий прод-объём и настоящие «грязные» данные." },
-
-    { t: "h2", text: "Что сделал" },
-
-    { t: "h3", text: "🔍 Поисковый индекс и пайплайн данных" },
-    { t: "ul", items: [
-      "Развернул изолированную песочницу OpenSearch (как в проде), индекс на 227 249 реальных документов.",
-      "Спроектировал маппинг полей под полнотекстовый поиск: анализаторы, разделение keyword vs text, edge-ngram автокомплит по навыкам / компаниям / должностям.",
-    ] },
-
-    { t: "h3", text: "⚡ Инкрементальная синхронизация Postgres → OpenSearch" },
-    { t: "ul", items: [
-      "Переписал синхронизатор с полного reindex на инкрементальный — два независимых курсора (created_at / updated_at) с watermark из самого индекса.",
-      "Идемпотентный upsert по стабильному ключу (urn): повторный прогон не плодит дубли.",
-      "Результат: синк больше не перечитывает всю базу на каждом запуске.",
-    ] },
-
-    { t: "h3", text: "🐛 Восстановление мёртвого фильтра по опыту" },
-    { t: "p", text: "Фильтр по стажу не работал: totalExperience = 0 у всех записей. Сделал backfill (scroll + _bulk) из вложенного experience[].time; отработал грязные данные — съехавшие поля, длительность вместо дат. Фильтр по опыту стал функциональным." },
-    {
-      t: "code",
-      lang: "typescript",
-      collapsible: true,
-      caption: "Параллельная занятость не должна раздувать стаж. Сливаем пересекающиеся интервалы дат и считаем реально отработанные месяцы.",
-      code: `function totalMonths(periods: { start: Date; end: Date }[]): number {
-  const sorted = [...periods].sort((a, b) => +a.start - +b.start);
-  const merged: { start: Date; end: Date }[] = [];
-
-  for (const p of sorted) {
-    const last = merged[merged.length - 1];
-    if (last && p.start <= last.end) {
-      last.end = new Date(Math.max(+last.end, +p.end)); // overlap → extend
-    } else {
-      merged.push({ ...p });
-    }
-  }
-  return merged.reduce((acc, p) => acc + monthsBetween(p.start, p.end), 0);
-}`,
-    },
-
-    { t: "h3", text: "📊 Оптимизация «непросмотренных кандидатов» (доказано бенчмарком)" },
-    { t: "p", text: "Прод-баг: при >10k просмотренных кандидаты дублировались при прокрутке. Провёл нагрузочный бенчмарк 4 стратегий исключения на 227k (медиана 25 прогонов) и доказал замерами: exclude by _id ≈ exclude by field (выигрыша нет), а must_not деградирует линейно (36 мс + 2 МБ payload на 50k исключённых)." },
-    { t: "ul", items: [
-      "Корень исходного бага: from/size + сорт без уникального тай-брейкера.",
-      "Решение: курсорная пагинация search_after со стабильным total-order сортом → плоский took ~7 мс на любой глубине и устранение дублей by design.",
-    ] },
-    {
-      t: "code",
-      lang: "typescript",
-      collapsible: true,
-      caption: "search_after не зависит от глубины: курсор — это sort-значения предыдущей страницы, а уникальный тай-брейкер (urn) убирает дубли.",
-      code: `const body = {
-  size: 50,
-  // стабильный total-order: score + уникальный тай-брейкер
-  sort: [{ _score: "desc" }, { urn: "asc" }],
-  query,
-  ...(cursor && { search_after: cursor }), // [score, urn] прошлой страницы
-};
-
-const res = await os.search({ index, body });
-const nextCursor = res.hits.hits.at(-1)?.sort; // курсор следующей страницы`,
-    },
-
-    { t: "h3", text: "🌍 Нормализация локаций" },
-    { t: "p", text: "Спроектировал спеку нормализации city / country / region для загрузчика: longest-match, разбор омонимов." },
-
-    { t: "h3", text: "🔐 Безопасное хранение фото (Backblaze B2)" },
-    { t: "p", text: "Выдача аватаров через неугадываемый ключ (urn вместо последовательного id) — защита от перебора и массового скачивания фото." },
-
-    {
-      t: "metrics",
-      items: [
-        { label: "Документов в индексе", value: "227 249" },
-        { label: "Пагинация на любой глубине", value: "~7 мс" },
-        { label: "Стек", value: "OpenSearch 2.12, NestJS, Postgres" },
-      ],
-    },
-    { t: "tech", items: ["OpenSearch / Elasticsearch", "Query DSL", "search_after", "маппинги и анализаторы", "ETL Postgres→индекс", "инкрементальный синк", "нагрузочный бенчмаркинг", "TypeScript", "NestJS", "Docker"] },
-  ],
-};
-
-const tgBots: FileNode = {
-  id: "experience/telegram-bots.md",
-  name: "telegram-bots.md",
-  language: "Markdown",
-  blocks: [
-    { t: "h1", text: "Серия продакшн Telegram-ботов" },
-    { t: "p", text: "Роль: Backend-разработчик / разработчик Telegram-ботов. Серия прод-ботов на единой архитектуре Symfony + Doctrine + Docker. ~120 коммитов в 5 проектах." },
-    { t: "callout", text: "Единый каркас на все боты: Symfony 7.3–8.0, Doctrine ORM 3 + Migrations, MySQL, Docker Compose, Telegram Bot API. Поверх него — разная доменная логика под каждый продукт." },
-
-    { t: "h2", text: "🤖 AI-бот генерации контента (ii-bot) — ключевой проект" },
-    { t: "p", text: "PHP 8.4, Symfony 8.0, Doctrine ORM 3, Docker, Telegram Bot API, VK API, OpenAI и внешние AI-провайдеры." },
-    { t: "ul", items: [
-      "Генерация изображений и видео: text-to-video, image-to-video, reference-изображения, выбор длительности и качества вплоть до 4K.",
-      "Интеграция множества AI-моделей и провайдеров (Kling 2.1 Pro, Seedream, OpenAI и др.) с выбором модели/качества прямо из интерфейса бота.",
-      "Режим AI deep-research (/research) и web-search инструменты для чат-бота.",
-      "Двусторонняя интеграция Telegram ↔ VK, структурное логирование (Monolog), стабилизация генерации.",
-    ] },
-
-    { t: "h2", text: "📊 Бот автоматической email-отчётности (theact-report-bot)" },
-    { t: "p", text: "PHP 8.2, Symfony 7.3, Doctrine ORM 3, MySQL, IMAP, PhpSpreadsheet, OpenAI, Cron." },
-    { t: "ul", items: [
-      "Пайплайн: IMAP-парсинг писем → извлечение Excel (PhpSpreadsheet) → анализ через OpenAI → формирование отчётов.",
-      "Планировщик (Cron) с автосканом почты по расписанию и авто-отправкой отчётов.",
-      "Админ-панель управления промптами (CRUD) и система авторизации пользователей.",
-      "Аналитика: сравнение периодов (день/месяц/год), расчёт плановых показателей.",
-    ] },
-
-    { t: "h2", text: "🏋️ Бот фитнес-зала (gym-bot)" },
-    { t: "p", text: "PHP 8.2, Symfony 7.3, Doctrine ORM 3, MySQL, Docker, Symfony Security." },
-    { t: "ul", items: [
-      "Ролевая модель доступа (admin / trainer / user) с разграничением функционала.",
-      "CRUD-сущности (адреса, типы тренировок), управление абонементами и тренировками.",
-      "Опросы (polls), поиск по телефону, навигационное меню.",
-    ] },
-
-    { t: "h2", text: "🛍️ Бот маркетплейса косметики (kosmetik-bot)" },
-    { t: "p", text: "PHP, Symfony, Doctrine, Docker, REST-синхронизация, Cron." },
-    { t: "ul", items: [
-      "Команды полной и инкрементальной синхронизации каталога и изображений по Cron.",
-      "Система авторизации, админ-UI управления магазинами (CRUD).",
-    ] },
-
-    { t: "h2", text: "🧠 Бот психологических тестов/сценариев (manipulate-bot)" },
-    { t: "p", text: "PHP, Symfony, Doctrine ORM, MySQL." },
-    { t: "ul", items: [
-      "Движок сценариев и тестов с сохранением ответов в БД (схема + миграции).",
-      "Админ-панель управления сценариями/вопросами (CRUD), команда статистики /usage.",
-    ] },
-
-    { t: "tech", items: ["PHP 8.2–8.4", "Symfony 7.3 / 8.0", "Doctrine ORM 3 + Migrations", "MySQL", "Docker Compose", "Telegram Bot API", "VK API", "OpenAI API", "IMAP", "PhpSpreadsheet", "Monolog", "Cron"] },
-  ],
-};
 
 const extensions: FileNode = {
   id: "experience/browser-extensions.md",
@@ -836,7 +506,7 @@ const ccusage: FileNode = {
   blocks: [
     { t: "h1", text: "🤖 Использование ИИ" },
     { t: "p", text: "ИИ — часть моего рабочего процесса. Ниже настоящая статистика по двум инструментам: Claude Code (агент Anthropic в терминале) и OpenRouter (доступ к десяткам моделей через один API). Цифры выгружены из ccusage и из дашборда OpenRouter." },
-    { t: "callout", text: "Это реальные экспорты на 19.06.2026, а не моковые данные. Claude Code — премиум-агент (Opus 4.8); OpenRouter — много дешёвых/бесплатных моделей для экспериментов." },
+    { t: "callout", text: "Архивный срез на 19.06.2026. Это не текущие расходы и не полный список используемых сегодня инструментов; актуальную работу описывают разделы опыта и проектов." },
   ],
 };
 
@@ -857,9 +527,9 @@ const contact: FileNode = {
   language: "TypeScript React",
   blocks: [
     { t: "h1", text: "Связаться" },
-    { t: "p", text: "Открыт к найму в компанию, фрилансу — любому формату. Астана / удалёнка." },
+    { t: "p", text: AVAILABILITY },
     { t: "callout", text: "Форма ниже — рабочая: жмёшь «Отправить», и сообщение реально уходит через серверный API-роут Next.js с валидацией на Zod. Это и есть мини-доказательство бэкенда." },
-    { t: "links", items: [{ label: "GitHub", href: GITHUB }, { label: "Email", href: "mailto:bigboyvova01@gmail.com" }] },
+    { t: "links", items: CONTACTS },
   ],
 };
 
@@ -884,12 +554,12 @@ export const tree: FolderNode = {
     {
       id: "projects",
       name: "projects",
-      children: [wifi, pcHealth, repoAntiRot, bountyScanner, multiAgent, vortan, extSuite, repoVis, personalWorkspace],
+      children: [...projectFiles, wifi, pcHealth, multiAgent, vortan, extSuite, repoVis],
     } as FolderNode,
     {
       id: "experience",
       name: "experience",
-      children: [hrSearch, tgBots, extensions],
+      children: [...experienceFiles, extensions],
     } as FolderNode,
     {
       id: "live",

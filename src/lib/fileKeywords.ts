@@ -5,6 +5,16 @@ import { allFiles } from "./files";
  * Lets the AI assistant "open" the file most related to a question.
  */
 const KEYWORDS: Record<string, string[]> = {
+  "projects/readme-studio.tsx": ["readme studio", "svg", "readme", "карточк", "анимац", "custom-readme"],
+  "projects/argus.ts": ["argus", "аргус", "discord", "дискорд", "агент", "делегир", "координатор"],
+  "projects/property-inbox.tsx": ["property", "convex", "арендатор", "tenant", "недвижим", "inbox"],
+  "projects/figma-copy.tsx": ["figma", "фигма", "плагин", "дизайн", "конвертер"],
+  "projects/bounty-scanner.ts": ["bounty", "баунти", "дайджест", "redis"],
+  "projects/personal-workspace.tsx": ["workspace", "portfolio", "портфолио", "кабинет"],
+  "experience/factum.md": ["factum", "фактум", "wordpress", "acf", "cf7", "cms", "агентств"],
+  "experience/paraweb.md": ["paraweb", "паравеб"],
+  "experience/vortan.md": ["vortan", "акселератор", "стартап"],
+
   "projects/wifi-analyzer.go": [
     "go", "golang", "голанг", "wifi", "wi-fi", "вайфай", "сеть", "сети", "network",
     "приватн", "privacy", "netsh", "nmcli", "трафик", "agent", "агент",

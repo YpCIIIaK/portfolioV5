@@ -12,25 +12,25 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://ypciiiak.online";
 const DESC =
-  "Портфолио Владимира в виде VSCode: фронтенд, выросший в фуллстек. React, TypeScript, Next.js, Go, Node.js, AI.";
+  "Владимир — Frontend / Full-Stack Developer. React, TypeScript, Next.js, Node.js, WordPress, боты и AI-инструменты. Казахстан, удалённая работа.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: "Vladimir — Fullstack Developer",
+  title: "Vladimir — Frontend / Full-Stack Developer",
   description: DESC,
   openGraph: {
-    title: "Vladimir — Fullstack Developer",
+    title: "Vladimir — Frontend / Full-Stack Developer",
     description: DESC,
     type: "website",
     url: "/",
     siteName: "Vladimir · Portfolio",
-    images: [{ url: "/api/og", width: 1200, height: 630, alt: "Vladimir — Fullstack Developer" }],
+    images: [{ url: "/api/og", width: 1200, height: 630, alt: "Vladimir — Frontend / Full-Stack Developer" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Vladimir — Fullstack Developer",
+    title: "Vladimir — Frontend / Full-Stack Developer",
     description: DESC,
     images: ["/api/og"],
   },
@@ -41,11 +41,11 @@ const PERSON_JSONLD = {
   "@type": "Person",
   name: "Vladimir",
   url: SITE_URL,
-  jobTitle: "Fullstack Developer",
+  jobTitle: "Frontend / Full-Stack Developer",
   sameAs: ["https://github.com/YpCIIIaK"],
   email: "mailto:bigboyvova01@gmail.com",
-  address: { "@type": "PostalAddress", addressLocality: "Астана", addressCountry: "KZ" },
-  knowsAbout: ["TypeScript", "React", "Next.js", "Go", "Node.js", "AI engineering"],
+  address: { "@type": "PostalAddress", addressCountry: "KZ" },
+  knowsAbout: ["TypeScript", "React", "Next.js", "Node.js", "WordPress", "AI engineering"],
 };
 
 export default function RootLayout({

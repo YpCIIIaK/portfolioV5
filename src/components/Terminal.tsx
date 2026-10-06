@@ -70,12 +70,12 @@ export function Terminal() {
         ]);
         break;
       case "whoami":
-        print(["Vladimir — Fullstack Developer (frontend → backend).", "Astana / remote. Open to work."]);
+        print(["Vladimir — Frontend / Full-Stack Developer.", "Kazakhstan / remote. Flexible schedule, full-time or part-time."]);
         break;
       case "about":
         print([
-          "2+ года: пет-проекты, 2 стартапа, коммерческая разработка ботов.",
-          "Frontend (React/TS/Next) + Backend (Go-агенты, Node, PHP/Symfony) + AI.",
+          "2+ года: Factum, HR-tech, Vortan, боты и собственные продукты.",
+          "React/TS/Next + Node/NestJS/Convex + WordPress + AI.",
           "Tip: `cat about/about.md`",
         ]);
         break;
@@ -110,7 +110,7 @@ export function Terminal() {
       case "skills":
         print([
           "frontend : React 18/19 · TypeScript · Next.js · Angular 19 · Vue 3",
-          "backend  : Go (gopsutil, gorilla/ws) · Node.js · PHP/Symfony · Python",
+          "backend  : Node.js · NestJS · Convex · Go · PHP/Symfony · Python",
           "realtime : WebSocket auto-reconnect · multiplexed streams",
           "ai       : OpenRouter · Claude API · RAG · multi-agent chains",
         ]);
@@ -126,7 +126,7 @@ export function Terminal() {
         break;
       case "social":
       case "contact":
-        print([`GitHub : ${GITHUB}`, "Email  : bigboyvova01@gmail.com", "Tip: `cat contact/contact.tsx` для формы"]);
+        print([`GitHub : ${GITHUB}`, "Telegram: https://t.me/bigboyvova", "Email  : bigboyvova01@gmail.com", "Tip: `cat contact/contact.tsx` для формы"]);
         break;
       case "clear":
         setLines([]);
