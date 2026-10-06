@@ -19,7 +19,13 @@ export default function CvPage() {
           .cv-entry { break-inside: avoid; }
           .cv h2 { break-after: avoid; }
         }
-        html, body { background: #fff !important; }
+        html, body {
+          background: #fff !important;
+          height: auto !important;
+          min-height: 100%;
+          overflow: visible !important;
+        }
+        body { display: block !important; }
         .cv a { color: #1d4ed8; text-decoration: none; overflow-wrap: anywhere; }
         .cv h2 { border-bottom: 1px solid #d4d4d4; }
       `}</style>
