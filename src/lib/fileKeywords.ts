@@ -9,6 +9,8 @@ const KEYWORDS: Record<string, string[]> = {
   "projects/argus.ts": ["argus", "аргус", "discord", "дискорд", "агент", "делегир", "координатор", "bounty", "баунти", "дайджест", "redis"],
   "projects/property-inbox.tsx": ["property", "convex", "арендатор", "tenant", "недвижим", "inbox"],
   "projects/figma-copy.tsx": ["figma", "фигма", "плагин", "дизайн", "конвертер"],
+  "projects/yasen-store.js": ["мебел", "furniture", "ясень", "3d", "three", "шкаф", "конструктор", "dxf", "чпу"],
+  "projects/physlab-3d.js": ["физик", "physics", "rapier", "wasm", "webassembly", "симулятор", "песочниц", "3d"],
   "projects/job-search-tool.ts": ["job", "ваканс", "hh", "резюме", "resume", "jobsearch", "отклик"],
   "projects/hephaestus.ts": ["hephaestus", "гефест", "dag", "пайплайн", "pipeline", "ollama", "bm25"],
   "projects/cyberpath.html": ["cyber", "кибер", "безопасн", "owasp", "mitre", "pentest", "cyberpath", "tryhackme"],

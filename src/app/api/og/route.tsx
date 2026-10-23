@@ -8,6 +8,8 @@ const TAGS: Record<string, string> = {
   "projects/argus.ts": "Five AI agents + bounty monitor in Discord",
   "projects/property-inbox.tsx": "Real-time property inbox · React + Convex",
   "projects/figma-copy.tsx": "Figma designs to React, HTML & Vue",
+  "projects/yasen-store.js": "3D furniture store · configurator + CNC output",
+  "projects/physlab-3d.js": "3D physics sandbox · Rapier + Three.js",
   "projects/job-search-tool.ts": "Remote job aggregator · 21 sources + AI",
   "projects/hephaestus.ts": "Multi-agent LLM arena · DAG pipelines",
   "projects/cyberpath.html": "Interactive cybersecurity courses in the browser",

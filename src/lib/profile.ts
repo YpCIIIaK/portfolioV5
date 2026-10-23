@@ -107,6 +107,28 @@ export const PROJECTS = [
     tech: ["Next.js 16", "React 19", "TypeScript", "Zustand", "OpenRouter", "Ollama"], repo: "Hephaestus",
   },
   {
+    id: "projects/yasen-store.js", title: "Ясень · 3D-магазин мебели", language: "JavaScript",
+    summary: text("Демо-магазин мебели, где каждый товар можно повернуть в 3D, перекрасить и расставить в своей комнате, а шкаф — собрать в конструкторе и получить проект для производства. Все модели построены кодом: ни одной фотографии и ни одного 3D-файла.", "A demo furniture store where every item can be rotated in 3D, re-finished and placed in your room, and a wardrobe can be designed in a configurator with a production-ready project. Every model is generated in code: no photos and no 3D files."),
+    points: [
+      text("21 товар, конфигуратор тканей и материалов с пересчётом цены, 3D-планировщик комнаты с привязкой к сетке и подсветкой пересечений. Процедурные текстуры дерева, ткани и мрамора на canvas.", "21 products, a fabric and finish configurator with live pricing, a 3D room planner with grid snapping and collision highlighting. Procedural wood, fabric and marble textures drawn on canvas."),
+      text("Конструктор корпусной мебели: 7 основ, установка в нишу по замеру, проверки прогиба полок и нагрузки на петли. Чертежи, спецификация, карты раскроя, CSV присадки и DXF для ЧПУ; расчётное ядро покрыто автотестами.", "Cabinet configurator: 7 base types, niche fitting from measurements, shelf-sag and hinge-load checks. Drawings, a parts list, cutting maps, drilling CSV and DXF for CNC; the calculation core is covered by tests."),
+      text("Производительность: кадр рисуется только при изменениях, пониженное разрешение во время вращения, кэш геометрии (пересборка шкафа из 58 деталей — 3,4 мс), ленивая загрузка модулей и офлайн через service worker.", "Performance: frames render only on change, lower resolution while orbiting, a geometry cache (rebuilding a 58-part wardrobe takes 3.4 ms), lazy-loaded modules and offline support via a service worker."),
+    ],
+    tech: ["Three.js", "JavaScript (ES modules)", "Canvas", "SVG", "Service Worker", "node:test"],
+    repo: "all-repo/tree/furniture-store", demo: "https://ypciiiak.github.io/all-repo/mebel/",
+  },
+  {
+    id: "projects/physlab-3d.js", title: "Физлаб 3D · песочница физики", language: "JavaScript",
+    summary: text("Онлайн-симулятор физики в браузере: тела, пружины, шарниры, моторы, пушка и свои сценарии. Физика на Rapier (Rust → WebAssembly), отрисовка на Three.js; есть 2D-версия на собственном движке.", "An in-browser physics sandbox: bodies, springs, joints, motors, a cannon and custom scenes. Physics on Rapier (Rust → WebAssembly), rendering with Three.js, plus a 2D version on a custom engine."),
+    points: [
+      text("5 форм тел, пружины, верёвки, шаровые шарниры, оси с моторами и сварка; гравитация планет, орбиты, сопротивление воздуха. 16 сценариев: дженга, домино, колыбель Ньютона, подвесной мост, катапульта, тест на 1000 тел.", "5 body shapes, springs, ropes, ball joints, motorized axles and welds; planetary gravity, orbits and air drag. 16 scenes: jenga, dominoes, Newton's cradle, a suspension bridge, a catapult and a 1000-body stress test."),
+      text("Все тела одной формы рисуются одним вызовом (InstancedMesh), фиксированный шаг 60 Гц с интерполяцией для мониторов 120+ Гц, спящие тела не нагружают процессор.", "Same-shape bodies render in one draw call (InstancedMesh), a fixed 60 Hz step with interpolation for 120+ Hz displays, and sleeping bodies cost almost nothing."),
+      text("Сохранение сцен в браузере, экспорт и импорт JSON, ссылка со сценой прямо в адресе, отмена и повтор.", "Scenes save in the browser, export and import as JSON, share as a link with the scene compressed into the URL, with undo and redo."),
+    ],
+    tech: ["Three.js", "Rapier", "WebAssembly", "JavaScript", "GitHub Pages"],
+    repo: "all-repo", demo: "https://ypciiiak.github.io/all-repo/",
+  },
+  {
     id: "projects/readme-studio.tsx", title: "Readme Studio", language: "TypeScript React",
     summary: text("Визуальный конструктор GitHub README и редактор анимированных SVG-карточек. Работает в браузере без аккаунта и сервера; проекты сохраняются локально.", "Visual GitHub README builder and animated SVG card editor. Runs in the browser without an account or server; projects are saved locally."),
     points: [

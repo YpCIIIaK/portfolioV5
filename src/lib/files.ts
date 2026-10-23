@@ -45,6 +45,8 @@ const readme: FileNode = {
         { label: "GitHub", href: GITHUB },
         { label: "Repo Janitor", href: "https://repo-janitor.app" },
         { label: "Readme Studio", href: "https://ypciiiak.github.io/custom-readme/" },
+        { label: "Ясень 3D", href: "https://ypciiiak.github.io/all-repo/mebel/" },
+        { label: "Физлаб 3D", href: "https://ypciiiak.github.io/all-repo/" },
         { label: "CyberPath", href: "https://ypciiiak.github.io/cyber-sec/#/" },
         { label: "ARGUS", href: GITHUB + "/ARGUS" },
       ],
