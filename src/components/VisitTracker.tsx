@@ -21,7 +21,8 @@ export function VisitTracker() {
 
     // Which application link brought them here (?ref=iqoko). Kept for the whole
     // browser so a later direct visit still shows the original company.
-    let ref = params.get("ref")?.slice(0, 40) ?? "";
+    // ?s=<code> is the neutral form (decoded on the server); ?ref=<name> still works.
+    let ref = (params.get("s") ? `code:${params.get("s")}` : params.get("ref"))?.slice(0, 60) ?? "";
     let firstRef = "";
     try {
       if (ref) localStorage.setItem("first-ref", localStorage.getItem("first-ref") ?? ref);

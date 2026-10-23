@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { decodeRef } from "@/lib/refcode";
 
 export const runtime = "nodejs";
 
@@ -136,6 +137,11 @@ export async function POST(req: Request) {
   } catch {
     /* sendBeacon may send text; ignore */
   }
+
+  // Application links carry ?s=<code>; turn it back into the company name.
+  const fromCode = (v?: string) => (v?.startsWith("code:") ? decodeRef(v.slice(5)) ?? v.slice(5) : v);
+  body.ref = fromCode(body.ref);
+  body.firstRef = fromCode(body.firstRef);
 
   const geo = geoFrom(req);
   const info = await ipInfo(geo.ip);
