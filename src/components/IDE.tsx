@@ -15,6 +15,9 @@ import { CopilotPanel } from "./CopilotPanel";
 import { Splash } from "./Splash";
 import { AchievementToast } from "./AchievementToast";
 import { VisitTracker } from "./VisitTracker";
+import { SessionRecorder } from "./SessionRecorder";
+import { PrivacyBanner } from "./PrivacyBanner";
+import { ReplayReceiver } from "./ReplayReceiver";
 import { useSession } from "@/lib/session";
 import { HelpCircle } from "lucide-react";
 
@@ -99,6 +102,9 @@ export function IDE({ initialFile }: { initialFile?: string }) {
       <Splash />
       <AchievementToast />
       <VisitTracker />
+      <SessionRecorder />
+      <ReplayReceiver />
+      <PrivacyBanner />
       <button
         onClick={() => setTour(true)}
         title="Запустить тур по сайту"

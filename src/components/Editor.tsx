@@ -36,6 +36,7 @@ import { DrivePanel } from "./workspace/DrivePanel";
 import { ModelsPanel } from "./workspace/ModelsPanel";
 import { DiagramPanel } from "./workspace/DiagramPanel";
 import { BrainPanel } from "./workspace/BrainPanel";
+import { ReplaysPanel } from "./workspace/ReplaysPanel";
 import { WorkflowsPanel } from "./workspace/WorkflowsPanel";
 import { RepoHealthPanel } from "./workspace/RepoHealthPanel";
 import { FigmaPanel } from "./workspace/FigmaPanel";
@@ -127,6 +128,7 @@ export function Editor() {
           {file.id === "workspace/models.tsx" && <ModelsPanel />}
           {file.id === "workspace/diagrams.tsx" && <DiagramPanel />}
           {file.id === "workspace/brain.tsx" && <BrainPanel />}
+          {file.id === "workspace/replays.tsx" && <ReplaysPanel />}
           {file.id === "workspace/workflows.tsx" && <WorkflowsPanel />}
           {file.id === "workspace/projects.tsx" && <ProjectsPanel />}
           {file.id === "tools/repo-health.tsx" && <RepoHealthPanel />}

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireOwner } from "@/lib/auth";
-import { supabaseConfigured, sbSelect, sbUpdate } from "@/lib/supabase";
+import { supabaseConfigured, sbSelect, sbUpdate, sbDelete } from "@/lib/supabase";
 import { notifyOwner } from "@/lib/notify";
 
 export const runtime = "nodejs";
@@ -127,7 +127,17 @@ async function run(req: Request) {
     sent.push(e.id);
   }
 
-  return NextResponse.json({ ok: true, checked: rows.length, sent: sent.length });
+  // Session recordings are kept 90 days (privacy policy); chunks go with them (on delete cascade).
+  let replaysPurged = true;
+  try {
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    await sbDelete("ws_replays", `started_at=lt.${cutoff}`);
+  } catch (e) {
+    replaysPurged = false;
+    console.error("replay purge failed", e);
+  }
+
+  return NextResponse.json({ ok: true, checked: rows.length, sent: sent.length, replaysPurged });
 }
 
 export async function POST(req: Request) {

@@ -16,6 +16,7 @@ interface VisitBody {
   touch?: boolean;
   webdriver?: boolean;
   visitorId?: string;
+  replayId?: string;
   visitNo?: number;
   activeMs?: number;
   firstActionMs?: number;
@@ -111,6 +112,7 @@ function botSignals(body: VisitBody, info: IpInfo | null, ua: string, ipTz?: str
   return out;
 }
 
+const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://ypciiiak.online";
 const NOTIFY_EMAIL = process.env.NOTIFY_EMAIL ?? "bigboyvova01@gmail.com";
 
 function fmtDuration(ms: number) {
@@ -188,6 +190,9 @@ export async function POST(req: Request) {
     top || "  (не открывал файлы)",
     actions ? "\n🎯 Действия:\n" + actions : "",
     errors ? "\n⚠️ Ошибки на странице:\n" + errors : "",
+    body.replayId && /^[0-9a-f-]{36}$/i.test(body.replayId)
+      ? `\n▶️ Запись визита: ${SITE}/?file=workspace%2Freplays.tsx&replayId=${body.replayId}`
+      : "",
     ua ? `\nUA: ${ua}` : "",
   ]
     .filter((l, i, a) => l !== "" || (i > 0 && a[i - 1] !== ""))

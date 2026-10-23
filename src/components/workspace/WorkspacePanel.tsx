@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, FolderGit2, Blocks, Briefcase, Send, CreditCard, Sparkles, Newspaper, Music, BookText, Shapes, HeartPulse, Frame, Brain, Workflow, HardDrive, Cpu, ChevronRight, ChevronDown } from "lucide-react";
+import { LogIn, CircleUser, LogOut, LayoutDashboard, StickyNote, CalendarDays, ListTodo, Mail, FolderGit2, Blocks, Briefcase, Send, CreditCard, Sparkles, Newspaper, Music, BookText, Shapes, HeartPulse, Frame, Brain, Workflow, HardDrive, Cpu, MousePointerClick, ChevronRight, ChevronDown } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { useEditor } from "@/lib/store";
 
@@ -28,6 +28,7 @@ const GROUPS: { key: string; title: string; items: Item[] }[] = [
       { id: "workspace/calendar.tsx", label: "Календарь", Icon: CalendarDays },
       { id: "workspace/diagrams.tsx", label: "Диаграммы", Icon: Shapes },
       { id: "workspace/projects.tsx", label: "Проекты", Icon: FolderGit2 },
+      { id: "workspace/replays.tsx", label: "Записи визитов", Icon: MousePointerClick },
     ],
   },
   {

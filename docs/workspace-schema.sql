@@ -395,3 +395,28 @@ create table if not exists ws_brain_seen (
 
 alter table ws_brain_seen enable row level security;
 -- Политик нет намеренно: anon-ключ доступа не получает, сервер ходит под service_role.
+
+-- Session replay ------------------------------------------------------
+-- Self-made, lightweight alternative to Hotjar: events instead of video.
+-- Written by /api/replay (service role); read only by the owner. Rows older
+-- than 90 days are removed by /api/workspace/cron (see privacy policy).
+create table if not exists public.ws_replays (
+  id           uuid primary key,
+  started_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  duration_ms  integer not null default 0,
+  chunks       integer not null default 0,
+  events_count integer not null default 0,
+  meta         jsonb
+);
+create index if not exists ws_replays_started_idx on public.ws_replays (started_at desc);
+
+create table if not exists public.ws_replay_chunks (
+  session_id uuid not null references public.ws_replays(id) on delete cascade,
+  seq        integer not null,
+  events     jsonb not null,
+  created_at timestamptz not null default now(),
+  primary key (session_id, seq)
+);
+alter table public.ws_replays enable row level security;
+alter table public.ws_replay_chunks enable row level security;

@@ -14,6 +14,8 @@ import { useEditor } from "./store";
  */
 export const EN: Record<string, string> = {
   "Избранные проекты": "Selected projects",
+  "Пользуясь сайтом, вы соглашаетесь с политикой конфиденциальности: сайт собирает статистику визитов и записывает действия на странице (без вводимого текста).": "By using this site you agree to the privacy policy: it collects visit statistics and records on-page activity (without the text you type).",
+  "Понятно": "Got it",
   "Подробнее": "Read more",
   "WordPress: собственные темы, CPT, ACF PRO, CF7, Polylang": "WordPress: custom themes, CPT, ACF PRO, CF7, Polylang",
   "2+ года: агентские проекты, HR-tech, стартап и собственные продукты": "2+ years: agency projects, HR-tech, a startup and my own products",

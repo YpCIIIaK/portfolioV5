@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useEditor } from "@/lib/store";
+import { isReplayMode, replaySessionId } from "@/lib/replay";
 
 /**
  * Tracks how long the visitor spends and which files they open, then sends a
@@ -14,7 +15,7 @@ import { useEditor } from "@/lib/store";
 export function VisitTracker() {
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (sessionStorage.getItem("visit-sent")) return;
+    if (sessionStorage.getItem("visit-sent") || isReplayMode()) return;
 
     const startedAt = Date.now();
     const params = new URLSearchParams(location.search);
@@ -164,6 +165,7 @@ export function VisitTracker() {
         webdriver: Boolean((navigator as Navigator & { webdriver?: boolean }).webdriver),
         visitorId,
         visitNo,
+        replayId: replaySessionId(),
         interactions,
         maxScroll,
       };
