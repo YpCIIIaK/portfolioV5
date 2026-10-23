@@ -50,7 +50,7 @@ export const EXPERIENCE = [
     period: text("Стажировка · React / NestJS / OpenSearch", "Internship · React / NestJS / OpenSearch"),
     points: [
       text("Фильтры поиска на React 18 + Redux Toolkit: состояние в URL и валидация zod. Расчёт стажа со слиянием пересекающихся интервалов.", "React 18 + Redux Toolkit search filters with URL state and zod validation. Experience calculation that merges overlapping date intervals."),
-      text("Бэкенд на NestJS, PostgreSQL и OpenSearch: backfill 227 000 документов и восстановление фильтра по стажу.", "NestJS, PostgreSQL and OpenSearch backend: backfilled 227,000 documents and fixed the experience range filter."),
+      text("Бэкенд на NestJS, PostgreSQL и OpenSearch по базе 15+ млн профилей: идемпотентный backfill 227 000 документов без дублей, проверка данных и восстановление фильтра по стажу.", "NestJS, PostgreSQL and OpenSearch backend over 15M+ candidate profiles: an idempotent backfill of 227,000 documents with no duplicates, data validation and a fixed experience range filter."),
       text("Изменения объединены в stage; GitHub Actions CI и развёртывание через ArgoCD.", "Changes merged to stage with GitHub Actions CI and ArgoCD deployment."),
     ],
   },
