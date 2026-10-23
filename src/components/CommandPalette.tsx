@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@/lib/track";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { allFiles, GITHUB, DEFAULT_OPEN } from "@/lib/files";
 import { useEditor } from "@/lib/store";
@@ -84,6 +85,7 @@ export function CommandPalette() {
 
   const choose = (c?: Cmd) => {
     if (!c) return;
+    track(`Ctrl+K: ${c.label}`);
     c.run();
     setPalette(false);
   };

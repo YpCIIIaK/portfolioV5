@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@/lib/track";
 import { useEffect, useRef, useState } from "react";
 import { X, TerminalIcon } from "lucide-react";
 import { useEditor } from "@/lib/store";
@@ -45,6 +46,7 @@ export function Terminal() {
 
   const run = (raw: string) => {
     const cmd = raw.trim();
+    if (cmd) track(`терминал: ${cmd}`);
     setLines((l) => [...l, { type: "in", text: cmd }]);
     if (cmd) {
       setHistory((h) => [...h, cmd]);
