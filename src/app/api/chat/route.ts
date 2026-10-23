@@ -293,8 +293,8 @@ function localAnswer(q: string, mode: string, lang: "ru" | "en" = "ru"): string 
       : "Связаться: email bigboyvova01@gmail.com или GitHub github.com/YpCIIIaK. На сайте есть рабочая форма — открой contact/contact.tsx.";
   if (has("проект", "project", "портфолио"))
     return en
-      ? "Top projects: WiFi Analyzer and PC Health Monitor (Go agents), Repo Anti-Rot (17 scanners, CLI+Action+dashboard), Multi-Agent Arena (AI), Vortan (crypto trading). The projects/ folder + live data in live/."
-      : "Топ-проекты: WiFi Analyzer и PC Health Monitor (Go-агенты), Repo Anti-Rot (17 сканеров, CLI+Action+дашборд), Multi-Agent Arena (ИИ), Vortan (крипто-трейдинг). Папка projects/ + живые данные в live/.";
+      ? "Top projects: WiFi Analyzer and PC Health Monitor (Go agents), Repo Janitor (27 checks, 1600+ tests, CLI+Action+web scan), Multi-Agent Arena (AI), Vortan (crypto trading). The projects/ folder + live data in live/."
+      : "Топ-проекты: WiFi Analyzer и PC Health Monitor (Go-агенты), Repo Janitor (27 проверок, 1600+ тестов, CLI+Action+веб-скан), Multi-Agent Arena (ИИ), Vortan (крипто-трейдинг). Папка projects/ + живые данные в live/.";
   if (has("ccusage", "claude code", "openrouter", "сколько потрат", "какие модел", "использует ии", "usage", "токен", "token"))
     return en
       ? "Vladimir actively uses AI in his work: Claude Code (Anthropic's agent, mostly Opus 4.8) and OpenRouter (dozens of models via one API). Real stats — in meta/ai-usage.json: Claude Code ~$729 / ~849M tokens, OpenRouter ~$18 / ~282M tokens across 42 models."

@@ -55,8 +55,8 @@ export const EN: Record<string, string> = {
   "Личное": "Personal",
   "Спорт: баскетбол, фитнес, горные лыжи, коньки/ролики, плавание и водное поло.":
     "Sports: basketball, fitness, skiing, skating/rollerblading, swimming and water polo.",
-  "Образование: «Программная инженерия», ТУСУР (ожидаемое окончание 2028). Также стипендиальные IT-программы в ТГУ и AITU.":
-    "Education: Software Engineering, TUSUR (expected graduation 2028). Also scholarship IT programs at TSU and AITU.",
+  "Образование: «Программная инженерия», ТУСУР (неоконченное высшее). Также стипендиальные IT-программы в ТГУ и AITU.":
+    "Education: Software Engineering, TUSUR (incomplete). Also scholarship IT programs at TSU and AITU.",
 
   // ---- Skills ----
   "Технический стек": "Tech stack",

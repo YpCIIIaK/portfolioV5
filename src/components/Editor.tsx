@@ -65,7 +65,7 @@ export function Editor() {
               <ContactForm />
             </div>
           )}
-          {file.id === "projects/repo-anti-rot.ts" && (
+          {file.id === "projects/repo-janitor.ts" && (
             <div className="mx-auto max-w-3xl px-8 pb-12">
               <RepoAntiRotSandbox />
             </div>

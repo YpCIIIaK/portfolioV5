@@ -1,6 +1,6 @@
 import type { FileNode } from "./types";
 
-// Shared by the portfolio, printable CV and assistant. Updated 2026-10-06.
+// Shared by the portfolio, printable CV and assistant. Updated 2026-10-23.
 export const PROFILE_EN: Record<string, string> = {};
 function text(ru: string, en: string): string {
   PROFILE_EN[ru] = en;
@@ -24,10 +24,10 @@ export const CONTACTS = [
 ];
 export const SKILLS = {
   languages: ["TypeScript (strict)", "JavaScript", "Go", "PHP 8", "Python", "SQL"],
-  frontend: ["React 18/19", "Next.js (App Router)", "Angular", "Vue 3", "Vite", "Redux Toolkit", "Zustand", "Tailwind", "shadcn/ui", "SCSS / CSS Modules"],
+  frontend: ["React 18/19", "Next.js (App Router)", "Angular", "Vue 3", "Vite", "Redux Toolkit", "Zustand", "Tailwind", "shadcn/ui", "SCSS / CSS Modules", "Image & video optimization (WebP)", "Cross-browser layout"],
   backend: ["Node.js", "NestJS", "Express", "Symfony", "Convex", "PostgreSQL", "MySQL", "Supabase", "Redis", "OpenSearch", "REST", "WebSocket"],
-  cms: ["WordPress", "Custom themes", "CPT", "ACF PRO", "Gutenberg", "Contact Form 7", "Yoast", "Polylang"],
-  ai: ["OpenRouter", "Multi-agent systems", "LLM tools", "Claude Code", "Cursor", "MCP"],
+  cms: ["WordPress", "Custom themes & plugins", "Multisite", "CPT", "ACF PRO", "Gutenberg", "Contact Form 7", "Yoast", "Polylang", "Bitrix24 webhooks"],
+  ai: ["OpenRouter", "Multi-agent systems", "LLM tools", "Claude Code", "Cursor"],
   infra: ["Git", "GitHub Actions", "Docker", "Vercel", "Render", "Playwright", "Vitest"],
   integrations: ["Telegram bots & Mini Apps", "Discord bots", "Chrome MV3", "Figma API"],
 };
@@ -37,6 +37,8 @@ export const EXPERIENCE = [
     id: "experience/factum.md", title: "Factum · Frontend / WordPress Developer",
     period: text("2026 — настоящее время · клиентские проекты", "2026 — present · client work"),
     points: [
+      text("Сайт агентства factum.agency: 51 блок для 9 отраслевых страниц (Figma → PHP-шаблоны), редизайн раздела проектов и плагин Factum Sync для мультисайта — перенёс кейсы и направления на 14 региональных сайтов и обновляю их контент из одного места.", "Agency site factum.agency: 51 blocks for 9 industry pages (Figma → PHP templates), a redesigned projects section and the Factum Sync multisite plugin — moved case studies and service pages to 14 regional sites and keep their content updated from one place."),
+      text("Интеграции: формы CF7 / WooCommerce в Битрикс24 через приложение и вебхуки, заявки в Telegram, GTM + Метрика с отслеживанием форм. Внутренний AI-бот студии, Telegram-бот с каталогом техники и Telegram Mini App.", "Integrations: CF7 / WooCommerce forms to Bitrix24 via an app and webhooks, leads to Telegram, GTM + Yandex Metrica form tracking. An internal AI bot for the studio, a Telegram catalog bot and a Telegram Mini App."),
       text("Корпоративный сайт производственной компании: работа с действующей кодовой базой (главная + 12 страниц), 11 новых секций и переработка 4 блоков. Адаптив без мобильных макетов, передача с документацией.", "Manufacturing company website: took over a live codebase (home + 12 pages), built 11 new sections and reworked 4 blocks. Responsive layouts without mobile mockups; documented handover."),
       text("Собственная WordPress-тема с нуля: шаблоны, CPT, модель контента на ACF PRO и формы CF7. Миграция файлов, БД и медиа через Docker → staging → deploy; Playwright e2e.", "Custom WordPress theme from scratch: templates, CPTs, ACF PRO content model and CF7 forms. Files, database and media migration via Docker → staging → deploy; Playwright e2e."),
       text("Технический и SEO-аудит сайта на четырёх языках: региональные страницы, Polylang, Yoast, GA4/GTM.", "Technical and SEO audit of a four-language site: regional pages, Polylang, Yoast, GA4/GTM."),
@@ -74,15 +76,35 @@ export const EXPERIENCE = [
 
 export const PROJECTS = [
   {
-    id: "projects/repo-anti-rot.ts", title: "Repo Anti-Rot", language: "TypeScript",
-    summary: text("Монитор состояния репозитория: 27 полиглот-проверок, оценка A–F и приоритетный список проблем с доказательствами. CLI, GitHub Action и веб-дашборд используют общий движок.", "Repository health monitor: 27 polyglot checks, an A–F grade and a prioritized list of findings with evidence. The CLI, GitHub Action and web dashboard share one engine."),
+    id: "projects/repo-janitor.ts", title: "Repo Janitor", language: "TypeScript",
+    summary: text("Сервис здоровья репозитория: 27 проверок в шести группах (безопасность, зависимости, CI, документация, «гниение», лишний код), оценка A–F и план исправлений по приоритету с доказательствами. Веб-скан, CLI и GitHub Action работают на одном движке.", "Repository health service: 27 checks in six families (security, dependencies, CI, docs, decay, code weight), an A–F grade and a prioritized fix plan with evidence. The web scan, CLI and GitHub Action share one engine."),
     points: [
       text("Поиск секретов, уязвимых и заброшенных зависимостей, мёртвого кода и стареющих TODO. Публичное сканирование без аккаунта.", "Finds secrets, vulnerable and abandoned dependencies, dead code and aging TODOs. Public scans require no account."),
-      text("CLI через npx repo-anti-rot, интеграция CI и экспорт SARIF. Next.js-дашборд с прогрессом сканирования и AI-рекомендациями через OpenRouter.", "CLI via npx repo-anti-rot, CI integration and SARIF export. Next.js dashboard with scan progress and AI recommendations through OpenRouter."),
-      text("pnpm-монорепозиторий, регрессионные тесты Vitest и проверки ложных срабатываний.", "pnpm monorepo, Vitest regression tests and false-positive checks."),
+      text("GitHub Action валит сборку ниже заданной оценки, выгружает SARIF во вкладку Security, пишет разбор в PR и обновляет бейдж. CLI через npx repo-anti-rot. AI-рекомендации через OpenRouter по согласию пользователя.", "The GitHub Action fails the build below a chosen grade, uploads SARIF to the Security tab, comments a breakdown on the PR and keeps a badge current. CLI via npx repo-anti-rot. Opt-in AI recommendations via OpenRouter."),
+      text("pnpm-монорепозиторий и 1600+ unit-тестов на Vitest. Ложные срабатывания — это баги: каждое закрывается регрессионным тестом.", "pnpm monorepo with 1600+ Vitest unit tests. False positives are bugs: each one gets a regression test."),
     ],
     tech: ["TypeScript", "Next.js", "Tailwind", "shadcn/ui", "SARIF", "Vitest", "OpenRouter"],
-    repo: "repo-janitor", demo: "https://repo-anti-rot.onrender.com",
+    repo: "repo-janitor", demo: "https://repo-janitor.app",
+  },
+  {
+    id: "projects/job-search-tool.ts", title: "JobSearchTool", language: "TypeScript",
+    summary: text("Локальный агрегатор удалённых вакансий: 21 площадка, склейка дублей, скоринг по резюме и проверка «можно ли работать из Казахстана». ИИ оценивает вакансии, пишет письма и собирает резюме под вакансию.", "Local remote-job aggregator: 21 sources, cross-source de-duplication, resume-based scoring and a Kazakhstan eligibility check. AI scores jobs, writes cover letters and builds tailored resumes."),
+    points: [
+      text("Открытые API, RSS и публичные страницы hh, LinkedIn, Getmatch и Enbek без входа; паузы между запросами, сбой источника не ломает скан.", "Open APIs, RSS and public hh, LinkedIn, Getmatch and Enbek pages without login; throttled requests, and a failing source never breaks the scan."),
+      text("ИИ через OpenRouter применяет правила отсева с цитатой-доказательством; ответы кэшируются, одна вакансия с разных площадок оценивается один раз.", "AI via OpenRouter applies plain-language reject rules with a quoted proof; verdicts are cached so the same job from different sources is scored once."),
+      text("Вкладка отклика: письмо и ответы для формы, резюме под вакансию с экспортом в PDF и подготовка к интервью — только факты из резюме.", "Apply tab: a cover letter with form answers, a tailored resume with PDF export and interview prep — using only facts from the resume."),
+    ],
+    tech: ["Next.js 15", "React 19", "TypeScript", "Tailwind 4", "OpenRouter", "RSS"], repo: "JobSearchTool",
+  },
+  {
+    id: "projects/hephaestus.ts", title: "Hephaestus · Multi-Agent LLM Arena", language: "TypeScript",
+    summary: text("Мультиагентная LLM-среда: чат сразу с несколькими моделями и визуальный конструктор DAG-пайплайнов из агентов — классификатор, аналитик, исследователь, синтезатор.", "Multi-agent LLM workspace: chat with several models at once and a visual builder for DAG pipelines of agents — classifier, analyst, researcher, synthesizer."),
+    points: [
+      text("19 пресетов агентов и локальные модели через Ollama; fallback-цепочка моделей при таймауте или ошибке; dry run пайплайна.", "19 agent presets and local models via Ollama; a model fallback chain on timeout or error; pipeline dry run."),
+      text("RAG на BM25, учёт токенов и стоимости с Waterfall / Gantt-графиками, skills в формате SKILL.md и Telegram-бот.", "BM25 RAG, token and cost tracking with Waterfall / Gantt charts, SKILL.md skills and a Telegram bot."),
+      text("В публичном репозитории — ранняя версия.", "The public repo holds an earlier version."),
+    ],
+    tech: ["Next.js 16", "React 19", "TypeScript", "Zustand", "OpenRouter", "Ollama"], repo: "Hephaestus",
   },
   {
     id: "projects/readme-studio.tsx", title: "Readme Studio", language: "TypeScript React",
@@ -97,23 +119,25 @@ export const PROJECTS = [
   },
   {
     id: "projects/argus.ts", title: "ARGUS · Discord AI agents", language: "TypeScript",
-    summary: text("Один Discord-бот с пятью ИИ-агентами: программист, инженер, исследователь, креативщик и координатор. Маршрутизация сообщений, совместные обсуждения и история в PostgreSQL / Supabase.", "One Discord bot with five AI agents: programmer, engineer, researcher, creative and coordinator. Message routing, collaborative discussions and history in PostgreSQL / Supabase."),
+    summary: text("Один Discord-бот с пятью ИИ-агентами (программист, инженер, исследователь, креативщик и координатор) и встроенным Bounty Monitor. Маршрутизация сообщений, совместные обсуждения и история в PostgreSQL / Supabase.", "One Discord bot with five AI agents (programmer, engineer, researcher, creative and coordinator) and a built-in Bounty Monitor. Message routing, collaborative discussions and history in PostgreSQL / Supabase."),
     points: [
       text("OpenRouter и Claude Code как провайдеры; отдельные каналы, контекст и настройки моделей для каждого агента.", "OpenRouter and Claude Code providers; individual channels, context and model settings for each agent."),
       text("Передача подзадач между агентами с сохранением состояния и защитой от циклов. Поиск в интернете и создание файлов через инструменты.", "Delegated subtasks with persisted state and loop protection. Web search and file creation through tools."),
+      text("Bounty Monitor внутри бота: ежедневный скан Cantina, Immunefi, Sherlock, Code4rena, HackenProof и RSS, дифф new / changed / removed со снапшотом в Upstash Redis и ранжированный AI-дайджест в Discord. Сбой одного источника не останавливает остальные.", "Built-in Bounty Monitor: a daily scan of Cantina, Immunefi, Sherlock, Code4rena, HackenProof and RSS, new / changed / removed diffs against an Upstash Redis snapshot and a ranked AI digest in Discord. One failing source never stops the rest."),
       text("Дедупликация Discord-событий, сохраняемые лимиты и health-check Discord / БД. Развёртывание на Render.", "Discord event deduplication, persistent limits and Discord / database health checks. Deployed on Render."),
     ],
-    tech: ["TypeScript", "Express", "zod", "Discord", "OpenRouter", "PostgreSQL", "Render"], repo: "ARGUS",
+    tech: ["TypeScript", "Express", "zod", "Discord", "OpenRouter", "PostgreSQL", "Upstash Redis", "Vercel Cron", "Render"], repo: "ARGUS",
   },
   {
-    id: "projects/bounty-scanner.ts", title: "Bounty Monitor", language: "TypeScript",
-    summary: text("Ежедневный мониторинг баг-баунти: собирает данные внешних API, JSON-лент и RSS, сравнивает со снапшотом в Redis и отправляет ранжированный AI-дайджест в Discord.", "Daily bug bounty monitoring: ingests external APIs, JSON feeds and RSS, compares them with a Redis snapshot and sends a ranked AI digest to Discord."),
+    id: "projects/cyberpath.html", title: "CyberPath", language: "HTML",
+    summary: text("Бесплатная интерактивная платформа для изучения кибербезопасности в стиле TryHackMe: 14 курсов от новичка до продвинутого уровня. Без регистрации и бэкенда, всё работает в браузере.", "A free interactive cybersecurity learning platform in the style of TryHackMe: 14 courses from beginner to advanced. No sign-up and no backend — everything runs in the browser."),
     points: [
-      text("Cantina, Immunefi, Sherlock, Code4rena, HackenProof и RSS. Параллельный сбор через Promise.allSettled: сбой одного источника не останавливает остальные.", "Cantina, Immunefi, Sherlock, Code4rena, HackenProof and RSS. Parallel fetching with Promise.allSettled keeps one failed source from stopping the rest."),
-      text("Дифф new / changed / removed по значимым полям; пустой ответ не стирает предыдущий снапшот. При сбое ИИ дайджест отправляется без AI-раздела.", "New / changed / removed diffs based on meaningful fields; empty responses do not erase the previous snapshot. If AI fails, the digest is sent without the AI section."),
-      text("Vercel Cron, Upstash Redis и OpenRouter. Сценарии ошибок покрыты тестами Vitest без сетевых запросов.", "Vercel Cron, Upstash Redis and OpenRouter. Failure scenarios are covered by offline Vitest tests."),
+      text("Живая песочница-терминал Windows: эмулятор cmd / PowerShell с виртуальной ФС, «сетью» и реестром, Tab-автодополнение и многошаговые квесты.", "A live Windows terminal sandbox: a cmd / PowerShell emulator with a virtual file system, network and registry, Tab completion and multi-step quests."),
+      text("Контент сверен с OWASP Top 10, MITRE ATT&CK, NIST SP 800-61 и CIS Benchmarks. Задания-квесты, флаги, XP, уровни, достижения и сертификаты.", "Content checked against OWASP Top 10, MITRE ATT&CK, NIST SP 800-61 and CIS Benchmarks. Quests, flags, XP, levels, achievements and certificates."),
+      text("RU / EN, светлая и тёмная темы, PWA с офлайн-режимом, палитра Ctrl+K, доступность с клавиатуры. Чистые HTML / CSS / JS.", "RU / EN, light and dark themes, an offline-ready PWA, a Ctrl+K palette and keyboard accessibility. Plain HTML / CSS / JS."),
     ],
-    tech: ["Next.js", "TypeScript", "Vercel Cron", "Upstash Redis", "Discord", "OpenRouter", "Vitest"], repo: "bounty-scanner",
+    tech: ["HTML", "CSS", "JavaScript", "PWA", "Service Worker", "GitHub Pages"],
+    repo: "cyber-sec", demo: "https://ypciiiak.github.io/cyber-sec/#/",
   },
   {
     id: "projects/property-inbox.tsx", title: "Property Inbox", language: "TypeScript React",
@@ -138,9 +162,9 @@ export const PROJECTS = [
     summary: text("Это портфолио в формате VS Code: дерево файлов, вкладки, Ctrl+K, терминал и интерактивные песочницы. Внутри — приватный workspace с интеграциями и AI-ассистентом.", "This VS Code-inspired portfolio has a file tree, tabs, Ctrl+K, a terminal and interactive sandboxes. It also contains a private workspace with integrations and an AI assistant."),
     points: [
       text("GitHub OAuth, подписанные сессии, права владельца и гостевой демо-режим; хранение данных в Supabase.", "GitHub OAuth, signed sessions, owner permissions and a guest demo mode; data stored in Supabase."),
-      text("Заметки, задачи, календарь, почта, Telegram, Notion, Google Drive и Bitrix24. Граф знаний, AI-воркфлоу, Repo Health и Figma → Code.", "Notes, tasks, calendar, mail, Telegram, Notion, Google Drive and Bitrix24. Knowledge graph, AI workflows, Repo Health and Figma to Code."),
+      text("Заметки, задачи, календарь, почта, Telegram (чаты, отправка и дублирование), Notion, Google Drive и задачи из облачного Bitrix24. «Второй мозг» — граф заметок, AI-ассистент с доступом к инструментам кабинета, анализ данных по запросу, AI-воркфлоу, Repo Health и Figma → Code.", "Notes, tasks, calendar, mail, Telegram (chats, sending and mirroring), Notion, Google Drive and tasks from cloud Bitrix24. A knowledge-graph second brain, an AI assistant with access to workspace tools, on-demand data analysis, AI workflows, Repo Health and Figma to Code."),
     ],
-    tech: ["Next.js 16", "React 19", "TypeScript", "Tailwind 4", "Zustand", "Supabase"], repo: "portfolioV5",
+    tech: ["Next.js 16", "React 19", "TypeScript", "Tailwind 4", "Zustand", "Supabase"], repo: "portfolioV5", demo: "https://ypciiiak.online",
   },
 ];
 

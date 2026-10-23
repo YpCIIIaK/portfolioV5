@@ -43,7 +43,9 @@ const readme: FileNode = {
       t: "links",
       items: [
         { label: "GitHub", href: GITHUB },
+        { label: "Repo Janitor", href: "https://repo-janitor.app" },
         { label: "Readme Studio", href: "https://ypciiiak.github.io/custom-readme/" },
+        { label: "CyberPath", href: "https://ypciiiak.github.io/cyber-sec/#/" },
         { label: "ARGUS", href: GITHUB + "/ARGUS" },
       ],
     },
@@ -79,7 +81,7 @@ const about: FileNode = {
     { t: "h2", text: "Личное" },
     { t: "p", text: "Спорт: баскетбол, фитнес, горные лыжи, коньки/ролики, плавание и водное поло." },
     { t: "divider" },
-    { t: "p", text: "Образование: «Программная инженерия», ТУСУР (ожидаемое окончание 2028). Также стипендиальные IT-программы в ТГУ и AITU." },
+    { t: "p", text: "Образование: «Программная инженерия», ТУСУР (неоконченное высшее). Также стипендиальные IT-программы в ТГУ и AITU." },
   ],
 };
 

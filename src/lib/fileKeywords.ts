@@ -6,10 +6,12 @@ import { allFiles } from "./files";
  */
 const KEYWORDS: Record<string, string[]> = {
   "projects/readme-studio.tsx": ["readme studio", "svg", "readme", "карточк", "анимац", "custom-readme"],
-  "projects/argus.ts": ["argus", "аргус", "discord", "дискорд", "агент", "делегир", "координатор"],
+  "projects/argus.ts": ["argus", "аргус", "discord", "дискорд", "агент", "делегир", "координатор", "bounty", "баунти", "дайджест", "redis"],
   "projects/property-inbox.tsx": ["property", "convex", "арендатор", "tenant", "недвижим", "inbox"],
   "projects/figma-copy.tsx": ["figma", "фигма", "плагин", "дизайн", "конвертер"],
-  "projects/bounty-scanner.ts": ["bounty", "баунти", "дайджест", "redis"],
+  "projects/job-search-tool.ts": ["job", "ваканс", "hh", "резюме", "resume", "jobsearch", "отклик"],
+  "projects/hephaestus.ts": ["hephaestus", "гефест", "dag", "пайплайн", "pipeline", "ollama", "bm25"],
+  "projects/cyberpath.html": ["cyber", "кибер", "безопасн", "owasp", "mitre", "pentest", "cyberpath", "tryhackme"],
   "projects/personal-workspace.tsx": ["workspace", "portfolio", "портфолио", "кабинет"],
   "experience/factum.md": ["factum", "фактум", "wordpress", "acf", "cf7", "cms", "агентств"],
   "experience/paraweb.md": ["paraweb", "паравеб"],
@@ -23,7 +25,8 @@ const KEYWORDS: Record<string, string[]> = {
     "go", "golang", "голанг", "монитор", "monitor", "cpu", "процесс", "майнер",
     "температур", "троттл", "здоровь", "health", "метрик", "gopsutil",
   ],
-  "projects/repo-anti-rot.ts": [
+  "projects/repo-janitor.ts": [
+    "janitor", "repo janitor",
     "security", "безопас", "секрет", "secret", "scanner", "скан", "анти", "rot",
     "репозитор", "качеств", "sarif", "cli", "github action", "уязвим", "lint",
   ],

@@ -5,10 +5,12 @@ import { fileById } from "@/lib/files";
 // and instantly readable when a link is shared on LinkedIn / Telegram / Slack.
 const TAGS: Record<string, string> = {
   "projects/readme-studio.tsx": "Visual README builder & animated SVG cards",
-  "projects/argus.ts": "Five AI agents collaborating in Discord",
+  "projects/argus.ts": "Five AI agents + bounty monitor in Discord",
   "projects/property-inbox.tsx": "Real-time property inbox · React + Convex",
   "projects/figma-copy.tsx": "Figma designs to React, HTML & Vue",
-  "projects/bounty-scanner.ts": "Daily bounty monitoring · Discord digests",
+  "projects/job-search-tool.ts": "Remote job aggregator · 21 sources + AI",
+  "projects/hephaestus.ts": "Multi-agent LLM arena · DAG pipelines",
+  "projects/cyberpath.html": "Interactive cybersecurity courses in the browser",
   "projects/personal-workspace.tsx": "Portfolio IDE & private workspace",
   "experience/factum.md": "Agency client work · Frontend + WordPress",
 
@@ -18,7 +20,7 @@ const TAGS: Record<string, string> = {
   "about/skills.json": "Tech stack: React · TS · Go · Node · AI",
   "projects/wifi-analyzer.go": "Privacy-first Wi-Fi & network analyzer · Go",
   "projects/pc-health-monitor.go": "Realtime PC health monitor · Go agent",
-  "projects/repo-anti-rot.ts": "Repository health · 27 polyglot checks",
+  "projects/repo-janitor.ts": "Repository health · 27 checks · A–F grade",
   "projects/multi-agent-arena.ts": "An arena for AI agents · RAG + chains",
   "projects/vortan-crypto.tsx": "Crypto trading tools · Binance realtime",
   "projects/chrome-extensions-suite.tsx": "Chrome MV3 suite · privacy, RAM, UI skins",

@@ -172,8 +172,8 @@ export const DEMO_EVENTS: WsEvent[] = [
 export const DEMO_PROJECTS: Project[] = [
   {
     id: "demo-1",
-    title: "Repo Anti-Rot",
-    description: "Монитор «гниения» репозитория: 16 сканеров, score и грейд A–F, опциональный AI-проход. CLI + GitHub Action + дашборд.",
+    title: "Repo Janitor",
+    description: "Сервис здоровья репозитория: 27 проверок, оценка A–F и план исправлений. Веб-скан, CLI и GitHub Action, 1600+ тестов.",
     repo_url: "https://github.com/YpCIIIaK/repo-janitor",
     tags: "TypeScript, Next.js, pnpm, Vitest",
     is_public: true,
@@ -200,7 +200,7 @@ export const DEMO_SUBSCRIPTIONS: Subscription[] = [
 export const DEMO_BRAIN: BrainState = {
   nodes: [
     { id: "b1", label: "Портфолио-IDE", category: "project", importance: 5, summary: "Главный пет-проект: сайт-портфолио в виде VS Code с личным кабинетом.", source: { panel: "projects", ref: "portfolioV5" } },
-    { id: "b2", label: "Repo Anti-Rot", category: "project", importance: 4, summary: "Монитор «гниения» репозиториев: 16 сканеров, score A–F.", source: { panel: "projects", ref: "Repo Anti-Rot" } },
+    { id: "b2", label: "Repo Janitor", category: "project", importance: 4, summary: "Сервис здоровья репозиториев: 27 проверок, оценка A–F.", source: { panel: "projects", ref: "Repo Janitor" } },
     { id: "b3", label: "Запушить новый проект", category: "work", importance: 4, summary: "Открытая задача с дедлайном завтра.", source: { panel: "tasks", ref: "Запушить новый проект на GitHub" } },
     { id: "b4", label: "Рекрутеры", category: "people", importance: 4, summary: "Несколько писем от рекрутеров ждут ответа.", source: { panel: "mail", ref: "Ответить на письма рекрутеров" } },
     { id: "b5", label: "Резюме", category: "work", importance: 3, summary: "Обновить резюме под свежие проекты.", source: { panel: "tasks", ref: "Обновить резюме" } },
