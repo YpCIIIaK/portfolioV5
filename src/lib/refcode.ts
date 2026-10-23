@@ -19,8 +19,10 @@ export function decodeRef(code: string): string | null {
     const b64 = code.replace(/-/g, "+").replace(/_/g, "/");
     const bin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
     const bytes = Uint8Array.from(bin, (c, i) => c.charCodeAt(0) ^ KEY.charCodeAt(i % KEY.length));
-    const name = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    return /^[\p{L}\p{N} .,&()'+-]{1,60}$/u.test(name) ? name : null;
+    // A cut-off link can end mid-letter: drop the broken tail instead of failing.
+    const name = new TextDecoder("utf-8").decode(bytes).replace(/\uFFFD+$/, "");
+    // Any readable text (dashes, quotes, punctuation) — only control characters mean a broken code.
+    return name.length > 0 && name.length <= 150 && !/[\p{Cc}\p{Cs}\uFFFD]/u.test(name) ? name : null;
   } catch {
     return null;
   }
