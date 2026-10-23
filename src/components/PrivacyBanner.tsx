@@ -3,6 +3,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { isReplayMode } from "@/lib/replay";
 import { useTr } from "@/lib/i18n";
+import { useEditor } from "@/lib/store";
 
 const KEY = "privacy-ack";
 
@@ -23,6 +24,7 @@ export function PrivacyBanner() {
   );
   const [dismissed, setDismissed] = useState(false);
   const tr = useTr();
+  const lang = useEditor((s) => s.lang);
   const show = needed && !dismissed;
 
   if (!show) return null;
@@ -45,7 +47,7 @@ export function PrivacyBanner() {
         {tr(
           "Пользуясь сайтом, вы соглашаетесь с политикой конфиденциальности: сайт собирает статистику визитов и записывает действия на странице (без вводимого текста).",
         )}{" "}
-        <a href="/privacy" className="text-vsc-accent underline" target="_blank" rel="noreferrer">
+        <a href={lang === "en" ? "/privacy#en" : "/privacy"} className="text-vsc-accent underline" target="_blank" rel="noreferrer">
           {tr("Подробнее")}
         </a>
       </p>
