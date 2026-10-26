@@ -143,7 +143,7 @@ function GitView() {
   const commits = [
     "feat: multi-agent arena — visual chain builder",
     "perf: instant per-process CPU via cumulative-time delta",
-    "feat: backfill totalExperience for 227k docs",
+    "feat: backfill totalExperience for 30M+ docs",
     "feat: fan-out snapshots to N clients from one poll-loop",
     "test: 237 unit tests for repo-anti-rot engine",
   ];

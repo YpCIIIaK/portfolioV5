@@ -122,7 +122,7 @@ export function Terminal() {
           print([
             "a1b2c3d feat: multi-agent arena — visual chain builder",
             "e4f5g6h perf: instant per-process CPU via time-delta",
-            "i7j8k9l feat: backfill totalExperience for 227k docs",
+            "i7j8k9l feat: backfill totalExperience for 30M+ docs",
           ]);
         else print(["usage: git log"]);
         break;
