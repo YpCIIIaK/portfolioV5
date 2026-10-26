@@ -16,7 +16,7 @@ export const runtime = "nodejs";
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const KINDS = new Set(["m", "c", "s", "f", "w", "v", "i"]);
+const KINDS = new Set(["m", "c", "s", "f", "w", "v", "i", "d"]);
 const MAX_BODY = 400_000;
 
 interface ReplayRow {

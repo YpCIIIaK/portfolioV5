@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useEditor } from "@/lib/store";
+import { getDesign, subscribeDesign } from "@/lib/design";
 import { isReplayMode, replaySessionId, REPLAY_LIMITS, type ReplayEvent } from "@/lib/replay";
 
 /** Short, readable label for a clicked element (link text, button title…). */
@@ -63,6 +64,13 @@ export function SessionRecorder() {
     };
 
     push({ t: now(), k: "w", w: window.innerWidth, h: window.innerHeight });
+    let design = getDesign();
+    if (design) push({ t: now(), k: "d", d: design });
+    const unsubDesign = subscribeDesign(() => {
+      const d = getDesign();
+      if (d && d !== design) push({ t: now(), k: "d", d });
+      design = d;
+    });
     const initial = useEditor.getState().activeFile;
     if (initial) push({ t: now(), k: "f", id: initial });
 
@@ -78,7 +86,7 @@ export function SessionRecorder() {
     let lastScroll = 0;
     const onScroll = (e: Event) => {
       const el = e.target as HTMLElement;
-      if (el?.id !== "editor-scroll") return;
+      if (el?.id !== "editor-scroll" && el?.id !== "v6-scroll") return;
       const t = now();
       if (t - lastScroll < 150) return;
       lastScroll = t;
@@ -122,6 +130,7 @@ export function SessionRecorder() {
 
     return () => {
       unsub();
+      unsubDesign();
       clearInterval(flushTimer);
       clearInterval(keyTimer);
       clearTimeout(resizeTimer);

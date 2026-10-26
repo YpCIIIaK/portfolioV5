@@ -8,11 +8,12 @@
 export type ReplayEvent =
   | { t: number; k: "m"; x: number; y: number } // pointer move
   | { t: number; k: "c"; x: number; y: number; l?: string } // click (+ short label of the target)
-  | { t: number; k: "s"; r: number } // editor scroll, 0..1
+  | { t: number; k: "s"; r: number } // editor (or 6.0 page) scroll, 0..1
   | { t: number; k: "f"; id: string } // opened file
   | { t: number; k: "w"; w: number; h: number } // viewport size
   | { t: number; k: "v"; on: boolean } // tab visible / hidden
-  | { t: number; k: "i"; n: number; l?: string }; // typing: number of keys (text itself is masked)
+  | { t: number; k: "i"; n: number; l?: string } // typing: number of keys (text itself is masked)
+  | { t: number; k: "d"; d: "ide" | "v6" }; // which design is on screen
 
 export interface ReplayMeta {
   ua: string;

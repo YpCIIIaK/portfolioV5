@@ -132,7 +132,7 @@ function Player({ session, events, onClose }: { session: SessionRow; events: Rep
   const [boxWidth, setBoxWidth] = useState(800);
   const boxRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const applied = useRef({ file: "", scroll: -1 });
+  const applied = useRef({ file: "", scroll: -1, design: "ide" });
 
   // State at `time`: last file, scroll, size, pointer, recent clicks.
   const view = useMemo(() => {
@@ -143,6 +143,7 @@ function Player({ session, events, onClose }: { session: SessionRow; events: Rep
     let x = -100;
     let y = -100;
     let hidden = false;
+    let design: "ide" | "v6" = "ide";
     const clicks: { x: number; y: number; age: number }[] = [];
     for (const e of sorted) {
       if (e.t > time) break;
@@ -160,14 +161,19 @@ function Player({ session, events, onClose }: { session: SessionRow; events: Rep
         y = e.y;
         if (time - e.t < 800) clicks.push({ x: e.x, y: e.y, age: time - e.t });
       } else if (e.k === "v") hidden = !e.on;
+      else if (e.k === "d") design = e.d;
     }
-    return { file, scroll, w, h, x, y, hidden, clicks };
+    return { file, scroll, w, h, x, y, hidden, clicks, design };
   }, [sorted, time, session.meta]);
 
   // Drive the iframe only when file / scroll actually change.
   useEffect(() => {
     const win = frameRef.current?.contentWindow;
     if (!win) return;
+    if (view.design !== applied.current.design) {
+      win.postMessage({ type: "replay-design", d: view.design }, location.origin);
+      applied.current = { file: "", scroll: -1, design: view.design };
+    }
     if (view.file && view.file !== applied.current.file) {
       win.postMessage({ type: "replay-open", id: view.file }, location.origin);
       applied.current.file = view.file;
@@ -177,7 +183,7 @@ function Player({ session, events, onClose }: { session: SessionRow; events: Rep
       win.postMessage({ type: "replay-scroll", r: view.scroll }, location.origin);
       applied.current.scroll = view.scroll;
     }
-  }, [view.file, view.scroll]);
+  }, [view.file, view.scroll, view.design]);
 
   useEffect(() => {
     const el = boxRef.current;
@@ -214,7 +220,7 @@ function Player({ session, events, onClose }: { session: SessionRow; events: Rep
   }, [playing, speed, skipIdle, sorted, duration]);
 
   const scale = Math.min(1, boxWidth / view.w);
-  const log = sorted.filter((e) => e.k === "f" || e.k === "c" || e.k === "i");
+  const log = sorted.filter((e) => e.k === "f" || e.k === "c" || e.k === "i" || e.k === "d");
   const src = `/?replay=1${session.meta?.file ? `&file=${encodeURIComponent(session.meta.file)}` : ""}`;
 
   return (
@@ -255,7 +261,7 @@ function Player({ session, events, onClose }: { session: SessionRow; events: Rep
               src={src}
               title="replay"
               className="pointer-events-none h-full w-full border-0 bg-white"
-              onLoad={() => (applied.current = { file: "", scroll: -1 })}
+              onLoad={() => (applied.current = { file: "", scroll: -1, design: "ide" })}
             />
             <div className="pointer-events-none absolute inset-0">
               {view.clicks.map((c, i) => (
@@ -279,7 +285,7 @@ function Player({ session, events, onClose }: { session: SessionRow; events: Rep
             <li key={i}>
               <button onClick={() => setTime(e.t)} className="text-left hover:text-vsc-bright">
                 {fmt(e.t)} ·{" "}
-                {e.k === "f" ? `открыл ${e.id}` : e.k === "c" ? `клик${e.l ? `: ${e.l}` : ""}` : e.k === "i" ? `ввод: ${e.n} клавиш${e.l ? ` (${e.l})` : ""}` : ""}
+                {e.k === "f" ? `открыл ${e.id}` : e.k === "c" ? `клик${e.l ? `: ${e.l}` : ""}` : e.k === "i" ? `ввод: ${e.n} клавиш${e.l ? ` (${e.l})` : ""}` : e.k === "d" ? (e.d === "v6" ? "✨ дизайн 6.0" : "дизайн VS Code") : ""}
               </button>
             </li>
           ))}

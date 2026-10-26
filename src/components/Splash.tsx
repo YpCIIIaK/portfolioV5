@@ -11,7 +11,7 @@ const STEPS = [
   "Indexing projects…",
 ];
 
-export function Splash() {
+export function Splash({ onDone }: { onDone?: () => void }) {
   const [done, setDone] = useState(0);
   const [hide, setHide] = useState(false);
   const [gone, setGone] = useState(false);
@@ -25,6 +25,10 @@ export function Splash() {
     timers.push(setTimeout(() => setGone(true), 260 * STEPS.length + 850));
     return () => timers.forEach(clearTimeout);
   }, []);
+
+  useEffect(() => {
+    if (gone) onDone?.();
+  }, [gone, onDone]);
 
   if (gone) return null;
 

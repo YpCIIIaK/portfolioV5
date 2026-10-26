@@ -12,14 +12,11 @@ import { StatusBar } from "./StatusBar";
 import { CommandPalette } from "./CommandPalette";
 import { Tour } from "./Tour";
 import { CopilotPanel } from "./CopilotPanel";
-import { Splash } from "./Splash";
 import { AchievementToast } from "./AchievementToast";
-import { VisitTracker } from "./VisitTracker";
-import { SessionRecorder } from "./SessionRecorder";
-import { PrivacyBanner } from "./PrivacyBanner";
-import { ReplayReceiver } from "./ReplayReceiver";
 import { useSession } from "@/lib/session";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle, Sparkles } from "lucide-react";
+import { setDesign } from "@/lib/design";
+import { track } from "@/lib/track";
 
 export function IDE({ initialFile }: { initialFile?: string }) {
   const sidebarOpen = useEditor((s) => s.sidebarOpen);
@@ -99,12 +96,17 @@ export function IDE({ initialFile }: { initialFile?: string }) {
       <StatusBar />
       <CommandPalette />
       <Tour />
-      <Splash />
       <AchievementToast />
-      <VisitTracker />
-      <SessionRecorder />
-      <ReplayReceiver />
-      <PrivacyBanner />
+      <button
+        onClick={() => {
+          track("✨ переключил на дизайн 6.0");
+          setDesign("v6");
+        }}
+        title="Design 6.0"
+        className="absolute bottom-7 right-14 z-40 flex h-9 items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-600 to-sky-500 px-3 text-[12px] font-medium text-white shadow-lg transition hover:opacity-90"
+      >
+        <Sparkles size={15} /> 6.0
+      </button>
       <button
         onClick={() => setTour(true)}
         title="Запустить тур по сайту"

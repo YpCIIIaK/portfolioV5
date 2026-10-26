@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useState } from "react";
+import { useDesign } from "@/lib/design";
 import { X } from "lucide-react";
 import { useEditor } from "@/lib/store";
 
@@ -56,14 +57,15 @@ export function Tour() {
   const [step, setStep] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
 
-  // auto-start on first visit
+  // auto-start on first visit, once the visitor has chosen to stay in the VS Code look
+  const design = useDesign();
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || design !== "ide") return;
     if (!localStorage.getItem(STORAGE_KEY)) {
       const t = setTimeout(() => setTour(true), 700);
       return () => clearTimeout(t);
     }
-  }, [setTour]);
+  }, [setTour, design]);
 
   // keep the explorer (sidebar) visible throughout the tour — we describe it
   useEffect(() => {

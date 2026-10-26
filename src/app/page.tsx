@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IDE } from "@/components/IDE";
+import { DesignRoot } from "@/components/DesignRoot";
 import { fileById, fileTitle, fileSummary } from "@/lib/files";
 
 type SearchParams = Promise<{ file?: string | string[] }>;
@@ -39,5 +39,5 @@ export async function generateMetadata({
 
 export default async function Home({ searchParams }: { searchParams: SearchParams }) {
   const id = pickFile((await searchParams).file);
-  return <IDE initialFile={id ?? undefined} />;
+  return <DesignRoot initialFile={id ?? undefined} />;
 }
