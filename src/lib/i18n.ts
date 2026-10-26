@@ -272,8 +272,8 @@ export const EN: Record<string, string> = {
 
   // ---- HR Search Platform ----
   "Поисковый движок по базе кандидатов (стажировка)": "Candidate-database search engine (internship)",
-  "Роль: Backend / Search Engineer. HR-платформа для рекрутеров с полнотекстовым поиском по базе из 30+ млн профилей кандидатов (импорт из LinkedIn-дампов). Работал с реальным продакшен-объёмом данных.":
-    "Role: Backend / Search Engineer. An HR platform for recruiters with full-text search over a base of 30M+ candidate profiles (imported from LinkedIn dumps). Worked with real production-scale data.",
+  "Роль: Backend / Search Engineer. HR-платформа для рекрутеров с полнотекстовым поиском по базе из 15+ млн профилей кандидатов (импорт из LinkedIn-дампов). Работал с реальным продакшен-объёмом данных.":
+    "Role: Backend / Search Engineer. An HR platform for recruiters with full-text search over a base of 15M+ candidate profiles (imported from LinkedIn dumps). Worked with real production-scale data.",
   "30+ млн живых документов в OpenSearch 2.12 (форк Elasticsearch 7.10), PostgreSQL как источник истины. Не учебный датасет — настоящий прод-объём и настоящие «грязные» данные.":
     "30M+ live documents in OpenSearch 2.12 (a fork of Elasticsearch 7.10), PostgreSQL as the source of truth. Not a toy dataset — real production scale and real \"dirty\" data.",
   "Что сделал": "What I did",
