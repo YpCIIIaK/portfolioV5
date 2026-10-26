@@ -52,6 +52,7 @@ export const EXPERIENCE = [
     points: [
       text("Фильтры поиска на React 18 + Redux Toolkit: состояние в URL и валидация zod. Расчёт стажа со слиянием пересекающихся интервалов.", "React 18 + Redux Toolkit search filters with URL state and zod validation. Experience calculation that merges overlapping date intervals."),
       text("Бэкенд на NestJS, PostgreSQL и OpenSearch по базе 15+ млн профилей: оптимизация SQL-запросов через индексы, идемпотентный backfill 30+ млн документов без дублей, проверка данных и восстановление фильтра по стажу.", "NestJS, PostgreSQL and OpenSearch backend over 15M+ candidate profiles: SQL query optimization with indexes, an idempotent backfill of 30M+ documents with no duplicates, data validation and a fixed experience range filter."),
+      text("Сервис синхронизации PostgreSQL → OpenSearch: ежечасный инкремент по watermark в Redis, keyset-пагинация по (syncAt, id), нормализация JSONB-данных (навыки, страны, языки), маппинг индекса и подсказки на edge-ngram.", "PostgreSQL → OpenSearch sync service: hourly incremental runs with a Redis watermark, keyset pagination over (syncAt, id), JSONB normalization (skills, countries, languages), index mapping and edge-ngram suggestions."),
       text("Изменения объединены в stage; GitHub Actions CI и развёртывание через ArgoCD.", "Changes merged to stage with GitHub Actions CI and ArgoCD deployment."),
     ],
   },
