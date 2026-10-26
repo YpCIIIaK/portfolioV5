@@ -53,7 +53,7 @@ const KEYWORDS: Record<string, string[]> = {
   ],
   "experience/hr-search-platform.md": [
     "hr", "поиск", "search", "opensearch", "кандидат", "nestjs", "стажир",
-    "стаж", "опыт работ", "227", "backfill",
+    "стаж", "опыт работ", "30 млн", "backfill",
   ],
   "experience/telegram-bots.md": [
     "telegram", "телеграм", "бот", "bots", "php", "python", "отчётн", "yourtar",

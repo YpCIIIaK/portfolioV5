@@ -272,14 +272,14 @@ export const EN: Record<string, string> = {
 
   // ---- HR Search Platform ----
   "Поисковый движок по базе кандидатов (стажировка)": "Candidate-database search engine (internship)",
-  "Роль: Backend / Search Engineer. HR-платформа для рекрутеров с полнотекстовым поиском по базе из 227k+ профилей кандидатов (импорт из LinkedIn-дампов). Работал с реальным продакшен-объёмом данных.":
-    "Role: Backend / Search Engineer. An HR platform for recruiters with full-text search over a base of 227k+ candidate profiles (imported from LinkedIn dumps). Worked with real production-scale data.",
-  "227 249 живых документов в OpenSearch 2.12 (форк Elasticsearch 7.10), PostgreSQL как источник истины. Не учебный датасет — настоящий прод-объём и настоящие «грязные» данные.":
-    "227,249 live documents in OpenSearch 2.12 (a fork of Elasticsearch 7.10), PostgreSQL as the source of truth. Not a toy dataset — real production scale and real \"dirty\" data.",
+  "Роль: Backend / Search Engineer. HR-платформа для рекрутеров с полнотекстовым поиском по базе из 30+ млн профилей кандидатов (импорт из LinkedIn-дампов). Работал с реальным продакшен-объёмом данных.":
+    "Role: Backend / Search Engineer. An HR platform for recruiters with full-text search over a base of 30M+ candidate profiles (imported from LinkedIn dumps). Worked with real production-scale data.",
+  "30+ млн живых документов в OpenSearch 2.12 (форк Elasticsearch 7.10), PostgreSQL как источник истины. Не учебный датасет — настоящий прод-объём и настоящие «грязные» данные.":
+    "30M+ live documents in OpenSearch 2.12 (a fork of Elasticsearch 7.10), PostgreSQL as the source of truth. Not a toy dataset — real production scale and real \"dirty\" data.",
   "Что сделал": "What I did",
   "🔍 Поисковый индекс и пайплайн данных": "🔍 Search index and data pipeline",
-  "Развернул изолированную песочницу OpenSearch (как в проде), индекс на 227 249 реальных документов.":
-    "Set up an isolated OpenSearch sandbox (prod-like), an index of 227,249 real documents.",
+  "Развернул изолированную песочницу OpenSearch (как в проде), индекс на 30+ млн реальных документов.":
+    "Set up an isolated OpenSearch sandbox (prod-like), an index of 30M+ real documents.",
   "Спроектировал маппинг полей под полнотекстовый поиск: анализаторы, разделение keyword vs text, edge-ngram автокомплит по навыкам / компаниям / должностям.":
     "Designed the field mapping for full-text search: analyzers, keyword vs text separation, edge-ngram autocomplete over skills / companies / job titles.",
   "⚡ Инкрементальная синхронизация Postgres → OpenSearch": "⚡ Incremental Postgres → OpenSearch sync",
@@ -295,8 +295,8 @@ export const EN: Record<string, string> = {
   "Параллельная занятость не должна раздувать стаж. Сливаем пересекающиеся интервалы дат и считаем реально отработанные месяцы.":
     "Parallel employment shouldn't inflate seniority. We merge overlapping date intervals and count the actually worked months.",
   "📊 Оптимизация «непросмотренных кандидатов» (доказано бенчмарком)": "📊 Optimizing \"unseen candidates\" (proven by benchmark)",
-  "Прод-баг: при >10k просмотренных кандидаты дублировались при прокрутке. Провёл нагрузочный бенчмарк 4 стратегий исключения на 227k (медиана 25 прогонов) и доказал замерами: exclude by _id ≈ exclude by field (выигрыша нет), а must_not деградирует линейно (36 мс + 2 МБ payload на 50k исключённых).":
-    "Prod bug: with >10k viewed, candidates duplicated on scroll. I ran a load benchmark of 4 exclusion strategies on 227k (median of 25 runs) and proved by measurement: exclude by _id ≈ exclude by field (no gain), while must_not degrades linearly (36 ms + 2 MB payload at 50k excluded).",
+  "Прод-баг: при >10k просмотренных кандидаты дублировались при прокрутке. Провёл нагрузочный бенчмарк 4 стратегий исключения на 30+ млн (медиана 25 прогонов) и доказал замерами: exclude by _id ≈ exclude by field (выигрыша нет), а must_not деградирует линейно (36 мс + 2 МБ payload на 50k исключённых).":
+    "Prod bug: with >10k viewed, candidates duplicated on scroll. I ran a load benchmark of 4 exclusion strategies on 30M+ (median of 25 runs) and proved by measurement: exclude by _id ≈ exclude by field (no gain), while must_not degrades linearly (36 ms + 2 MB payload at 50k excluded).",
   "Корень исходного бага: from/size + сорт без уникального тай-брейкера.":
     "Root of the original bug: from/size + a sort without a unique tie-breaker.",
   "Решение: курсорная пагинация search_after со стабильным total-order сортом → плоский took ~7 мс на любой глубине и устранение дублей by design.":
