@@ -38,10 +38,7 @@ export function Palette({ open, onClose, onBack }: { open: boolean; onClose: () 
         keywords: `${p.id} ${p.tech.join(" ")}`,
         group: l("Проекты", "Projects"),
         Icon: FolderOpen,
-        run: () => {
-          scrollToSection("projects");
-          window.dispatchEvent(new CustomEvent("v6-open-project", { detail: p.id }));
-        },
+        run: () => window.dispatchEvent(new CustomEvent("v6-goto-station", { detail: p.id })),
       })),
       { id: "cv", label: l("Резюме PDF", "Resume PDF"), group: l("Действия", "Actions"), Icon: FileText, run: () => window.open("/cv", "_blank") },
       { id: "ide", label: l("Вернуться в VS Code", "Back to VS Code"), group: l("Действия", "Actions"), Icon: Code2, run: onBack },

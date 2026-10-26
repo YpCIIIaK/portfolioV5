@@ -24,7 +24,7 @@ export function Stack() {
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <SectionHead
           id="stack"
-          kicker={l("04 · стек", "04 · stack")}
+          kicker={l("02 · стек", "02 · stack")}
           title={l("Технологии, с которыми я работал", "Technologies I've worked with")}
           sub={l("Всё из списка использовалось в реальных проектах выше.", "Everything here was used in the real projects above.")}
         />

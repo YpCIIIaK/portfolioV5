@@ -7,10 +7,8 @@ import { setDesign } from "@/lib/design";
 import { track } from "@/lib/track";
 import { useEditor } from "@/lib/store";
 import { useL } from "./ui";
-import { Hero } from "./Hero";
-import { Projects } from "./Projects";
+import { Metro } from "./Metro";
 import { Live } from "./Live";
-import { Experience } from "./Experience";
 import { Stack } from "./Stack";
 import { Contact } from "./Contact";
 import { Palette as QuickNav } from "./QuickNav";
@@ -25,10 +23,8 @@ const ACCENTS = [
 ] as const;
 
 export const SECTIONS = [
-  { id: "about", ru: "Обо мне", en: "About" },
-  { id: "projects", ru: "Проекты", en: "Projects" },
+  { id: "route", ru: "Маршрут", en: "Route" },
   { id: "live", ru: "Вживую", en: "Live" },
-  { id: "experience", ru: "Опыт", en: "Experience" },
   { id: "stack", ru: "Стек", en: "Stack" },
   { id: "contact", ru: "Контакты", en: "Contact" },
 ];
@@ -63,7 +59,7 @@ export function Showcase() {
     stored("v6-theme", THEMES, "night"),
   );
   const [accent, setAccent] = useState<string>(() => stored("v6-accent", ACCENTS.map((a) => a.id), "violet"));
-  const [active, setActive] = useState("about");
+  const [active, setActive] = useState("route");
   const [menu, setMenu] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [accentsOpen, setAccentsOpen] = useState(false);
@@ -130,7 +126,7 @@ export function Showcase() {
 
         <header className="sticky top-0 z-40 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_75%,transparent)] backdrop-blur-xl">
           <nav className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4 sm:px-6">
-            <button onClick={() => go("about")} className="flex items-center gap-2 font-semibold tracking-tight">
+            <button onClick={() => go("route")} className="flex items-center gap-2 font-semibold tracking-tight">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[rgb(var(--a))] to-[rgb(var(--b))] text-[13px] font-bold text-white">
                 V
               </span>
@@ -220,10 +216,8 @@ export function Showcase() {
         </header>
 
         <main>
-          <Hero />
-          <Projects />
+          <Metro scroller={scroller} />
           <Live />
-          <Experience />
           <Stack />
           <Contact />
         </main>

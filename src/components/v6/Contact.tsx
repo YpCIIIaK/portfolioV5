@@ -58,7 +58,7 @@ export function Contact() {
     <section id="contact" className="mx-auto max-w-6xl scroll-mt-16 px-4 py-24 sm:px-6">
       <SectionHead
         id="contact"
-        kicker={l("05 · контакты", "05 · contact")}
+        kicker={l("03 · контакты", "03 · contact")}
         title={l("Давайте поработаем вместе", "Let's work together")}
         sub={l(
           "Ищу удалённую работу: full-time, part-time, контракт или проект. Быстрее всего отвечаю в Telegram.",

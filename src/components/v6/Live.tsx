@@ -373,7 +373,7 @@ export function Live() {
     <section id="live" className="mx-auto max-w-6xl scroll-mt-16 px-4 py-24 sm:px-6">
       <SectionHead
         id="live"
-        kicker={l("02 · вживую", "02 · live")}
+        kicker={l("01 · вживую", "01 · live")}
         title={l("Интеграции, которые работают прямо сейчас", "Integrations running right now")}
         sub={l(
           "Не скриншоты: живые данные GitHub и Binance, AI-ассистент и терминал из версии VS Code.",
